@@ -1,0 +1,17 @@
+{
+  "name": "pty-poc",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Phase 0-4 PTY Host PoC — xterm.js bundle",
+  "scripts": {
+    "build": "esbuild src/terminal.ts --bundle --outfile=dist/terminal.js --format=iife --target=es2020 --loader:.css=css --minify"
+  },
+  "dependencies": {
+    "@xterm/xterm": "^5.5.0",
+    "@xterm/addon-fit": "^0.10.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "typescript": "^5.0.0"
+  }
+}

@@ -1,6 +1,6 @@
 <!-- Copyright (c) VS Codee Contributors. All rights reserved. -->
 <!DOCTYPE html>
-<html>
+<html lang="en">
 	<head>
 		<meta charset="utf-8" />
 		<meta
@@ -52,6 +52,7 @@
 				;
 		"/>
 
+		<link rel="stylesheet" href="pty-poc/dist/terminal.css" />
 		<title>VS Codee</title>
 
 		<style>
@@ -121,6 +122,65 @@
 
 			.splash .error {
 				color: #f48771;
+			}
+
+			/* Phase 0-4: Terminal PoC styles */
+			#terminal-section {
+				width: 100%;
+				max-width: 900px;
+				margin-top: 16px;
+			}
+
+			#terminal-section .terminal-header {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				margin-bottom: 8px;
+			}
+
+			#terminal-container {
+				width: 100%;
+				height: 400px;
+				background: #000;
+				border-radius: 4px;
+				overflow: hidden;
+				display: none;
+			}
+
+			#terminal-container.active {
+				display: block;
+			}
+
+			.terminal-controls {
+				display: flex;
+				gap: 8px;
+				margin-top: 8px;
+			}
+
+			.terminal-controls button {
+				padding: 6px 12px;
+				background: #333;
+				color: #ccc;
+				border: 1px solid #555;
+				border-radius: 3px;
+				cursor: pointer;
+				font-size: 12px;
+			}
+
+			.terminal-controls button:hover {
+				background: #444;
+			}
+
+			.terminal-controls button.primary {
+				background: #007acc;
+				color: #fff;
+				border: none;
+			}
+
+			.terminal-controls button.danger {
+				background: #a1260d;
+				color: #fff;
+				border: none;
 			}
 		</style>
 	</head>
@@ -262,11 +322,84 @@
 					};
 					document.getElementById('splash').appendChild(btn);
 
+					// Step 7: Terminal PoC (Phase 0-4)
+					log('');
+					log('Phase 0-4: Terminal (PTY Host) PoC');
+					log('─────────────────────────────────');
+					log('Click the button below to spawn a terminal.');
+
+					// Create terminal section
+					const termSection = document.createElement('div');
+					termSection.id = 'terminal-section';
+					termSection.innerHTML = `
+						<div class="terminal-header">
+							<span class="badge">Phase 0-4</span>
+							<span style="font-size:12px;color:#858585">Terminal (PTY Host) PoC</span>
+						</div>
+						<div id="terminal-container"></div>
+						<div class="terminal-controls">
+							<button class="primary" id="btn-new-terminal">New Terminal</button>
+							<button class="danger" id="btn-close-terminal" disabled>Close Terminal</button>
+							<span id="terminal-status" style="font-size:11px;color:#666;line-height:28px;margin-left:8px"></span>
+						</div>
+					`;
+					document.getElementById('splash').appendChild(termSection);
+
+					let currentTerminal = null;
+					const termContainer = document.getElementById('terminal-container');
+					const btnNew = document.getElementById('btn-new-terminal');
+					const btnClose = document.getElementById('btn-close-terminal');
+					const termStatus = document.getElementById('terminal-status');
+
+					btnNew.onclick = async () => {
+						if (!window.PtyPoc) {
+							log('❌ PtyPoc module not loaded. Is pty-poc/dist/terminal.js missing?', true);
+							return;
+						}
+						btnNew.disabled = true;
+						termStatus.textContent = 'Spawning...';
+						log('Creating new terminal...');
+						try {
+							const startTime = performance.now();
+							termContainer.innerHTML = '';
+							termContainer.classList.add('active');
+							currentTerminal = await window.PtyPoc.createTerminal(termContainer);
+							const elapsed = (performance.now() - startTime).toFixed(1);
+							log(`✅ Terminal created (id: ${currentTerminal.id}, ${elapsed}ms)`);
+							termStatus.textContent = `Terminal #${currentTerminal.id} active (spawned in ${elapsed}ms)`;
+							termStatus.style.color = '#4ec9b0';
+							btnClose.disabled = false;
+							currentTerminal.terminal.focus();
+						} catch (e) {
+							log(`❌ Terminal creation failed: ${e}`, true);
+							termStatus.textContent = `Error: ${e}`;
+							termStatus.style.color = '#f48771';
+							termContainer.classList.remove('active');
+						}
+						btnNew.disabled = false;
+					};
+
+					btnClose.onclick = async () => {
+						if (currentTerminal && window.PtyPoc) {
+							log(`Closing terminal #${currentTerminal.id}...`);
+							await window.PtyPoc.closeTerminal(currentTerminal);
+							log('✅ Terminal closed');
+							termStatus.textContent = 'Terminal closed';
+							termStatus.style.color = '#666';
+							termContainer.classList.remove('active');
+							termContainer.innerHTML = '';
+							currentTerminal = null;
+							btnClose.disabled = true;
+						}
+					};
+
 				} catch (err) {
 					log(`❌ Error: ${err.message || err}`, true);
 					statusEl.textContent = `❌ Error: ${err.message || err}`;
 				}
 			})();
 		</script>
+		<!-- Phase 0-4: xterm.js + PTY bridge bundle -->
+		<script src="pty-poc/dist/terminal.js"></script>
 	</body>
 </html>

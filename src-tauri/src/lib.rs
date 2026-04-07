@@ -13,6 +13,10 @@ mod protocol;
 /// TODO(Phase 1-2): Replace PoC direct handshake with WebSocket relay + TypeScript IExtensionHost impl
 mod exthost;
 
+/// PTY (pseudo-terminal) management — spawn shells, relay I/O to xterm.js via Tauri events.
+/// Phase 0-4: Uses portable-pty for direct Rust PTY management.
+mod pty;
+
 /// Tauriアプリケーションを構築して実行する。
 ///
 /// 以下のセットアップを行い、イベントループに入る:
@@ -32,11 +36,16 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_fs::init())
+        .manage(pty::manager::PtyManager::new())
         .register_uri_scheme_protocol("vscode-file", protocol::handle_vscode_file_protocol)
         .invoke_handler(tauri::generate_handler![
             commands::get_native_host_info,
             commands::get_window_configuration,
             commands::spawn_exthost::spawn_extension_host,
+            commands::terminal::create_terminal,
+            commands::terminal::write_terminal,
+            commands::terminal::resize_terminal,
+            commands::terminal::close_terminal,
         ])
         .setup(|_app| {
             println!("[vscodee] Tauri app started");
