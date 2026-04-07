@@ -1,5 +1,5 @@
 /*---------------------------------------------------------------------------------------------
- *  Copyright (c) VS Codee Contributors. All rights reserved.
+ *  Copyright (c) VS Codeee Contributors. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
@@ -39,7 +39,7 @@ pub fn run() {
             commands::spawn_exthost::spawn_extension_host,
         ])
         .setup(|_app| {
-            println!("[vscodee] Tauri app started");
+            println!("[vscodeee] Tauri app started");
             Ok(())
         })
         .run(tauri::generate_context!())

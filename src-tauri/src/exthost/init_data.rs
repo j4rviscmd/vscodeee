@@ -1,5 +1,5 @@
 /*---------------------------------------------------------------------------------------------
- *  Copyright (c) VS Codee Contributors. All rights reserved.
+ *  Copyright (c) VS Codeee Contributors. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
@@ -32,18 +32,18 @@ pub fn build_minimal_init_data() -> String {
         "parentPid": 0,
         "environment": {
             "isExtensionDevelopmentDebug": false,
-            "appName": "VS Codee",
+            "appName": "VS Codeee",
             "appHost": "tauri",
             "appLanguage": "en",
             "isExtensionTelemetryLoggingOnly": false,
-            "appUriScheme": "vscodee",
+            "appUriScheme": "vscodeee",
             "globalStorageHome": {
                 "scheme": "file",
-                "path": "/tmp/vscodee-poc/globalStorage"
+                "path": "/tmp/vscodeee-poc/globalStorage"
             },
             "workspaceStorageHome": {
                 "scheme": "file",
-                "path": "/tmp/vscodee-poc/workspaceStorage"
+                "path": "/tmp/vscodeee-poc/workspaceStorage"
             }
         },
         "workspace": serde_json::Value::Null,
@@ -64,7 +64,7 @@ pub fn build_minimal_init_data() -> String {
         "loggers": [],
         "logsLocation": {
             "scheme": "file",
-            "path": "/tmp/vscodee-poc/logs"
+            "path": "/tmp/vscodeee-poc/logs"
         },
         "autoStart": false,
         "remote": {
