@@ -1,8 +1,10 @@
+<div align="center">
+
 # VS Codeee
 
-<p align="center">
-  <img src="https://github.com/user-attachments/assets/7981bd25-ecf8-4abd-accc-df3fe3d7f842" alt="VS Codeee Phase 0 Feasibility Spike" width="600">
-</p>
+<img src="https://github.com/user-attachments/assets/7981bd25-ecf8-4abd-accc-df3fe3d7f842" alt="VS Codeee Phase 0 Feasibility Spike" width="600">
+
+</div>
 
 **A project to run VSCode with Tauri 2.0**
 In the process of gradual migration with Opus4.6 :robot: (2026-04-07)
