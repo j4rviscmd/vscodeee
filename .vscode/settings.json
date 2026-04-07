@@ -213,5 +213,8 @@
 		".github/skills/.local": true,
 		".agents/skills/.local": true,
 		".claude/skills/.local": true,
-	}
+	},
+	"cSpell.words": [
+		"Codee"
+	]
 }
