@@ -77,9 +77,10 @@
 				display: flex;
 				flex-direction: column;
 				align-items: center;
-				justify-content: center;
 				height: 100vh;
+				padding-top: 40px;
 				gap: 16px;
+				overflow-y: auto;
 			}
 
 			.splash h1 {
@@ -103,6 +104,7 @@
 				font-size: 11px;
 				color: #666666;
 				max-width: 600px;
+				width: 100%;
 				text-align: left;
 				background: #252526;
 				padding: 16px;
@@ -110,6 +112,8 @@
 				font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
 				line-height: 1.6;
 				white-space: pre-wrap;
+				max-height: 300px;
+				overflow-y: auto;
 			}
 
 			.splash .badge {
@@ -209,6 +213,7 @@
 				function log(msg, isError) {
 					const line = `[${new Date().toISOString().slice(11, 23)}] ${msg}`;
 					infoEl.textContent += line + '\n';
+					infoEl.scrollTop = infoEl.scrollHeight;
 					if (isError) {
 						statusEl.className = 'status error';
 					}
