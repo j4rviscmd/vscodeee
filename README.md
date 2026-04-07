@@ -11,7 +11,7 @@ Maintain the current functionality of VSCode while achieving the following
 
 ## Contributing
 
-Issues and PRs are welcome.
+Issues and PRs are welcome.<br>
 もちろん、日本語のコミュニケーション大歓迎です！
 
 ## License
