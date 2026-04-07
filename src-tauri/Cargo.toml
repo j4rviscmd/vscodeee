@@ -1,12 +1,12 @@
 [package]
-name = "vscodee"
+name = "vscodeee"
 version = "0.1.0"
 description = "VS Code fork powered by Tauri 2.0"
 authors = ["j4rviscmd"]
 edition = "2021"
 
 [lib]
-name = "vscodee_lib"
+name = "vscodeee_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
