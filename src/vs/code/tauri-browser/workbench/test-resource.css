@@ -1,0 +1,5 @@
+/* Phase 0-3: Test resource for vscode-file:// protocol verification */
+.protocol-test-marker {
+	color: #4ec9b0;
+	font-weight: bold;
+}
