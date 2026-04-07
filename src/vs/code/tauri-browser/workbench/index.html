@@ -1,0 +1,231 @@
+<!-- Copyright (c) VS Codee Contributors. All rights reserved. -->
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<meta
+			http-equiv="Content-Security-Policy"
+			content="
+				default-src
+					'self'
+					tauri:
+					https://tauri.localhost
+				;
+				img-src
+					'self'
+					data:
+					blob:
+					https:
+					tauri:
+					https://tauri.localhost
+				;
+				media-src
+					'self'
+				;
+				frame-src
+					'self'
+				;
+				script-src
+					'self'
+					'unsafe-eval'
+					'unsafe-inline'
+					blob:
+					tauri:
+					https://tauri.localhost
+				;
+				style-src
+					'self'
+					'unsafe-inline'
+				;
+				connect-src
+					'self'
+					https:
+					ws:
+					wss:
+					tauri:
+					https://tauri.localhost
+					ipc:
+				;
+				font-src
+					'self'
+					https:
+				;
+		"/>
+
+		<title>VS Codee</title>
+
+		<style>
+			/* Splash screen — minimal styling for the PoC */
+			body {
+				margin: 0;
+				padding: 0;
+				overflow: hidden;
+				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+					Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+				background-color: #1e1e1e;
+				color: #cccccc;
+			}
+
+			.splash {
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: center;
+				height: 100vh;
+				gap: 16px;
+			}
+
+			.splash h1 {
+				font-size: 28px;
+				font-weight: 300;
+				color: #ffffff;
+			}
+
+			.splash .subtitle {
+				font-size: 14px;
+				color: #858585;
+			}
+
+			.splash .status {
+				font-size: 12px;
+				color: #569cd6;
+				margin-top: 24px;
+			}
+
+			.splash .info {
+				font-size: 11px;
+				color: #666666;
+				max-width: 600px;
+				text-align: left;
+				background: #252526;
+				padding: 16px;
+				border-radius: 4px;
+				font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+				line-height: 1.6;
+				white-space: pre-wrap;
+			}
+
+			.splash .badge {
+				display: inline-block;
+				background: #007acc;
+				color: white;
+				padding: 2px 8px;
+				border-radius: 3px;
+				font-size: 11px;
+				font-weight: 600;
+			}
+
+			.splash .success {
+				color: #4ec9b0;
+			}
+
+			.splash .error {
+				color: #f48771;
+			}
+		</style>
+	</head>
+
+	<body>
+		<div class="splash" id="splash">
+			<h1>⚡ VS Codee</h1>
+			<div class="subtitle">Powered by Tauri 2.0</div>
+			<div class="status" id="status">Initializing...</div>
+			<div class="info" id="info"></div>
+		</div>
+
+		<script>
+			(async function () {
+				performance.mark('code/didStartRenderer');
+
+				const statusEl = document.getElementById('status');
+				const infoEl = document.getElementById('info');
+
+				function log(msg, isError) {
+					const line = `[${new Date().toISOString().slice(11, 23)}] ${msg}`;
+					infoEl.textContent += line + '\n';
+					if (isError) {
+						statusEl.className = 'status error';
+					}
+					console.log(line);
+				}
+
+				try {
+					// Step 1: Check Tauri API availability
+					statusEl.textContent = 'Checking Tauri API...';
+					log('Phase 0-1: Tauri Feasibility Spike');
+					log('─────────────────────────────────');
+
+					if (window.__TAURI__) {
+						log('✅ Tauri API available (window.__TAURI__)');
+					} else {
+						log('❌ Tauri API not found — not running in Tauri?', true);
+						statusEl.textContent = '❌ Tauri API not available';
+						return;
+					}
+
+					// Step 2: Invoke Rust command to get native host info
+					statusEl.textContent = 'Querying native host info...';
+					const { invoke } = window.__TAURI__.core;
+
+					const hostInfo = await invoke('get_native_host_info');
+					log(`✅ Native host info received:`);
+					log(`   platform: ${hostInfo.platform}`);
+					log(`   arch:     ${hostInfo.arch}`);
+					log(`   hostname: ${hostInfo.hostname}`);
+					log(`   homeDir:  ${hostInfo.homeDir}`);
+					log(`   tmpDir:   ${hostInfo.tmpDir}`);
+
+					// Step 3: Get window configuration
+					const windowConfig = await invoke('get_window_configuration');
+					log(`✅ Window configuration received:`);
+					log(`   windowId: ${windowConfig.windowId}`);
+					log(`   logLevel: ${windowConfig.logLevel}`);
+
+					// Step 4: Test custom protocol (vscode-file://)
+					statusEl.textContent = 'Testing custom protocol...';
+					try {
+						const protoResp = await fetch('vscode-file://vscode-app/nonexistent');
+						log(`✅ vscode-file:// protocol responded (status: ${protoResp.status})`);
+					} catch (e) {
+						log(`⚠️  vscode-file:// protocol test: ${e.message}`);
+					}
+
+					// Step 5: Report WebView capabilities
+					statusEl.textContent = 'Checking WebView capabilities...';
+					log('─────────────────────────────────');
+					log('WebView Environment:');
+					log(`   userAgent: ${navigator.userAgent.slice(0, 80)}...`);
+					log(`   platform:  ${navigator.platform}`);
+					log(`   language:  ${navigator.language}`);
+					log(`   webgl:     ${!!document.createElement('canvas').getContext('webgl2') ? 'WebGL2 ✅' : 'No WebGL2 ⚠️'}`);
+
+					// Check CSS features needed by Monaco Editor
+					const monacoFeatures = {
+						'CSS Grid': CSS.supports('display', 'grid'),
+						'CSS Variables': CSS.supports('color', 'var(--test)'),
+						'Backdrop Filter': CSS.supports('backdrop-filter', 'blur(10px)'),
+						'Container Queries': CSS.supports('container-type', 'inline-size'),
+					};
+					log('Monaco Editor CSS prerequisites:');
+					for (const [feature, supported] of Object.entries(monacoFeatures)) {
+						log(`   ${feature}: ${supported ? '✅' : '❌'}`);
+					}
+
+					// Performance measurement
+					performance.mark('code/didFinishBootstrap');
+					const bootTime = performance.measure('bootstrap', 'code/didStartRenderer', 'code/didFinishBootstrap');
+
+					log('─────────────────────────────────');
+					log(`🚀 Bootstrap completed in ${bootTime.duration.toFixed(1)}ms`);
+
+					statusEl.textContent = '✅ Feasibility Spike: All checks passed!';
+					statusEl.className = 'status success';
+
+				} catch (err) {
+					log(`❌ Error: ${err.message || err}`, true);
+					statusEl.textContent = `❌ Error: ${err.message || err}`;
+				}
+			})();
+		</script>
+	</body>
+</html>
