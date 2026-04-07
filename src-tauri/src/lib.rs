@@ -1,5 +1,5 @@
 /*---------------------------------------------------------------------------------------------
- *  Copyright (c) VS Codee Contributors. All rights reserved.
+ *  Copyright (c) VS Codeee Contributors. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
@@ -71,12 +71,11 @@ pub fn run() {
             commands::terminal::close_terminal,
         ])
         .setup(move |app| {
-            println!("[vscodee] Tauri app started");
+            println!("[vscodeee] Tauri app started");
 
             // Initialize protocol state with app root directories.
             let state = protocol::init_protocol_state(app);
             let _ = protocol_state.set(state);
-
             Ok(())
         })
         .run(tauri::generate_context!())
