@@ -37,6 +37,10 @@ pub struct WindowConfiguration {
     pub window_id: u32,
     /// ログレベル (`0` = Trace, `1` = Info, `2` = Warning, `3` = Error)。
     pub log_level: u32,
+    /// The filesystem path to the app's resource directory (Tauri resource_dir).
+    pub resource_dir: String,
+    /// The filesystem path to the frontend dist directory (where HTML/CSS/JS live).
+    pub frontend_dist: String,
 }
 
 /// ネイティブホスト環境の情報を取得する。
@@ -72,9 +76,30 @@ pub fn get_native_host_info() -> NativeHostInfo {
 ///
 /// 現在のウィンドウ設定を表す [`WindowConfiguration`]。
 #[tauri::command]
-pub fn get_window_configuration() -> WindowConfiguration {
+pub fn get_window_configuration(app_handle: tauri::AppHandle) -> WindowConfiguration {
+    use tauri::Manager;
+
+    let resource_dir = app_handle
+        .path()
+        .resource_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    // In dev mode, frontendDist is "../src/vs/code/tauri-browser/workbench"
+    // relative to src-tauri/. Resolve it from the CWD (which Tauri sets to src-tauri/).
+    let frontend_dist = std::env::current_dir()
+        .ok()
+        .map(|cwd| {
+            let dist = cwd.join("../src/vs/code/tauri-browser/workbench");
+            dist.canonicalize().unwrap_or(dist)
+        })
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
     WindowConfiguration {
         window_id: 1,
         log_level: 1, // Info
+        resource_dir,
+        frontend_dist,
     }
 }
