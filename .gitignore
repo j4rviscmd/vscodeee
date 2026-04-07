@@ -44,5 +44,9 @@ dist
 .agents/skills/.local/
 .github/skills/.local/
 
+# Tauri
+/src-tauri/target/
+/src-tauri/gen/
+
 # Worktrees
 .worktrees/
