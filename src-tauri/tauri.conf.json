@@ -24,7 +24,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data: blob: https:; script-src 'self' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' https: ws: wss: tauri:; font-src 'self' https:; frame-src 'self'"
+      "csp": "default-src 'self'; img-src 'self' data: blob: https: vscode-file:; script-src 'self' 'unsafe-eval' blob: vscode-file:; style-src 'self' 'unsafe-inline' vscode-file:; connect-src 'self' https: ws: wss: tauri: vscode-file:; font-src 'self' https: vscode-file:; frame-src 'self'"
     }
   },
   "bundle": {
