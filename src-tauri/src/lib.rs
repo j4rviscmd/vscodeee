@@ -9,6 +9,10 @@ mod commands;
 /// Custom protocol handlers for vscode-file:// etc.
 mod protocol;
 
+/// Extension Host sidecar management — spawn Node.js, communicate via named pipe.
+/// TODO(Phase 1-2): Replace PoC direct handshake with WebSocket relay + TypeScript IExtensionHost impl
+mod exthost;
+
 /// Tauriアプリケーションを構築して実行する。
 ///
 /// 以下のセットアップを行い、イベントループに入る:
@@ -32,6 +36,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_native_host_info,
             commands::get_window_configuration,
+            commands::spawn_exthost::spawn_extension_host,
         ])
         .setup(|_app| {
             println!("[vscodee] Tauri app started");

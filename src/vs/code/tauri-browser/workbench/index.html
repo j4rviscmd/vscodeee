@@ -221,6 +221,47 @@
 					statusEl.textContent = '✅ Feasibility Spike: All checks passed!';
 					statusEl.className = 'status success';
 
+					// Step 6: Extension Host Sidecar PoC (Phase 0-2)
+					log('');
+					log('Phase 0-2: Extension Host Sidecar PoC');
+					log('─────────────────────────────────');
+					log('Click the button below to spawn ExtHost and run handshake.');
+
+					const btn = document.createElement('button');
+					btn.textContent = '🔌 Spawn Extension Host';
+					btn.style.cssText = 'margin-top:12px;padding:8px 16px;background:#007acc;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;';
+					btn.onclick = async () => {
+						btn.disabled = true;
+						btn.textContent = '⏳ Spawning...';
+						statusEl.textContent = 'Spawning Extension Host...';
+						statusEl.className = 'status';
+						log('Spawning Node.js Extension Host sidecar...');
+						try {
+							const result = await invoke('spawn_extension_host');
+							if (result.success) {
+								log(`✅ Handshake succeeded!`);
+								log(`   pipe:     ${result.pipePath}`);
+								log(`   pid:      ${result.extHostPid}`);
+								log(`   duration: ${result.handshakeDurationMs}ms`);
+								log(`   messages: ${result.messagesExchanged.length}`);
+								for (const m of result.messagesExchanged) {
+									log(`     ${m}`);
+								}
+								statusEl.textContent = `✅ ExtHost handshake OK (${result.handshakeDurationMs}ms)`;
+								statusEl.className = 'status success';
+							} else {
+								log(`❌ Handshake failed: ${result.error}`, true);
+								statusEl.textContent = `❌ ExtHost: ${result.error}`;
+							}
+						} catch (e) {
+							log(`❌ invoke error: ${e}`, true);
+							statusEl.textContent = `❌ ${e}`;
+						}
+						btn.disabled = false;
+						btn.textContent = '🔌 Spawn Extension Host';
+					};
+					document.getElementById('splash').appendChild(btn);
+
 				} catch (err) {
 					log(`❌ Error: ${err.message || err}`, true);
 					statusEl.textContent = `❌ Error: ${err.message || err}`;
