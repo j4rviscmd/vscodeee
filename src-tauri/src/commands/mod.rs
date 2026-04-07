@@ -6,6 +6,8 @@
 //! Tauri commands — the Rust equivalent of VS Code's `ICommonNativeHostService`.
 //! These are exposed to the WebView via `window.__TAURI__.invoke()`.
 
+pub mod spawn_exthost;
+
 use serde::Serialize;
 
 /// Basic native host information for the workbench bootstrap.
