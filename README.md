@@ -1,6 +1,7 @@
 # VS Codeee
 
-A project to run VSCode with Tauri 2.0
+**A project to run VSCode with Tauri 2.0**
+In the process of gradual migration (2026-04-07)
 
 ## Purpose - What we want to do
 
