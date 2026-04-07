@@ -64,12 +64,6 @@ The following features depend on Chrome DevTools Protocol (CDP), which has no pu
 > [!NOTE]
 > These features may be revisited if Tauri adds CDP support in the future, or if alternative approaches become viable.
 
-## Key Technical Discoveries
-
-- **WKWebView limitation**: `fetch()` does not work for custom URI schemes, but DOM elements (`<link>`, `<img>`, `<script>`) work correctly — no impact on VS Code's resource loading
-- **PTY approach**: Rust `portable-pty` eliminates the need for a separate Node.js PTY host process
-- **BrowserView replacement**: Tauri v2 `Webview` class supports multiple WebViews in one window, covering basic browser features
-
 ## Contributing
 
 Issues and PRs are welcome.<br>
