@@ -7,6 +7,7 @@
 //! These are exposed to the WebView via `window.__TAURI__.invoke()`.
 
 pub mod spawn_exthost;
+pub mod terminal;
 
 use serde::Serialize;
 
