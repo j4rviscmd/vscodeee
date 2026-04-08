@@ -21,9 +21,7 @@ pub fn is_fullscreen(window: tauri::Window) -> Result<bool, String> {
 #[tauri::command]
 pub fn toggle_fullscreen(window: tauri::Window) -> Result<(), String> {
     let is_fs = window.is_fullscreen().map_err(|e| e.to_string())?;
-    window
-        .set_fullscreen(!is_fs)
-        .map_err(|e| e.to_string())
+    window.set_fullscreen(!is_fs).map_err(|e| e.to_string())
 }
 
 /// Check if the current window is maximized.
@@ -147,18 +145,14 @@ pub fn get_os_statistics() -> OsStatistics {
 #[tauri::command]
 pub fn read_clipboard_text(app: tauri::AppHandle) -> Result<String, String> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
-    app.clipboard()
-        .read_text()
-        .map_err(|e| e.to_string())
+    app.clipboard().read_text().map_err(|e| e.to_string())
 }
 
 /// Write text to the system clipboard.
 #[tauri::command]
 pub fn write_clipboard_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
-    app.clipboard()
-        .write_text(text)
-        .map_err(|e| e.to_string())
+    app.clipboard().write_text(text).map_err(|e| e.to_string())
 }
 
 // ─── Lifecycle ──────────────────────────────────────────────────────────
