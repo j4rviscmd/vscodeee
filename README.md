@@ -2,7 +2,7 @@
 
 # VS Codeee
 
-<img src="https://private-user-images.githubusercontent.com/127029311/575099407-08a22768-7403-420a-9eb3-a8348bd7b90a.png?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NzU2Mjk4ODMsIm5iZiI6MTc3NTYyOTU4MywicGF0aCI6Ii8xMjcwMjkzMTEvNTc1MDk5NDA3LTA4YTIyNzY4LTc0MDMtNDIwYS05ZWIzLWE4MzQ4YmQ3YjkwYS5wbmc_WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYmWC1BbXotQ3JlZGVudGlhbD1BS0lBVkNPRFlMU0E1M1BRSzRaQSUyRjIwMjYwNDA4JTJGdXMtZWFzdC0xJTJGczMlMkZhd3M0X3JlcXVlc3QmWC1BbXotRGF0ZT0yMDI2MDQwOFQwNjI2MjNaJlgtQW16LUV4cGlyZXM9MzAwJlgtQW16LVNpZ25hdHVyZT03MmI3MmY5YWJkYWQ2YzIxMDE0Y2Y1ZWVjZDVmZGJmZTAyOWJhNWViODlhMjg3ZWU0NDMyNDRmNDc3MGI1MDAwJlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCJ9.kFNKpVoUrq6DKOjlsVVkkK1iGLl1ecBb0GYd9E93bVQ" alt="VS Codeee Phase 1" width="600">
+<img src="https://private-user-images.githubusercontent.com/127029311/575099407-08a22768-7403-420a-9eb3-a8348bd7b90a.png?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NzU2Mzg3MjIsIm5iZiI6MTc3NTYzODQyMiwicGF0aCI6Ii8xMjcwMjkzMTEvNTc1MDk5NDA3LTA4YTIyNzY4LTc0MDMtNDIwYS05ZWIzLWE4MzQ4YmQ3YjkwYS5wbmc_WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYmWC1BbXotQ3JlZGVudGlhbD1BS0lBVkNPRFlMU0E1M1BRSzRaQSUyRjIwMjYwNDA4JTJGdXMtZWFzdC0xJTJGczMlMkZhd3M0X3JlcXVlc3QmWC1BbXotRGF0ZT0yMDI2MDQwOFQwODUzNDJaJlgtQW16LUV4cGlyZXM9MzAwJlgtQW16LVNpZ25hdHVyZT1kZWMxZmUzOWM1ZDk1ZjY1M2Q1NDYxZjI4ZmU3MzVmMWI5YzNjYTA3MDgwZTNhNDk3OWEwNjVhYWY4YWU1ZjFkJlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCJ9.kBaQim44lmWhsArbB3A9stskQC-tgNUpB5JgSXcdFOk" alt="VS Codeee Phase 1" width="600">
 
 </div>
 
@@ -23,17 +23,17 @@ Maintain the current functionality of VSCode while achieving the following:
 
 > **Current Phase: Phase 2A — Functional File Editing** 🚧
 
-| Phase | Name | Goal | Status |
-| :---: | ---- | ---- | :----: |
-| 0 | [Feasibility Spike](#phase-0-feasibility-spike) | Validate Tauri can host VS Code | [✅ Complete](https://github.com/j4rviscmd/vscodeee/issues/7) |
-| 1 | [Foundation Layer](#phase-1-foundation-layer) | Render workbench shell in Tauri WebView | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/9) |
-| **2A** | [**Functional File Editing**](#phase-2a-functional-file-editing) | **Open, edit, and save local files** | **🚧 In Progress** |
-| 2B | [Editing Polish](#phase-2b-editing-polish) | File watchers, remaining native methods | 📋 Planned |
-| 3 | [Window Management](#phase-3-window-management) | Multi-window, title bar, auxiliary windows | 📋 Planned |
-| 4 | [Native Host Services](#phase-4-native-host-services) | Dialogs, clipboard, shell, OS integration (~80 methods) | 📋 Planned |
-| 5 | [Process Model](#phase-5-process-model) | Extension Host, Terminal (PTY), Shared Process | 📋 Planned |
-| 6 | [Platform Features](#phase-6-platform-features) | Auto-update, native menus, system tray | 📋 Planned |
-| 7 | [Build & Packaging](#phase-7-build--packaging) | Installers, code signing, CI/CD | 📋 Planned |
+| Phase  | Name                                                             | Goal                                                    |                            Status                             |
+| :----: | ---------------------------------------------------------------- | ------------------------------------------------------- | :-----------------------------------------------------------: |
+|   0    | [Feasibility Spike](#phase-0-feasibility-spike)                  | Validate Tauri can host VS Code                         | [✅ Complete](https://github.com/j4rviscmd/vscodeee/issues/7) |
+|   1    | [Foundation Layer](#phase-1-foundation-layer)                    | Render workbench shell in Tauri WebView                 |  [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/9)  |
+| **2A** | [**Functional File Editing**](#phase-2a-functional-file-editing) | **Open, edit, and save local files**                    |                      **🚧 In Progress**                       |
+|   2B   | [Editing Polish](#phase-2b-editing-polish)                       | File watchers, remaining native methods                 |                          📋 Planned                           |
+|   3    | [Window Management](#phase-3-window-management)                  | Multi-window, title bar, auxiliary windows              |                          📋 Planned                           |
+|   4    | [Native Host Services](#phase-4-native-host-services)            | Dialogs, clipboard, shell, OS integration (~80 methods) |                          📋 Planned                           |
+|   5    | [Process Model](#phase-5-process-model)                          | Extension Host, Terminal (PTY), Shared Process          |                          📋 Planned                           |
+|   6    | [Platform Features](#phase-6-platform-features)                  | Auto-update, native menus, system tray                  |                          📋 Planned                           |
+|   7    | [Build & Packaging](#phase-7-build--packaging)                   | Installers, code signing, CI/CD                         |                          📋 Planned                           |
 
 ---
 
@@ -44,13 +44,13 @@ Maintain the current functionality of VSCode while achieving the following:
 
 **Status**: ✅ Complete (GO) — All sub-phases passed. See [Issue #7](https://github.com/j4rviscmd/vscodeee/issues/7).
 
-| Sub-Phase | Result | PR/Issue |
-| --------- | :----: | -------- |
-| 0-1: Tauri Project Init | ✅ | [PR #1](https://github.com/j4rviscmd/vscodeee/pull/1) |
-| 0-2: Extension Host Sidecar PoC | ✅ | [PR #2](https://github.com/j4rviscmd/vscodeee/pull/2) |
-| 0-3: Custom Protocol (`vscode-file://`) | ✅ | [PR #4](https://github.com/j4rviscmd/vscodeee/pull/4) |
-| 0-4: PTY Host (Rust `portable-pty`) | ✅ | [PR #3](https://github.com/j4rviscmd/vscodeee/pull/3) |
-| 0-5: BrowserView Alternative Investigation | ✅ | [Issue #5](https://github.com/j4rviscmd/vscodeee/issues/5) |
+| Sub-Phase                                  | Result | PR/Issue                                                   |
+| ------------------------------------------ | :----: | ---------------------------------------------------------- |
+| 0-1: Tauri Project Init                    |   ✅   | [PR #1](https://github.com/j4rviscmd/vscodeee/pull/1)      |
+| 0-2: Extension Host Sidecar PoC            |   ✅   | [PR #2](https://github.com/j4rviscmd/vscodeee/pull/2)      |
+| 0-3: Custom Protocol (`vscode-file://`)    |   ✅   | [PR #4](https://github.com/j4rviscmd/vscodeee/pull/4)      |
+| 0-4: PTY Host (Rust `portable-pty`)        |   ✅   | [PR #3](https://github.com/j4rviscmd/vscodeee/pull/3)      |
+| 0-5: BrowserView Alternative Investigation |   ✅   | [Issue #5](https://github.com/j4rviscmd/vscodeee/issues/5) |
 
 ### Phase 1: Foundation Layer
 
@@ -59,6 +59,7 @@ Maintain the current functionality of VSCode while achieving the following:
 Implemented the workbench shell that renders VS Code's full UI inside a Tauri 2.0 WebView with zero fatal errors.
 
 **What was built:**
+
 - Binary IPC protocol (base64-encoded VSBuffer over Tauri invoke/emit)
 - 25+ core services registered (File, Storage, Remote, Configuration, etc.)
 - Custom `vscode-file://` protocol handler for resource loading
@@ -71,13 +72,13 @@ Implemented the workbench shell that renders VS Code's full UI inside a Tauri 2.
 
 The bridge from "UI renders" to "you can actually edit files." Implements `IFileSystemProvider` with direct Tauri `invoke()` calls — same pattern as `NativeHostService`. IPC binary routing is deferred to Phase 3 (needed for Extension Host, not for file editing).
 
-| Task | Description | Depends On | Status |
-| ---- | ----------- | ---------- | :----: |
-| 2A-0: Pre-work | Kill IPC echo router + add npm plugin packages | — | 📋 |
-| 2A-1: Local FileSystem | Rust fs commands + `TauriDiskFileSystemProvider` | 2A-0 | 📋 |
-| 2A-2: UserData Persistence | Settings/state persisted to disk (real OS paths) | 2A-1 | 📋 |
-| 2A-3: File Dialogs | `tauri-plugin-dialog` + `showMessageBox` | 2A-1 | 📋 |
-| 2A-4: NativeHost Methods | Clipboard, shell, window basics (~8 methods) | 2A-0 | 📋 |
+| Task                       | Description                                      | Depends On | Status |
+| -------------------------- | ------------------------------------------------ | ---------- | :----: |
+| 2A-0: Pre-work             | Kill IPC echo router + add npm plugin packages   | —          |   📋   |
+| 2A-1: Local FileSystem     | Rust fs commands + `TauriDiskFileSystemProvider` | 2A-0       |   📋   |
+| 2A-2: UserData Persistence | Settings/state persisted to disk (real OS paths) | 2A-1       |   📋   |
+| 2A-3: File Dialogs         | `tauri-plugin-dialog` + `showMessageBox`         | 2A-1       |   📋   |
+| 2A-4: NativeHost Methods   | Clipboard, shell, window basics (~8 methods)     | 2A-0       |   📋   |
 
 ```text
 Architecture:
