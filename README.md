@@ -21,14 +21,14 @@ Maintain the current functionality of VSCode while achieving the following:
 
 ## Roadmap
 
-> **Current Phase: Phase 2A — Functional File Editing** 🚧
+> **Current Phase: Phase 2B — Editing Polish** 🚧
 
 | Phase  | Name                                                             | Goal                                                    |                            Status                             |
 | :----: | ---------------------------------------------------------------- | ------------------------------------------------------- | :-----------------------------------------------------------: |
 |   0    | [Feasibility Spike](#phase-0-feasibility-spike)                  | Validate Tauri can host VS Code                         | [✅ Complete](https://github.com/j4rviscmd/vscodeee/issues/7) |
 |   1    | [Foundation Layer](#phase-1-foundation-layer)                    | Render workbench shell in Tauri WebView                 |  [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/9)  |
-| **2A** | [**Functional File Editing**](#phase-2a-functional-file-editing) | **Open, edit, and save local files**                    |                      **🚧 In Progress**                       |
-|   2B   | [Editing Polish](#phase-2b-editing-polish)                       | File watchers, remaining native methods                 |                          📋 Planned                           |
+|   2A   | [Functional File Editing](#phase-2a-functional-file-editing)     | Open, edit, and save local files                        | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/17)  |
+| **2B** | [**Editing Polish**](#phase-2b-editing-polish)                   | **File watchers, remaining native methods**             |                      **📋 Planned**                           |
 |   3    | [Window Management](#phase-3-window-management)                  | Multi-window, title bar, auxiliary windows              |                          📋 Planned                           |
 |   4    | [Native Host Services](#phase-4-native-host-services)            | Dialogs, clipboard, shell, OS integration (~80 methods) |                          📋 Planned                           |
 |   5    | [Process Model](#phase-5-process-model)                          | Extension Host, Terminal (PTY), Shared Process          |                          📋 Planned                           |
@@ -68,17 +68,17 @@ Implemented the workbench shell that renders VS Code's full UI inside a Tauri 2.
 
 ### Phase 2A: Functional File Editing
 
-**Status**: 🚧 In Progress
+**Status**: ✅ Complete — [PR #17](https://github.com/j4rviscmd/vscodeee/pull/17)
 
 The bridge from "UI renders" to "you can actually edit files." Implements `IFileSystemProvider` with direct Tauri `invoke()` calls — same pattern as `NativeHostService`. IPC binary routing is deferred to Phase 3 (needed for Extension Host, not for file editing).
 
 | Task                       | Description                                      | Depends On | Status |
 | -------------------------- | ------------------------------------------------ | ---------- | :----: |
-| 2A-0: Pre-work             | Kill IPC echo router + add npm plugin packages   | —          |   📋   |
-| 2A-1: Local FileSystem     | Rust fs commands + `TauriDiskFileSystemProvider` | 2A-0       |   📋   |
-| 2A-2: UserData Persistence | Settings/state persisted to disk (real OS paths) | 2A-1       |   📋   |
-| 2A-3: File Dialogs         | `tauri-plugin-dialog` + `showMessageBox`         | 2A-1       |   📋   |
-| 2A-4: NativeHost Methods   | Clipboard, shell, window basics (~8 methods)     | 2A-0       |   📋   |
+| 2A-0: Pre-work             | Kill IPC echo router + add npm plugin packages   | —          |   ✅   |
+| 2A-1: Local FileSystem     | Rust fs commands + `TauriDiskFileSystemProvider` | 2A-0       |   ✅   |
+| 2A-2: UserData Persistence | Settings/state persisted to disk (real OS paths) | 2A-1       |   ✅   |
+| 2A-3: File Dialogs         | `tauri-plugin-dialog` + `showMessageBox`         | 2A-1       |   ✅   |
+| 2A-4: NativeHost Methods   | Clipboard, shell, window basics (~8 methods)     | 2A-0       |   ✅   |
 
 ```text
 Architecture:

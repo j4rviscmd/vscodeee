@@ -6,6 +6,7 @@
 //! Tauri commands — the Rust equivalent of VS Code's `ICommonNativeHostService`.
 //! These are exposed to the WebView via `window.__TAURI__.invoke()`.
 
+pub mod filesystem;
 pub mod ipc_channel;
 pub mod native_host;
 pub mod spawn_exthost;
@@ -45,6 +46,9 @@ pub struct WindowConfiguration {
     pub resource_dir: String,
     /// The filesystem path to the frontend dist directory (where HTML/CSS/JS live).
     pub frontend_dist: String,
+    /// Application data directory for user settings and state.
+    /// e.g., `~/Library/Application Support/vscodeee` on macOS.
+    pub app_data_dir: String,
 }
 
 /// ネイティブホスト環境の情報を取得する。
@@ -100,11 +104,34 @@ pub fn get_window_configuration(app_handle: tauri::AppHandle) -> WindowConfigura
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
 
+    // Application data directory for user settings/state.
+    // Uses Tauri's path resolver which maps to platform-specific locations:
+    //   macOS:   ~/Library/Application Support/vscodeee
+    //   Windows: %APPDATA%/vscodeee
+    //   Linux:   ~/.config/vscodeee
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .or_else(|_| {
+            // Fallback: use dirs crate to build a path manually
+            dirs::data_dir()
+                .map(|d| d.join("vscodeee"))
+                .ok_or(tauri::Error::UnknownPath)
+        })
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| {
+            // Last resort: use home dir + .vscodeee
+            dirs::home_dir()
+                .map(|h| h.join(".vscodeee").to_string_lossy().to_string())
+                .unwrap_or_default()
+        });
+
     WindowConfiguration {
         window_id: 1,
         log_level: 1, // Info
         resource_dir,
         frontend_dist,
+        app_data_dir,
     }
 }
 
