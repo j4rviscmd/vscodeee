@@ -60,7 +60,7 @@ import './services/url/browser/urlService.js';
 import './services/update/browser/updateService.js';
 import './services/workspaces/browser/workspacesService.js';
 import './services/workspaces/browser/workspaceEditingService.js';
-import './services/dialogs/browser/fileDialogService.js';
+import './services/dialogs/tauri-browser/fileDialogService.js';
 import '../platform/meteredConnection/browser/meteredConnectionService.js';
 import './services/clipboard/browser/clipboardService.js';
 import './services/localization/browser/localeService.js';

@@ -199,16 +199,16 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 
 	// #region Dialogs
 
-	async showMessageBox(_options: MessageBoxOptions & INativeHostOptions): Promise<MessageBoxReturnValue> {
-		notImplemented('showMessageBox');
+	async showMessageBox(options: MessageBoxOptions & INativeHostOptions): Promise<MessageBoxReturnValue> {
+		return invoke<MessageBoxReturnValue>('show_message_box', { options });
 	}
 
-	async showSaveDialog(_options: SaveDialogOptions & INativeHostOptions): Promise<SaveDialogReturnValue> {
-		notImplemented('showSaveDialog');
+	async showSaveDialog(options: SaveDialogOptions & INativeHostOptions): Promise<SaveDialogReturnValue> {
+		return invoke<SaveDialogReturnValue>('show_save_dialog', { options });
 	}
 
-	async showOpenDialog(_options: OpenDialogOptions & INativeHostOptions): Promise<OpenDialogReturnValue> {
-		notImplemented('showOpenDialog');
+	async showOpenDialog(options: OpenDialogOptions & INativeHostOptions): Promise<OpenDialogReturnValue> {
+		return invoke<OpenDialogReturnValue>('show_open_dialog', { options });
 	}
 
 	async pickFileFolderAndOpen(_options: INativeOpenDialogOptions): Promise<void> {
@@ -231,8 +231,8 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 
 	// #region OS
 
-	async showItemInFolder(_path: string): Promise<void> {
-		notImplemented('showItemInFolder');
+	async showItemInFolder(path: string): Promise<void> {
+		await invoke('fs_show_item_in_folder', { path });
 	}
 
 	async setRepresentedFilename(_path: string, _options?: INativeHostOptions): Promise<void> {

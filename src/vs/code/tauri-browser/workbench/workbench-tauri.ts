@@ -85,6 +85,7 @@
 		logLevel: number;
 		resourceDir: string;
 		frontendDist: string;
+		appDataDir: string;
 	}
 
 	interface ITauriHostInfo {
@@ -103,6 +104,7 @@
 		logLevel: windowConfig.logLevel,
 		resourceDir: windowConfig.resourceDir,
 		frontendDist: windowConfig.frontendDist,
+		appDataDir: windowConfig.appDataDir,
 		homeDir: hostInfo.homeDir,
 		tmpDir: hostInfo.tmpDir,
 	};
@@ -179,6 +181,16 @@
 
 	//#endregion
 
+	//#region Parse workspace from URL query params
+
+	// When a folder/workspace is opened, the page is reloaded with ?folder=<uri>
+	// or ?workspace=<uri> in the URL. Parse these to pass to the workbench.
+	const query = new URL(document.location.href).searchParams;
+	const folderParam = query.get('folder');
+	const workspaceParam = query.get('workspace');
+
+	//#endregion
+
 	//#region Load Workbench
 
 	try {
@@ -190,7 +202,7 @@
 
 		performance.mark('code/didLoadWorkbenchMain');
 
-		const main = new desktopModule.TauriDesktopMain(tauriConfig);
+		const main = new desktopModule.TauriDesktopMain(tauriConfig, folderParam ?? undefined, workspaceParam ?? undefined);
 		await main.open();
 
 		performance.mark('code/didStartWorkbench');
