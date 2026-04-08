@@ -18,6 +18,7 @@ tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-os = "2"
 tauri-plugin-fs = "2"
+tauri-plugin-clipboard-manager = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 hostname = "0.4"
@@ -25,3 +26,6 @@ dirs = "6"
 tokio = { version = "1", features = ["net", "process", "io-util", "rt", "macros", "time", "sync"] }
 uuid = { version = "1", features = ["v4"] }
 portable-pty = "0.9"
+base64 = "0.22"
+libc = "0.2"
+open = "5"
