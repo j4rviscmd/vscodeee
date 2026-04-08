@@ -107,6 +107,7 @@
 		appDataDir: windowConfig.appDataDir,
 		homeDir: hostInfo.homeDir,
 		tmpDir: hostInfo.tmpDir,
+		windowLabel: new URL(document.location.href).searchParams.get('windowLabel') ?? 'main',
 	};
 
 	//#endregion

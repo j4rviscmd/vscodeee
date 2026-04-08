@@ -22,6 +22,9 @@ pub struct EventBus {
 }
 
 impl EventBus {
+    /// Create a new `EventBus` with no app handle.
+    ///
+    /// The handle must be set later via [`init()`](Self::init) during Tauri `setup()`.
     pub fn new() -> Self {
         Self {
             app_handle: RwLock::new(None),
@@ -37,13 +40,31 @@ impl EventBus {
 
     /// Emit a base64-encoded message to a specific window.
     ///
-    /// The event name follows the convention `vscode:ipc_message:{window_id}`
-    /// which the TypeScript `TauriMessagePassingProtocol` listens on.
+    /// Uses `emit_to(label)` for window-scoped delivery. Looks up the Tauri
+    /// window label from the `WindowManager` via the logical window ID.
+    /// Falls back to global `emit()` if the label cannot be resolved.
     pub async fn emit_to_window(&self, window_id: u32, data: &str) {
         let handle = self.app_handle.read().await;
         if let Some(app) = handle.as_ref() {
             let event_name = format!("vscode:ipc_message:{}", window_id);
-            if let Err(e) = app.emit(&event_name, data.to_string()) {
+
+            // Resolve window label from WindowManager for scoped delivery
+            let label = {
+                use tauri::Manager;
+                match app.try_state::<std::sync::Arc<crate::window::manager::WindowManager>>() {
+                    Some(wm) => wm.label_for_id(window_id).await,
+                    None => None,
+                }
+            };
+
+            let result = if let Some(label) = label {
+                app.emit_to(&label, &event_name, data.to_string())
+            } else {
+                // Fallback: global emit (for bootstrap or unregistered windows)
+                app.emit(&event_name, data.to_string())
+            };
+
+            if let Err(e) = result {
                 log::error!(
                     target: "vscodeee::ipc::event_bus",
                     "Failed to emit to window {window_id}: {e}"

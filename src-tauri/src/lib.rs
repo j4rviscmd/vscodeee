@@ -12,6 +12,9 @@ mod protocol;
 /// IPC infrastructure — channel routing and event bus for VS Code's binary protocol.
 mod ipc;
 
+/// Window management — registry, event forwarding, and session persistence.
+mod window;
+
 /// Extension Host sidecar management — spawn Node.js, communicate via named pipe.
 /// TODO(Phase 1-2): Replace PoC direct handshake with WebSocket relay + TypeScript IExtensionHost impl
 mod exthost;
@@ -49,6 +52,9 @@ pub fn run() {
     let event_bus = ipc::event_bus::create_event_bus();
     let channel_router = Arc::new(ipc::channel::ChannelRouter::new(Arc::clone(&event_bus)));
 
+    // Window management — centralized registry for all open windows
+    let window_manager = Arc::new(window::manager::WindowManager::new());
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -59,6 +65,8 @@ pub fn run() {
         .manage(pty::manager::PtyManager::new())
         .manage(commands::file_watcher::FileWatcherState::new())
         .manage(Arc::clone(&channel_router))
+        .manage(Arc::clone(&window_manager))
+        .on_window_event(window::events::handle_window_event)
         .register_uri_scheme_protocol("vscode-file", move |ctx, request| {
             // On first call the state will have been initialized by setup().
             // If somehow called before setup (shouldn't happen), return 503.
@@ -122,6 +130,8 @@ pub fn run() {
             commands::filesystem::show_open_dialog,
             commands::window::get_extended_window_configuration,
             commands::window::open_new_window,
+            commands::window::get_all_windows,
+            commands::window::get_window_count,
             commands::file_watcher::fs_watch_start,
             commands::file_watcher::fs_watch_stop,
             commands::file_watcher::fs_watch_stop_all,
@@ -147,6 +157,14 @@ pub fn run() {
             let eb = Arc::clone(&event_bus);
             tauri::async_runtime::spawn(async move {
                 eb.init(app_handle).await;
+            });
+
+            // Register the initial window created by tauri.conf.json (label="main").
+            // Use block_on here (safe: setup() runs before the event loop starts)
+            // to avoid a race where early window events arrive before registration.
+            let wm = Arc::clone(&window_manager);
+            tauri::async_runtime::block_on(async move {
+                wm.register_initial_window("main").await;
             });
 
             Ok(())
