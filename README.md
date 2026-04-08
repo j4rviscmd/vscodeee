@@ -69,26 +69,25 @@ Implemented the workbench shell that renders VS Code's full UI inside a Tauri 2.
 
 **Status**: 🚧 In Progress
 
-The bridge from "UI renders" to "you can actually edit files." Uses Clean Architecture — VS Code's existing IPC channel abstractions are reused instead of ad-hoc Tauri commands.
+The bridge from "UI renders" to "you can actually edit files." Implements `IFileSystemProvider` with direct Tauri `invoke()` calls — same pattern as `NativeHostService`. IPC binary routing is deferred to Phase 3 (needed for Extension Host, not for file editing).
 
 | Task | Description | Depends On | Status |
 | ---- | ----------- | ---------- | :----: |
-| 2A-1: IPC Channel Routing | Upgrade Rust IPC from echo-only to real channel dispatch | — | 📋 |
-| 2A-2: FileSystem Channel | `localFilesystem` channel + `file://` scheme provider | 2A-1 | 📋 |
-| 2A-3: File Dialogs | `tauri-plugin-dialog` for open/save | 2A-2 | 📋 |
-| 2A-4: UserData Persistence | Settings/state persisted to disk (real OS paths) | 2A-2 | 📋 |
-| 2A-5: NativeHost Methods | Clipboard, shell, window basics (~8 methods) | — | 📋 |
+| 2A-0: Pre-work | Kill IPC echo router + add npm plugin packages | — | 📋 |
+| 2A-1: Local FileSystem | Rust fs commands + `TauriDiskFileSystemProvider` | 2A-0 | 📋 |
+| 2A-2: UserData Persistence | Settings/state persisted to disk (real OS paths) | 2A-1 | 📋 |
+| 2A-3: File Dialogs | `tauri-plugin-dialog` + `showMessageBox` | 2A-1 | 📋 |
+| 2A-4: NativeHost Methods | Clipboard, shell, window basics (~8 methods) | 2A-0 | 📋 |
 
 ```text
 Architecture:
 
   TypeScript (WebView)                    Rust (Backend)
-  ┌─────────────────────┐                ┌──────────────────────┐
-  │ DiskFileSystemClient │──── IPC ──────▶│ ChannelRouter        │
-  │ (existing VS Code)   │   invoke/emit  │   ↓                  │
-  └─────────────────────┘                │ localFilesystem      │
-                                         │   ↓ std::fs          │
-                                         │ Local Disk           │
+  ┌──────────────────────────┐           ┌──────────────────────┐
+  │ TauriDiskFileSystemProvider│          │ #[tauri::command]     │
+  │ implements IFileSystem-   │─invoke()─▶│ fs_stat, fs_read_file │
+  │ Provider                  │          │   ↓ tokio::fs         │
+  └──────────────────────────┘           │ Local Disk            │
                                          └──────────────────────┘
 ```
 
