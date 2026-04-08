@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.vscodeee.app",
   "build": {
-    "frontendDist": "../src/vs/code/tauri-browser/workbench",
+    "frontendDist": "../out",
     "beforeDevCommand": "",
-    "beforeBuildCommand": ""
+    "beforeBuildCommand": "node build/next/index.ts transpile"
   },
   "app": {
     "withGlobalTauri": true,
@@ -14,6 +14,7 @@
       {
         "label": "main",
         "title": "VS Codeee",
+        "url": "vs/code/tauri-browser/workbench/workbench-tauri.html",
         "width": 1280,
         "height": 800,
         "minWidth": 400,
@@ -24,7 +25,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data: blob: https: vscode-file:; script-src 'self' 'unsafe-eval' blob: vscode-file:; style-src 'self' 'unsafe-inline' vscode-file:; connect-src 'self' https: ws: wss: tauri: vscode-file:; font-src 'self' https: vscode-file:; frame-src 'self'"
+      "csp": "default-src 'self'; img-src 'self' data: blob: https: vscode-file:; script-src 'self' 'unsafe-eval' 'unsafe-inline' blob: vscode-file:; style-src 'self' 'unsafe-inline' vscode-file:; connect-src 'self' https: ws: wss: tauri: ipc: vscode-file:; font-src 'self' https: vscode-file:; frame-src 'self'"
     }
   },
   "bundle": {

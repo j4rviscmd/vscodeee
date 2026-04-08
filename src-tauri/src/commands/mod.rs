@@ -6,10 +6,14 @@
 //! Tauri commands — the Rust equivalent of VS Code's `ICommonNativeHostService`.
 //! These are exposed to the WebView via `window.__TAURI__.invoke()`.
 
+pub mod ipc_channel;
+pub mod native_host;
 pub mod spawn_exthost;
 pub mod terminal;
+pub mod window;
 
 use serde::Serialize;
+use std::path::Path;
 
 /// Basic native host information for the workbench bootstrap.
 /// This replaces the subset of `INativeWindowConfiguration` needed at startup.
@@ -85,12 +89,12 @@ pub fn get_window_configuration(app_handle: tauri::AppHandle) -> WindowConfigura
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
 
-    // In dev mode, frontendDist is "../src/vs/code/tauri-browser/workbench"
-    // relative to src-tauri/. Resolve it from the CWD (which Tauri sets to src-tauri/).
+    // In dev mode, frontendDist is "../out" relative to src-tauri/.
+    // This matches tauri.conf.json and is where transpiled output lives.
     let frontend_dist = std::env::current_dir()
         .ok()
         .map(|cwd| {
-            let dist = cwd.join("../src/vs/code/tauri-browser/workbench");
+            let dist = cwd.join("../out");
             dist.canonicalize().unwrap_or(dist)
         })
         .map(|p| p.to_string_lossy().to_string())
@@ -102,4 +106,44 @@ pub fn get_window_configuration(app_handle: tauri::AppHandle) -> WindowConfigura
         resource_dir,
         frontend_dist,
     }
+}
+
+/// Recursively collect `.css` file paths under a directory.
+fn collect_css_files(dir: &Path, root: &Path, result: &mut Vec<String>) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_css_files(&path, root, result);
+        } else if path.extension().map_or(false, |ext| ext == "css") {
+            if let Ok(rel) = path.strip_prefix(root) {
+                result.push(rel.to_string_lossy().to_string());
+            }
+        }
+    }
+}
+
+/// List all CSS module paths for the CSS import map.
+///
+/// Scans the transpiled output directory (`out/`) for `.css` files and returns
+/// paths relative to `out/` (e.g., `vs/base/browser/ui/widget.css`).
+/// The bootstrap uses these to create a CSS import map, mirroring the
+/// Electron `cssModules` mechanism.
+#[tauri::command]
+pub fn list_css_modules() -> Vec<String> {
+    let out_dir = std::env::current_dir()
+        .ok()
+        .map(|cwd| {
+            let dir = cwd.join("../out");
+            dir.canonicalize().unwrap_or(dir)
+        })
+        .unwrap_or_default();
+
+    let mut modules = Vec::new();
+    collect_css_files(&out_dir, &out_dir, &mut modules);
+    modules.sort();
+    modules
 }
