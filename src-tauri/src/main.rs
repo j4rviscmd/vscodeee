@@ -4,14 +4,14 @@
  *--------------------------------------------------------------------------------------------*/
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-//! VS Codeee デスクトップアプリケーションのエントリポイント。
+//! Entry point for the VS Codeee desktop application.
 //!
-//! リリースビルドでは `windows_subsystem = "windows"` により
-//! Windowsでのコンソールウィンドウ表示を抑制する。
+//! In release builds, `windows_subsystem = "windows"` suppresses
+//! the console window on Windows.
 
-/// アプリケーションのメインエントリポイント。
+/// Application main entry point.
 ///
-/// [`vscodeee_lib::run()`] に処理を委譲し、Tauriアプリケーションを起動する。
+/// Delegates to [`vscodeee_lib::run()`] to launch the Tauri application.
 fn main() {
     vscodeee_lib::run()
 }
