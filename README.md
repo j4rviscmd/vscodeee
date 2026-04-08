@@ -38,7 +38,7 @@ Maintain the current functionality of VSCode while achieving the following:
 ---
 
 <details>
-<summary><h2>Phase Details</h2></summary>
+<summary>Phase Details</summary>
 
 ### Phase 0: Feasibility Spike
 
