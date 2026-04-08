@@ -103,6 +103,18 @@ pub fn run() {
             commands::native_host::exit_app,
             commands::native_host::is_port_free,
             commands::native_host::find_free_port,
+            commands::filesystem::fs_stat,
+            commands::filesystem::fs_read_dir,
+            commands::filesystem::fs_read_file,
+            commands::filesystem::fs_write_file,
+            commands::filesystem::fs_mkdir,
+            commands::filesystem::fs_delete,
+            commands::filesystem::fs_rename,
+            commands::filesystem::fs_copy,
+            commands::filesystem::fs_show_item_in_folder,
+            commands::filesystem::show_message_box,
+            commands::filesystem::show_save_dialog,
+            commands::filesystem::show_open_dialog,
             commands::window::get_extended_window_configuration,
         ])
         .setup(move |app| {
