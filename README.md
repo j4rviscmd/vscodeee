@@ -21,15 +21,15 @@ Maintain the current functionality of VSCode while achieving the following:
 
 ## Roadmap
 
-> **Current Phase: Phase 2B — Editing Polish** 🚧
+> **Current Phase: Phase 3 — Window Management** 🚧
 
 | Phase  | Name                                                             | Goal                                                    |                            Status                             |
 | :----: | ---------------------------------------------------------------- | ------------------------------------------------------- | :-----------------------------------------------------------: |
 |   0    | [Feasibility Spike](#phase-0-feasibility-spike)                  | Validate Tauri can host VS Code                         | [✅ Complete](https://github.com/j4rviscmd/vscodeee/issues/7) |
 |   1    | [Foundation Layer](#phase-1-foundation-layer)                    | Render workbench shell in Tauri WebView                 |  [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/9)  |
 |   2A   | [Functional File Editing](#phase-2a-functional-file-editing)     | Open, edit, and save local files                        | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/17)  |
-| **2B** | [**Editing Polish**](#phase-2b-editing-polish)                   | **File watchers, remaining native methods**             |                      **📋 Planned**                           |
-|   3    | [Window Management](#phase-3-window-management)                  | Multi-window, title bar, auxiliary windows              |                          📋 Planned                           |
+| **2B** | [**Editing Polish**](#phase-2b-editing-polish)                   | **File watchers, remaining native methods**             | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/25)  |
+| **3**  | [**Window Management**](#phase-3-window-management)              | **Multi-window, title bar, auxiliary windows**          |                        **🚧 In Progress**                     |
 |   4    | [Native Host Services](#phase-4-native-host-services)            | Dialogs, clipboard, shell, OS integration (~80 methods) |                          📋 Planned                           |
 |   5    | [Process Model](#phase-5-process-model)                          | Extension Host, Terminal (PTY), Shared Process          |                          📋 Planned                           |
 |   6    | [Platform Features](#phase-6-platform-features)                  | Auto-update, native menus, system tray                  |                          📋 Planned                           |
@@ -94,7 +94,15 @@ Architecture:
 
 ### Phase 2B: Editing Polish
 
-File watchers (Rust `notify` crate), remaining NativeHostService methods (~30), storage backend improvements.
+**Status**: ✅ Complete — See [PR #25](https://github.com/j4rviscmd/vscodeee/pull/25).
+
+| Sub-task                   | Description                                               | Depends on | Status |
+| -------------------------- | --------------------------------------------------------- | ---------- | :----: |
+| File Watcher               | Rust `notify` crate + `TauriWatcher` TypeScript bridge    | —          |   ✅   |
+| Trash Support              | `trash` crate in `DiskFileSystemProvider`                 | —          |   ✅   |
+| New Window (Cmd+Shift+N)   | `invoke('open_new_window')` via `TauriWorkspaceProvider`  | —          |   ✅   |
+| NativeHost Methods         | `installShellCommand`, `killProcess`, `relaunch`, etc.    | —          |   ✅   |
+| Runtime Bug Fixes          | Import strategy, watcher error handling, compilation fixes| —          |   ✅   |
 
 ### Phase 3: Window Management
 
