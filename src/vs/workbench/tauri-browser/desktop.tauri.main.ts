@@ -23,8 +23,9 @@ import { FileService } from '../../platform/files/common/fileService.js';
 import { IFileService } from '../../platform/files/common/files.js';
 import { IUriIdentityService } from '../../platform/uriIdentity/common/uriIdentity.js';
 import { UriIdentityService } from '../../platform/uriIdentity/common/uriIdentityService.js';
-import { IWorkspaceContextService, toWorkspaceIdentifier } from '../../platform/workspace/common/workspace.js';
+import { IWorkspaceContextService, UNKNOWN_EMPTY_WINDOW_WORKSPACE } from '../../platform/workspace/common/workspace.js';
 import { IWorkbenchConfigurationService } from '../services/configuration/common/configuration.js';
+import { getSingleFolderWorkspaceIdentifier, getWorkspaceIdentifier } from '../services/workspaces/browser/workspaces.js';
 import { IStorageService } from '../../platform/storage/common/storage.js';
 import { WorkspaceTrustEnablementService, WorkspaceTrustManagementService } from '../services/workspaces/common/workspaceTrust.js';
 import { IWorkspaceTrustEnablementService, IWorkspaceTrustManagementService } from '../../platform/workspace/common/workspaceTrust.js';
@@ -42,10 +43,8 @@ import { RemoteConnectionType } from '../../platform/remote/common/remoteAuthori
 import { RemoteFileSystemProviderClient } from '../services/remote/common/remoteFileSystemProviderClient.js';
 import { URI } from '../../base/common/uri.js';
 import { Schemas } from '../../base/common/network.js';
-import { IndexedDB } from '../../base/browser/indexedDB.js';
-import { IndexedDBFileSystemProvider } from '../../platform/files/browser/indexedDBFileSystemProvider.js';
-import { InMemoryFileSystemProvider } from '../../platform/files/common/inMemoryFilesystemProvider.js';
 import { FileUserDataProvider } from '../../platform/userData/common/fileUserDataProvider.js';
+import { TauriDiskFileSystemProvider } from '../services/files/tauri-browser/diskFileSystemProvider.js';
 import { IUserDataProfilesService } from '../../platform/userDataProfile/common/userDataProfile.js';
 import { BrowserUserDataProfilesService } from '../../platform/userDataProfile/browser/userDataProfile.js';
 import { UserDataProfileService } from '../services/userDataProfile/common/userDataProfileService.js';
@@ -66,14 +65,28 @@ import { TauriIPCMainProcessService } from '../../platform/ipc/tauri-browser/mai
 import { TauriNativeHostService } from '../../platform/native/tauri-browser/nativeHostService.js';
 import { TauriWorkbenchEnvironmentService, ITauriWindowConfiguration } from '../services/environment/tauri-browser/environmentService.js';
 import { IBrowserWorkbenchEnvironmentService } from '../services/environment/browser/environmentService.js';
-import { IWorkbenchConstructionOptions } from '../browser/web.api.js';
+import { IWorkbenchConstructionOptions, IWorkspace, IWorkspaceProvider } from '../browser/web.api.js';
+import { isFolderToOpen, isWorkspaceToOpen } from '../../platform/window/common/window.js';
 
 export class TauriDesktopMain extends Disposable {
 
+	private readonly workspace: IWorkspace;
+
 	constructor(
-		private readonly tauriConfig: ITauriWindowConfiguration
+		private readonly tauriConfig: ITauriWindowConfiguration,
+		folderUri?: string,
+		workspaceUri?: string
 	) {
 		super();
+
+		// Determine initial workspace from URL query params
+		if (folderUri) {
+			this.workspace = { folderUri: URI.parse(folderUri) };
+		} else if (workspaceUri) {
+			this.workspace = { workspaceUri: URI.parse(workspaceUri) };
+		} else {
+			this.workspace = undefined;
+		}
 	}
 
 	async open(): Promise<void> {
@@ -110,9 +123,16 @@ export class TauriDesktopMain extends Disposable {
 		serviceCollection.set(IMainProcessService, mainProcessService);
 
 		// --- Environment ---
-		const logsHome = URI.file(this.tauriConfig.tmpDir ?? '/tmp').with({ scheme: Schemas.vscodeUserData, path: '/logs' });
+		const appDataDir = this.tauriConfig.appDataDir ?? this.tauriConfig.tmpDir ?? '/tmp';
+		const logsHome = URI.file(`${appDataDir}/logs`);
 		const workspaceId = 'tauri-default';
-		const workbenchOptions: IWorkbenchConstructionOptions = {};
+
+		// Workspace provider handles Open Folder / Open Workspace by reloading
+		// the page with ?folder= or ?workspace= query params (same pattern as VS Code web).
+		const workspaceProvider = new TauriWorkspaceProvider(this.workspace);
+		const workbenchOptions: IWorkbenchConstructionOptions = {
+			workspaceProvider,
+		};
 
 		const environmentService = new TauriWorkbenchEnvironmentService(
 			this.tauriConfig,
@@ -155,20 +175,9 @@ export class TauriDesktopMain extends Disposable {
 		const signService = new SignService(productService);
 		serviceCollection.set(ISignService, signService);
 
-		// Local files — IndexedDB for browser-compat, InMemory fallback
-		const tauriFileStore = 'vscode-tauri-fs';
-		let indexedDB: IndexedDB | undefined;
-		try {
-			indexedDB = await IndexedDB.create('vscode-tauri-db', 1, [tauriFileStore]);
-		} catch (error) {
-			logService.error('Could not create IndexedDB', error);
-		}
-		if (indexedDB) {
-			const indexedDBProvider = this._register(new IndexedDBFileSystemProvider(Schemas.file, indexedDB, tauriFileStore, false));
-			fileService.registerProvider(Schemas.file, indexedDBProvider);
-		} else {
-			fileService.registerProvider(Schemas.file, new InMemoryFileSystemProvider());
-		}
+		// Local files — real disk I/O via Rust Tauri commands
+		const diskFileSystemProvider = this._register(new TauriDiskFileSystemProvider());
+		fileService.registerProvider(Schemas.file, diskFileSystemProvider);
 
 		// URI Identity
 		const uriIdentityService = new UriIdentityService(fileService);
@@ -181,9 +190,8 @@ export class TauriDesktopMain extends Disposable {
 		const userDataProfileService = new UserDataProfileService(userDataProfilesService.defaultProfile);
 		serviceCollection.set(IUserDataProfileService, userDataProfileService);
 
-		// User data provider
-		const inMemoryUserData = new InMemoryFileSystemProvider();
-		fileService.registerProvider(Schemas.vscodeUserData, this._register(new FileUserDataProvider(Schemas.file, inMemoryUserData, Schemas.vscodeUserData, userDataProfilesService, uriIdentityService, logService)));
+		// User data provider — wraps the same disk provider for vscodeUserData scheme
+		fileService.registerProvider(Schemas.vscodeUserData, this._register(new FileUserDataProvider(Schemas.file, diskFileSystemProvider, Schemas.vscodeUserData, userDataProfilesService, uriIdentityService, logService)));
 
 		// --- Remote ---
 		const remoteAuthorityResolverService = new RemoteAuthorityResolverService(false, undefined, undefined, undefined, productService, logService);
@@ -199,7 +207,8 @@ export class TauriDesktopMain extends Disposable {
 		this._register(RemoteFileSystemProviderClient.register(remoteAgentService, fileService, logService));
 
 		// --- Configuration ---
-		const workspace = toWorkspaceIdentifier(undefined, false);
+		// Initialize workspace from the provider — folder, workspace file, or empty
+		const workspace = this.resolveWorkspaceIdentifier();
 		const configurationCache = new ConfigurationCache([Schemas.file, Schemas.vscodeUserData, Schemas.tmp], environmentService, fileService);
 		const configurationService = new WorkspaceService(
 			{ remoteAuthority: environmentService.remoteAuthority, configurationCache },
@@ -236,5 +245,84 @@ export class TauriDesktopMain extends Disposable {
 		this._register(workspaceTrustManagementService.onDidChangeTrust(() => configurationService.updateWorkspaceTrust(workspaceTrustManagementService.isWorkspaceTrusted())));
 
 		return { serviceCollection, logService, storageService };
+	}
+
+	private resolveWorkspaceIdentifier() {
+		if (this.workspace && isFolderToOpen(this.workspace)) {
+			return getSingleFolderWorkspaceIdentifier(this.workspace.folderUri);
+		}
+		if (this.workspace && isWorkspaceToOpen(this.workspace)) {
+			return getWorkspaceIdentifier(this.workspace.workspaceUri);
+		}
+		return UNKNOWN_EMPTY_WINDOW_WORKSPACE;
+	}
+}
+
+/**
+ * Workspace provider for Tauri — handles Open Folder / Open Workspace
+ * by reloading the page with ?folder= or ?workspace= query params.
+ * Same pattern as VS Code web's `WorkspaceProvider`.
+ */
+class TauriWorkspaceProvider implements IWorkspaceProvider {
+
+	private static readonly QUERY_PARAM_FOLDER = 'folder';
+	private static readonly QUERY_PARAM_WORKSPACE = 'workspace';
+	private static readonly QUERY_PARAM_EMPTY_WINDOW = 'ew';
+
+	readonly trusted = true;
+	readonly payload: object | undefined = undefined;
+
+	constructor(readonly workspace: IWorkspace) { }
+
+	async open(workspace: IWorkspace, options?: { reuse?: boolean; payload?: object }): Promise<boolean> {
+		if (options?.reuse && this.isSame(this.workspace, workspace)) {
+			return true;
+		}
+
+		const targetHref = this.createTargetUrl(workspace);
+		if (targetHref) {
+			if (options?.reuse) {
+				mainWindow.location.href = targetHref;
+				return true;
+			} else {
+				// Tauri doesn't support opening new windows via window.open,
+				// so always reload the current window.
+				mainWindow.location.href = targetHref;
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private createTargetUrl(workspace: IWorkspace): string | undefined {
+		const base = `${document.location.origin}${document.location.pathname}`;
+
+		if (!workspace) {
+			return `${base}?${TauriWorkspaceProvider.QUERY_PARAM_EMPTY_WINDOW}=true`;
+		}
+
+		if (isFolderToOpen(workspace)) {
+			return `${base}?${TauriWorkspaceProvider.QUERY_PARAM_FOLDER}=${encodeURIComponent(workspace.folderUri.toString())}`;
+		}
+
+		if (isWorkspaceToOpen(workspace)) {
+			return `${base}?${TauriWorkspaceProvider.QUERY_PARAM_WORKSPACE}=${encodeURIComponent(workspace.workspaceUri.toString())}`;
+		}
+
+		return undefined;
+	}
+
+	private isSame(a: IWorkspace, b: IWorkspace): boolean {
+		if (!a || !b) {
+			return a === b;
+		}
+		if (isFolderToOpen(a) && isFolderToOpen(b)) {
+			return a.folderUri.toString() === b.folderUri.toString();
+		}
+		if (isWorkspaceToOpen(a) && isWorkspaceToOpen(b)) {
+			return a.workspaceUri.toString() === b.workspaceUri.toString();
+		}
+		return false;
 	}
 }

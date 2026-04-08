@@ -27,6 +27,7 @@ export interface ITauriWindowConfiguration {
 	readonly logLevel: number;
 	readonly resourceDir: string;
 	readonly frontendDist: string;
+	readonly appDataDir: string;
 	readonly homeDir?: string;
 	readonly tmpDir?: string;
 }
@@ -36,6 +37,13 @@ export interface ITauriWindowConfiguration {
  *
  * Overrides filesystem-related URIs to point at real local paths
  * rather than the in-memory/virtual paths used by the pure browser version.
+ *
+ * Path layout follows native VS Code conventions:
+ *   appDataDir/User/           — user settings, keybindings, snippets
+ *   appDataDir/User/globalStorage/ — global state
+ *   appDataDir/User/workspaceStorage/ — workspace state
+ *   appDataDir/logs/           — log files
+ *   appDataDir/CachedData/     — cached data
  */
 export class TauriWorkbenchEnvironmentService extends BrowserWorkbenchEnvironmentService implements IBrowserWorkbenchEnvironmentService {
 
@@ -68,10 +76,51 @@ export class TauriWorkbenchEnvironmentService extends BrowserWorkbenchEnvironmen
 	 * User's home directory (from Rust `dirs::home_dir()`).
 	 */
 	@memoize
-	get userHome(): URI {
+	override get userHome(): URI {
 		if (this.tauriConfig.homeDir) {
 			return URI.file(this.tauriConfig.homeDir);
 		}
 		return super.userRoamingDataHome;
+	}
+
+	/**
+	 * User roaming data home — where settings, keybindings, snippets live.
+	 * e.g., `~/Library/Application Support/vscodeee/User` on macOS.
+	 */
+	@memoize
+	override get userRoamingDataHome(): URI {
+		return URI.file(`${this.tauriConfig.appDataDir}/User`);
+	}
+
+	/**
+	 * Cache home directory.
+	 */
+	@memoize
+	override get cacheHome(): URI {
+		return URI.file(`${this.tauriConfig.appDataDir}/CachedData`);
+	}
+
+	/**
+	 * Workspace storage home — per-workspace state.
+	 */
+	@memoize
+	override get workspaceStorageHome(): URI {
+		return URI.file(`${this.tauriConfig.appDataDir}/User/workspaceStorage`);
+	}
+
+	/**
+	 * Local history home.
+	 */
+	@memoize
+	override get localHistoryHome(): URI {
+		return URI.file(`${this.tauriConfig.appDataDir}/User/History`);
+	}
+
+	/**
+	 * State resource — global persistent state.
+	 */
+	@memoize
+	override get stateResource(): URI {
+		return URI.file(`${this.tauriConfig.appDataDir}/User/globalStorage/state.vscdb`);
 	}
 }
