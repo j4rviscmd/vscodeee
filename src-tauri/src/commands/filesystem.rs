@@ -497,9 +497,7 @@ pub async fn show_message_box(
     //   buttons[0] = "Save" (OK/Yes)
     //   buttons[1] = "Don't Save" (No)
     //   buttons[2] = "Cancel" (Cancel)
-    let cancel_id = options
-        .cancel_id
-        .unwrap_or((buttons.len() - 1) as u32) as usize;
+    let cancel_id = options.cancel_id.unwrap_or((buttons.len() - 1) as u32) as usize;
     let default_id = options.default_id.unwrap_or(0) as usize;
 
     // Pick the "no" button: the first button that isn't default or cancel.
@@ -524,9 +522,10 @@ pub async fn show_message_box(
 
     let result = rx.await.map_err(|e| format!("Unknown: {}", e))?;
     let response = match result {
-        MessageDialogResult::Custom(ref s) => {
-            buttons_clone.iter().position(|b| b == s).unwrap_or(cancel_id) as u32
-        }
+        MessageDialogResult::Custom(ref s) => buttons_clone
+            .iter()
+            .position(|b| b == s)
+            .unwrap_or(cancel_id) as u32,
         MessageDialogResult::Yes | MessageDialogResult::Ok => default_id as u32,
         MessageDialogResult::No => no_idx as u32,
         MessageDialogResult::Cancel => cancel_id as u32,

@@ -23,27 +23,26 @@ mod logging;
 /// Phase 0-4: Uses portable-pty for direct Rust PTY management.
 mod pty;
 
-/// Tauriアプリケーションを構築して実行する。
+/// Build and run the Tauri application.
 ///
-/// 以下のセットアップを行い、イベントループに入る:
+/// Performs the following setup before entering the event loop:
 ///
-/// 1. **プラグイン登録** — shell, dialog, os, fs の各Tauriプラグインを初期化
-/// 2. **カスタムプロトコル** — `vscode-file://` スキームを登録し、ローカルファイルへの
-///    安全なアクセスを提供 ([`protocol::handle_vscode_file_protocol`])
-/// 3. **コマンドハンドラ** — WebViewから `invoke()` で呼び出せるTauriコマンドを登録
-/// 4. **セットアップ** — プロトコル状態の初期化（valid rootsの登録）
+/// 1. **Plugin registration** — Initialize shell, dialog, os, fs Tauri plugins
+/// 2. **Custom protocol** — Register the `vscode-file://` scheme for secure
+///    access to local files ([`protocol::handle_vscode_file_protocol`])
+/// 3. **Command handlers** — Register Tauri commands callable from the WebView via `invoke()`
+/// 4. **Setup** — Initialize protocol state (register valid roots)
 ///
 /// # Panics
 ///
-/// Tauriアプリケーションの実行中にエラーが発生した場合にパニックする。
+/// Panics if an error occurs while running the Tauri application.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Pre-build protocol state so the handler closure can capture it.
     // We use a OnceCell to defer actual root registration until setup(),
     // where the Tauri App handle is available.
-    use std::sync::Arc;
-    let protocol_state: Arc<std::sync::OnceLock<Arc<protocol::ProtocolState>>> =
-        Arc::new(std::sync::OnceLock::new());
+    use std::sync::{Arc, OnceLock};
+    let protocol_state: Arc<OnceLock<Arc<protocol::ProtocolState>>> = Arc::new(OnceLock::new());
     let state_for_handler = Arc::clone(&protocol_state);
 
     // IPC infrastructure — channel router + event bus
