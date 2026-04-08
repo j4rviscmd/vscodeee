@@ -64,7 +64,7 @@ export class TauriFileDialogService extends AbstractFileDialogService implements
 			configurationService, fileService, openerService, dialogService, languageService, workspacesService, labelService, pathService, commandService, editorService, codeEditorService, logService, remoteAgentService);
 	}
 
-	private toNativeOpenDialogOptions(options: IPickAndOpenOptions, properties: string[]): OpenDialogOptions & INativeHostOptions {
+	private toNativeOpenDialogOptions(options: IPickAndOpenOptions, properties: Array<'openFile' | 'openDirectory' | 'multiSelections' | 'showHiddenFiles' | 'createDirectory' | 'promptToCreate' | 'noResolveAliases' | 'treatPackageAsDirectory' | 'dontAddToRecent'>): OpenDialogOptions & INativeHostOptions {
 		return {
 			title: undefined,
 			defaultPath: options.defaultUri?.fsPath,

@@ -28,10 +28,10 @@ use super::{init_data, ExtHostError};
 
 /// Result of a successful handshake.
 pub struct HandshakeResult {
-	/// Human-readable log of each message exchanged.
-	pub messages: Vec<String>,
-	/// Total handshake duration in milliseconds.
-	pub duration_ms: u64,
+    /// Human-readable log of each message exchanged.
+    pub messages: Vec<String>,
+    /// Total handshake duration in milliseconds.
+    pub duration_ms: u64,
 }
 
 /// Application-level message types carried inside Regular transport messages.
@@ -44,106 +44,106 @@ const MESSAGE_TYPE_READY: u8 = 0x02;
 /// Returns `Ok(HandshakeResult)` if the full 4-message exchange completes,
 /// or an `ExtHostError` on timeout, protocol violation, or IO error.
 pub async fn run_handshake(stream: &mut UnixStream) -> Result<HandshakeResult, ExtHostError> {
-	let start = Instant::now();
-	let mut messages = Vec::new();
-	let mut rust_msg_id: u32 = 0;
-	let mut last_exthost_msg_id: u32 = 0;
+    let start = Instant::now();
+    let mut messages = Vec::new();
+    let mut rust_msg_id: u32 = 0;
+    let mut last_exthost_msg_id: u32 = 0;
 
-	let (mut reader, mut writer) = stream.split();
+    let (mut reader, mut writer) = stream.split();
 
-	// Step 1: Wait for Resume (may also get KeepAlive — skip non-Resume)
-	// PersistentProtocol sends Resume immediately upon construction (ipc.net.ts:929-931)
-	let resume_timeout = tokio::time::Duration::from_secs(30);
-	tokio::time::timeout(resume_timeout, async {
-		loop {
-			let msg = protocol::read_message(&mut reader).await?;
-			let log_line = format!(
-				"recv: type={:?} id={} ack={} data_len={}",
-				msg.msg_type,
-				msg.id,
-				msg.ack,
-				msg.data.len()
-			);
-			log::debug!(target: "vscodeee::exthost::handshake", "{log_line}");
-			messages.push(log_line);
+    // Step 1: Wait for Resume (may also get KeepAlive — skip non-Resume)
+    // PersistentProtocol sends Resume immediately upon construction (ipc.net.ts:929-931)
+    let resume_timeout = tokio::time::Duration::from_secs(30);
+    tokio::time::timeout(resume_timeout, async {
+        loop {
+            let msg = protocol::read_message(&mut reader).await?;
+            let log_line = format!(
+                "recv: type={:?} id={} ack={} data_len={}",
+                msg.msg_type,
+                msg.id,
+                msg.ack,
+                msg.data.len()
+            );
+            log::debug!(target: "vscodeee::exthost::handshake", "{log_line}");
+            messages.push(log_line);
 
-			match msg.msg_type {
-				ProtocolMessageType::Resume => {
-					log::info!(target: "vscodeee::exthost::handshake", "Received Resume");
-					return Ok::<(), ExtHostError>(());
-				}
-				ProtocolMessageType::KeepAlive => continue,
-				other => {
-					return Err(ExtHostError::Protocol(format!(
-						"Expected Resume, got {other:?}"
-					)));
-				}
-			}
-		}
-	})
-	.await
-	.map_err(|_| ExtHostError::Timeout)??;
+            match msg.msg_type {
+                ProtocolMessageType::Resume => {
+                    log::info!(target: "vscodeee::exthost::handshake", "Received Resume");
+                    return Ok::<(), ExtHostError>(());
+                }
+                ProtocolMessageType::KeepAlive => continue,
+                other => {
+                    return Err(ExtHostError::Protocol(format!(
+                        "Expected Resume, got {other:?}"
+                    )));
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|_| ExtHostError::Timeout)??;
 
-	// Step 2: Wait for Ready (Regular message with body=[0x02])
-	// Sent by connectToRenderer() at extensionHostProcess.ts:393
-	let ready_timeout = tokio::time::Duration::from_secs(30);
-	tokio::time::timeout(ready_timeout, async {
-		loop {
-			let msg = protocol::read_message(&mut reader).await?;
-			let log_line = format!(
-				"recv: type={:?} id={} ack={} body={:?}",
-				msg.msg_type,
-				msg.id,
-				msg.ack,
-				&msg.data[..msg.data.len().min(16)]
-			);
-			log::debug!(target: "vscodeee::exthost::handshake", "{log_line}");
-			messages.push(log_line);
+    // Step 2: Wait for Ready (Regular message with body=[0x02])
+    // Sent by connectToRenderer() at extensionHostProcess.ts:393
+    let ready_timeout = tokio::time::Duration::from_secs(30);
+    tokio::time::timeout(ready_timeout, async {
+        loop {
+            let msg = protocol::read_message(&mut reader).await?;
+            let log_line = format!(
+                "recv: type={:?} id={} ack={} body={:?}",
+                msg.msg_type,
+                msg.id,
+                msg.ack,
+                &msg.data[..msg.data.len().min(16)]
+            );
+            log::debug!(target: "vscodeee::exthost::handshake", "{log_line}");
+            messages.push(log_line);
 
-			match msg.msg_type {
-				ProtocolMessageType::Regular => {
-					last_exthost_msg_id = msg.id;
-					if msg.data.len() == 1 && msg.data[0] == MESSAGE_TYPE_READY {
-						log::info!(target: "vscodeee::exthost::handshake", "Received Ready (0x02)");
-						return Ok::<(), ExtHostError>(());
-					}
-					return Err(ExtHostError::Protocol(format!(
-						"Expected Ready body [0x02], got {:?}",
-						msg.data
-					)));
-				}
-				ProtocolMessageType::KeepAlive | ProtocolMessageType::Ack => continue,
-				other => {
-					return Err(ExtHostError::Protocol(format!(
-						"Expected Regular(Ready), got {other:?}"
-					)));
-				}
-			}
-		}
-	})
-	.await
-	.map_err(|_| ExtHostError::Timeout)??;
+            match msg.msg_type {
+                ProtocolMessageType::Regular => {
+                    last_exthost_msg_id = msg.id;
+                    if msg.data.len() == 1 && msg.data[0] == MESSAGE_TYPE_READY {
+                        log::info!(target: "vscodeee::exthost::handshake", "Received Ready (0x02)");
+                        return Ok::<(), ExtHostError>(());
+                    }
+                    return Err(ExtHostError::Protocol(format!(
+                        "Expected Ready body [0x02], got {:?}",
+                        msg.data
+                    )));
+                }
+                ProtocolMessageType::KeepAlive | ProtocolMessageType::Ack => continue,
+                other => {
+                    return Err(ExtHostError::Protocol(format!(
+                        "Expected Regular(Ready), got {other:?}"
+                    )));
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|_| ExtHostError::Timeout)??;
 
-	// Step 3: Send InitData as a Regular message
-	rust_msg_id += 1;
-	let init_data_json = init_data::build_minimal_init_data();
-	let init_data_bytes = init_data_json.into_bytes();
-	let init_msg = ProtocolMessage::regular(rust_msg_id, last_exthost_msg_id, init_data_bytes);
-	let log_line = format!(
-		"send: type=Regular id={} ack={} data_len={}",
-		init_msg.id,
-		init_msg.ack,
-		init_msg.data.len()
-	);
-	log::debug!(target: "vscodeee::exthost::handshake", "{log_line}");
-	messages.push(log_line);
-	protocol::write_message(&mut writer, &init_msg).await?;
-	log::info!(target: "vscodeee::exthost::handshake", "Sent InitData ({} bytes)", init_msg.data.len());
+    // Step 3: Send InitData as a Regular message
+    rust_msg_id += 1;
+    let init_data_json = init_data::build_minimal_init_data();
+    let init_data_bytes = init_data_json.into_bytes();
+    let init_msg = ProtocolMessage::regular(rust_msg_id, last_exthost_msg_id, init_data_bytes);
+    let log_line = format!(
+        "send: type=Regular id={} ack={} data_len={}",
+        init_msg.id,
+        init_msg.ack,
+        init_msg.data.len()
+    );
+    log::debug!(target: "vscodeee::exthost::handshake", "{log_line}");
+    messages.push(log_line);
+    protocol::write_message(&mut writer, &init_msg).await?;
+    log::info!(target: "vscodeee::exthost::handshake", "Sent InitData ({} bytes)", init_msg.data.len());
 
-	// Step 4: Wait for Initialized (Regular message with body=[0x01])
-	// Sent by connectToRenderer() at extensionHostProcess.ts:387
-	let init_timeout = tokio::time::Duration::from_secs(30);
-	tokio::time::timeout(init_timeout, async {
+    // Step 4: Wait for Initialized (Regular message with body=[0x01])
+    // Sent by connectToRenderer() at extensionHostProcess.ts:387
+    let init_timeout = tokio::time::Duration::from_secs(30);
+    tokio::time::timeout(init_timeout, async {
 		loop {
 			let msg = protocol::read_message(&mut reader).await?;
 			let log_line = format!(
@@ -172,15 +172,15 @@ pub async fn run_handshake(stream: &mut UnixStream) -> Result<HandshakeResult, E
 	.await
 	.map_err(|_| ExtHostError::Timeout)??;
 
-	let duration = start.elapsed();
-	log::info!(
-		target: "vscodeee::exthost::handshake",
-		"Handshake complete in {}ms",
-		duration.as_millis()
-	);
+    let duration = start.elapsed();
+    log::info!(
+        target: "vscodeee::exthost::handshake",
+        "Handshake complete in {}ms",
+        duration.as_millis()
+    );
 
-	Ok(HandshakeResult {
-		messages,
-		duration_ms: duration.as_millis() as u64,
-	})
+    Ok(HandshakeResult {
+        messages,
+        duration_ms: duration.as_millis() as u64,
+    })
 }

@@ -58,6 +58,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(logging::build_plugin().build())
         .manage(pty::manager::PtyManager::new())
+        .manage(commands::file_watcher::FileWatcherState::new())
         .manage(Arc::clone(&channel_router))
         .register_uri_scheme_protocol("vscode-file", move |ctx, request| {
             // On first call the state will have been initialized by setup().
@@ -93,6 +94,11 @@ pub fn run() {
             commands::native_host::minimize_window,
             commands::native_host::focus_window,
             commands::native_host::open_external,
+            commands::native_host::move_item_to_trash,
+            commands::native_host::kill_process,
+            commands::native_host::relaunch_app,
+            commands::native_host::install_shell_command,
+            commands::native_host::uninstall_shell_command,
             commands::native_host::get_os_properties,
             commands::native_host::get_os_statistics,
             commands::native_host::read_clipboard_text,
@@ -116,6 +122,10 @@ pub fn run() {
             commands::filesystem::show_save_dialog,
             commands::filesystem::show_open_dialog,
             commands::window::get_extended_window_configuration,
+            commands::window::open_new_window,
+            commands::file_watcher::fs_watch_start,
+            commands::file_watcher::fs_watch_stop,
+            commands::file_watcher::fs_watch_stop_all,
         ])
         .setup(move |app| {
             log::info!(target: "vscodeee", "Tauri app started");

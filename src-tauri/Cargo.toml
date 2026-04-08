@@ -32,3 +32,7 @@ open = "5"
 log = "0.4"
 tauri-plugin-log = "2"
 time = "0.3"
+notify = { version = "8", features = ["serde"] }
+notify-debouncer-full = "0.5"
+globset = "0.4"
+trash = "5"
