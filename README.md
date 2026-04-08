@@ -25,8 +25,8 @@ Maintain the current functionality of VSCode while achieving the following:
 
 | Phase | Name | Goal | Status |
 | :---: | ---- | ---- | :----: |
-| 0 | [Feasibility Spike](#phase-0-feasibility-spike) | Validate Tauri can host VS Code | ✅ Complete |
-| 1 | [Foundation Layer](#phase-1-foundation-layer) | Render workbench shell in Tauri WebView | ✅ Complete |
+| 0 | [Feasibility Spike](#phase-0-feasibility-spike) | Validate Tauri can host VS Code | [✅ Complete](https://github.com/j4rviscmd/vscodeee/issues/7) |
+| 1 | [Foundation Layer](#phase-1-foundation-layer) | Render workbench shell in Tauri WebView | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/9) |
 | **2A** | [**Functional File Editing**](#phase-2a-functional-file-editing) | **Open, edit, and save local files** | **🚧 In Progress** |
 | 2B | [Editing Polish](#phase-2b-editing-polish) | File watchers, remaining native methods | 📋 Planned |
 | 3 | [Window Management](#phase-3-window-management) | Multi-window, title bar, auxiliary windows | 📋 Planned |
@@ -37,7 +37,8 @@ Maintain the current functionality of VSCode while achieving the following:
 
 ---
 
-## Phase Details
+<details>
+<summary><h2>Phase Details</h2></summary>
 
 ### Phase 0: Feasibility Spike
 
@@ -114,6 +115,8 @@ Auto-update (`tauri-plugin-updater`), native menus, system tray, drag & drop, pl
 ### Phase 7: Build & Packaging
 
 Tauri build pipeline, code signing (macOS/Windows), installers (.dmg, .msi, .AppImage, .deb), CI/CD.
+
+</details>
 
 ---
 
