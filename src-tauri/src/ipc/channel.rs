@@ -54,9 +54,15 @@ impl ChannelRouter {
 
     /// Dispatch an incoming message from the WebView.
     ///
-    /// The message is base64-encoded binary data. This method decodes it,
-    /// passes it to the appropriate channel handler, and sends the response
-    /// back via the EventBus.
+    /// The message is base64-encoded binary data. This method decodes it
+    /// and routes to the appropriate channel handler. If no handler is
+    /// registered, the message is silently dropped.
+    ///
+    /// **Note**: Phase 1 had an echo router here that re-encoded and
+    /// emitted the message back. This was removed because echoing
+    /// corrupts VS Code's `ChannelClient`/`ChannelServer` handshake —
+    /// the context string and Initialize message get echoed back and
+    /// misinterpreted by both sides.
     pub async fn dispatch(&self, window_id: u32, data: &str) {
         let raw = match STANDARD.decode(data) {
             Ok(bytes) => bytes,
@@ -66,12 +72,15 @@ impl ChannelRouter {
             }
         };
 
-        // For Phase 1, we echo back the message as-is to establish the
-        // bidirectional transport. As channels are implemented, this will
-        // route to specific handlers based on the channel name extracted
-        // from the binary protocol header.
-        let response = STANDARD.encode(&raw);
-        self.event_bus.emit_to_window(window_id, &response).await;
+        // TODO(Phase 3): Parse the binary protocol header to extract
+        // the channel name, then route to the registered handler.
+        // For Phase 2, incoming IPC messages are silently dropped
+        // since all services use direct invoke() calls instead.
+        eprintln!(
+            "[IPC] Received {} bytes from window {} (no channel routing yet, dropping)",
+            raw.len(),
+            window_id
+        );
     }
 
     pub fn event_bus(&self) -> &Arc<EventBus> {

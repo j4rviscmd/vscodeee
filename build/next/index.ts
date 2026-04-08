@@ -558,6 +558,21 @@ async function copyAllNonTsFiles(outDir: string, excludeTests: boolean): Promise
 }
 
 /**
+ * Copy codicon.ttf from node_modules to out/ directory.
+ * This font is gitignored in src/ and normally copied by a gulp task.
+ */
+async function copyCodiconFont(outDir: string): Promise<void> {
+	const src = path.join(REPO_ROOT, 'node_modules', '@vscode', 'codicons', 'dist', 'codicon.ttf');
+	const dest = path.join(REPO_ROOT, outDir, 'vs', 'base', 'browser', 'ui', 'codicons', 'codicon', 'codicon.ttf');
+	try {
+		await copyFile(src, dest);
+		console.log('[codicons] Copied codicon.ttf');
+	} catch (e) {
+		console.error('[codicons] Failed to copy codicon.ttf:', e);
+	}
+}
+
+/**
  * Copy curated resource files for production bundles.
  * Uses specific per-target patterns matching the old build's vscodeResourceIncludes,
  * serverResourceIncludes, etc. Only called by bundle() - transpile uses copyAllNonTsFiles().
@@ -1052,6 +1067,7 @@ async function watch(): Promise<void> {
 	try {
 		await transpile(outDir, false);
 		await copyAllNonTsFiles(outDir, false);
+		await copyCodiconFont(outDir);
 		console.log(`Finished transpilation with 0 errors after ${Date.now() - t1} ms`);
 	} catch (err) {
 		console.error('[watch] Initial build failed:', err);
@@ -1189,6 +1205,7 @@ async function main(): Promise<void> {
 					const t1 = Date.now();
 					await transpile(outDir, options.excludeTests);
 					await copyAllNonTsFiles(outDir, options.excludeTests);
+					await copyCodiconFont(outDir);
 					console.log(`[transpile] Done in ${Date.now() - t1}ms`);
 				}
 				break;
