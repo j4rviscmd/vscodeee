@@ -3,26 +3,27 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Emitter, Event } from '../../../../base/common/event.js';
-import { Disposable, IDisposable } from '../../../../base/common/lifecycle.js';
 import { URI } from '../../../../base/common/uri.js';
 import { isLinux } from '../../../../base/common/platform.js';
 import {
-	FileChangeType,
 	FileSystemProviderCapabilities,
 	FileSystemProviderErrorCode,
 	FileType,
 	createFileSystemProviderError,
-	IFileChange,
 	IFileDeleteOptions,
 	IFileOverwriteOptions,
 	IFileSystemProviderWithFileReadWriteCapability,
 	IFileSystemProviderWithFileFolderCopyCapability,
 	IFileWriteOptions,
 	IStat,
-	IWatchOptions,
+	IFileChange,
 } from '../../../../platform/files/common/files.js';
+import { AbstractDiskFileSystemProvider } from '../../../../platform/files/common/diskFileSystemProvider.js';
+import { AbstractNonRecursiveWatcherClient, AbstractUniversalWatcherClient, ILogMessage } from '../../../../platform/files/common/watcher.js';
+import { TauriUniversalWatcherClient } from './watcherClient.js';
+import { ILogService } from '../../../../platform/log/common/log.js';
 import { invoke } from '../../../../platform/tauri/common/tauriApi.js';
+import { Emitter, Event } from '../../../../base/common/event.js';
 
 interface RustStatResult {
 	readonly type: number;
@@ -40,37 +41,57 @@ interface RustDirEntry {
 /**
  * File system provider that delegates to Rust Tauri commands for real disk I/O.
  *
+ * Extends `AbstractDiskFileSystemProvider` with `forceUniversal: true` to route
+ * all watch requests through a single universal watcher backed by the Rust
+ * `notify` crate.
+ *
  * Implements `IFileSystemProviderWithFileReadWriteCapability` (whole-file read/write)
  * and `IFileSystemProviderWithFileFolderCopyCapability` (native copy).
  *
  * File content is transferred as base64 strings over `invoke()`. This is
  * acceptable for Phase 2A (settings, source files). For large binary files,
- * a streaming/chunked approach will be added in Phase 2B.
+ * a streaming/chunked approach will be added in a future phase.
  */
-export class TauriDiskFileSystemProvider extends Disposable implements
+export class TauriDiskFileSystemProvider extends AbstractDiskFileSystemProvider implements
 	IFileSystemProviderWithFileReadWriteCapability,
 	IFileSystemProviderWithFileFolderCopyCapability {
-
-	private readonly _onDidChangeFile = this._register(new Emitter<readonly IFileChange[]>());
-	readonly onDidChangeFile: Event<readonly IFileChange[]> = this._onDidChangeFile.event;
 
 	private readonly _onDidChangeCapabilities = this._register(new Emitter<void>());
 	readonly onDidChangeCapabilities: Event<void> = this._onDidChangeCapabilities.event;
 
+	constructor(logService: ILogService) {
+		super(logService, { watcher: { forceUniversal: true } });
+	}
+
 	get capabilities(): FileSystemProviderCapabilities {
 		let caps =
 			FileSystemProviderCapabilities.FileReadWrite |
-			FileSystemProviderCapabilities.FileFolderCopy;
+			FileSystemProviderCapabilities.FileFolderCopy |
+			FileSystemProviderCapabilities.Trash;
 		if (isLinux) {
 			caps |= FileSystemProviderCapabilities.PathCaseSensitive;
 		}
 		return caps;
 	}
 
-	// --- watch (no-op for Phase 2A; Phase 2B adds Rust `notify` crate) ---
+	// --- watcher factory methods ---
 
-	watch(_resource: URI, _opts: IWatchOptions): IDisposable {
-		return Disposable.None;
+	protected createUniversalWatcher(
+		onChange: (changes: IFileChange[]) => void,
+		onLogMessage: (msg: ILogMessage) => void,
+		verboseLogging: boolean
+	): AbstractUniversalWatcherClient {
+		return new TauriUniversalWatcherClient(onChange, onLogMessage, verboseLogging);
+	}
+
+	protected createNonRecursiveWatcher(
+		_onChange: (changes: IFileChange[]) => void,
+		_onLogMessage: (msg: ILogMessage) => void,
+		_verboseLogging: boolean
+	): AbstractNonRecursiveWatcherClient {
+		// forceUniversal is true, so this method should never be called.
+		// All watches are routed through the universal watcher.
+		throw new Error('Non-recursive watcher is not used when forceUniversal is true');
 	}
 
 	// --- stat ---
@@ -110,36 +131,25 @@ export class TauriDiskFileSystemProvider extends Disposable implements
 			create: opts.create,
 			overwrite: opts.overwrite,
 		});
-
-		this._onDidChangeFile.fire([{
-			resource,
-			type: FileChangeType.UPDATED,
-		}]);
 	}
 
 	// --- mkdir ---
 
 	async mkdir(resource: URI): Promise<void> {
 		await this.invokeFs<void>('fs_mkdir', { path: resource.fsPath, recursive: true });
-
-		this._onDidChangeFile.fire([{
-			resource,
-			type: FileChangeType.ADDED,
-		}]);
 	}
 
 	// --- delete ---
 
 	async delete(resource: URI, opts: IFileDeleteOptions): Promise<void> {
-		await this.invokeFs<void>('fs_delete', {
-			path: resource.fsPath,
-			recursive: opts.recursive,
-		});
-
-		this._onDidChangeFile.fire([{
-			resource,
-			type: FileChangeType.DELETED,
-		}]);
+		if (opts.useTrash) {
+			await invoke<void>('move_item_to_trash', { path: resource.fsPath });
+		} else {
+			await this.invokeFs<void>('fs_delete', {
+				path: resource.fsPath,
+				recursive: opts.recursive,
+			});
+		}
 	}
 
 	// --- rename ---
@@ -150,11 +160,6 @@ export class TauriDiskFileSystemProvider extends Disposable implements
 			to: to.fsPath,
 			overwrite: opts.overwrite,
 		});
-
-		this._onDidChangeFile.fire([
-			{ resource: from, type: FileChangeType.DELETED },
-			{ resource: to, type: FileChangeType.ADDED },
-		]);
 	}
 
 	// --- copy ---
@@ -165,11 +170,6 @@ export class TauriDiskFileSystemProvider extends Disposable implements
 			to: to.fsPath,
 			overwrite: opts.overwrite,
 		});
-
-		this._onDidChangeFile.fire([{
-			resource: to,
-			type: FileChangeType.ADDED,
-		}]);
 	}
 
 	// --- helpers ---
