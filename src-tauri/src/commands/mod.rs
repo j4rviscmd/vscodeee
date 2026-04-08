@@ -22,15 +22,15 @@ use std::path::Path;
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NativeHostInfo {
-    /// OS名 (例: `"macos"`, `"linux"`, `"windows"`)。`std::env::consts::OS` から取得。
+    /// OS name (e.g. `"macos"`, `"linux"`, `"windows"`). Retrieved from `std::env::consts::OS`.
     pub platform: String,
-    /// CPUアーキテクチャ (例: `"aarch64"`, `"x86_64"`)。`std::env::consts::ARCH` から取得。
+    /// CPU architecture (e.g. `"aarch64"`, `"x86_64"`). Retrieved from `std::env::consts::ARCH`.
     pub arch: String,
-    /// マシンのホスト名。取得に失敗した場合は `"unknown"` を返す。
+    /// Machine hostname. Returns `"unknown"` if retrieval fails.
     pub hostname: String,
-    /// ユーザーのホームディレクトリパス。取得に失敗した場合は空文字列を返す。
+    /// User's home directory path. Returns an empty string if retrieval fails.
     pub home_dir: String,
-    /// OSの一時ディレクトリパス。
+    /// OS temporary directory path.
     pub tmp_dir: String,
 }
 
@@ -39,9 +39,9 @@ pub struct NativeHostInfo {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WindowConfiguration {
-    /// ウィンドウの一意な識別子。Phase 0 PoCでは固定値 `1` を使用。
+    /// Unique window identifier. Uses a fixed value of `1` in the Phase 0 PoC.
     pub window_id: u32,
-    /// ログレベル (`0` = Trace, `1` = Info, `2` = Warning, `3` = Error)。
+    /// Log level (`0` = Trace, `1` = Info, `2` = Warning, `3` = Error).
     pub log_level: u32,
     /// The filesystem path to the app's resource directory (Tauri resource_dir).
     pub resource_dir: String,
@@ -52,15 +52,16 @@ pub struct WindowConfiguration {
     pub app_data_dir: String,
 }
 
-/// ネイティブホスト環境の情報を取得する。
+/// Retrieve native host environment information.
 ///
-/// WebView側のワークベンチ起動時に、OS・アーキテクチャ・ホスト名・
-/// ホームディレクトリ・一時ディレクトリなどのプラットフォーム情報を返す。
-/// Electron版における `ICommonNativeHostService.getHostInfo()` に相当する。
+/// Called during workbench bootstrap from the WebView to obtain platform
+/// details such as OS, architecture, hostname, home directory, and
+/// temporary directory. Equivalent to the Electron version's
+/// `ICommonNativeHostService.getHostInfo()`.
 ///
 /// # Returns
 ///
-/// 現在の実行環境を表す [`NativeHostInfo`]。
+/// A [`NativeHostInfo`] representing the current runtime environment.
 #[tauri::command]
 pub fn get_native_host_info() -> NativeHostInfo {
     NativeHostInfo {
@@ -76,14 +77,15 @@ pub fn get_native_host_info() -> NativeHostInfo {
     }
 }
 
-/// ウィンドウの起動設定を取得する。
+/// Retrieve window startup configuration.
 ///
-/// ワークベンチの初期化に必要な最小限のウィンドウ設定を返す。
-/// Phase 0 PoCでは固定値を返すが、今後マルチウィンドウ対応で動的に変更される。
+/// Returns the minimal window settings needed for workbench initialization.
+/// In the Phase 0 PoC this returns fixed values, but it will be updated
+/// dynamically as multi-window support is implemented.
 ///
 /// # Returns
 ///
-/// 現在のウィンドウ設定を表す [`WindowConfiguration`]。
+/// A [`WindowConfiguration`] representing the current window settings.
 #[tauri::command]
 pub fn get_window_configuration(app_handle: tauri::AppHandle) -> WindowConfiguration {
     use tauri::Manager;
@@ -100,9 +102,11 @@ pub fn get_window_configuration(app_handle: tauri::AppHandle) -> WindowConfigura
         .ok()
         .map(|cwd| {
             let dist = cwd.join("../out");
-            dist.canonicalize().unwrap_or(dist)
+            dist.canonicalize()
+                .unwrap_or(dist)
+                .to_string_lossy()
+                .to_string()
         })
-        .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
 
     // Application data directory for user settings/state.
