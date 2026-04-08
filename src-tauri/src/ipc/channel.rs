@@ -67,7 +67,7 @@ impl ChannelRouter {
         let raw = match STANDARD.decode(data) {
             Ok(bytes) => bytes,
             Err(e) => {
-                eprintln!("[IPC] Failed to decode base64 message: {}", e);
+                log::error!(target: "vscodeee::ipc::channel", "Failed to decode base64 message: {e}");
                 return;
             }
         };
@@ -76,8 +76,9 @@ impl ChannelRouter {
         // the channel name, then route to the registered handler.
         // For Phase 2, incoming IPC messages are silently dropped
         // since all services use direct invoke() calls instead.
-        eprintln!(
-            "[IPC] Received {} bytes from window {} (no channel routing yet, dropping)",
+        log::info!(
+            target: "vscodeee::ipc::channel",
+            "Received {} bytes from window {} (no channel routing yet, dropping)",
             raw.len(),
             window_id
         );

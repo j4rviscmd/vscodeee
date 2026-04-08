@@ -102,7 +102,7 @@ impl PtyInstance {
                 match std::io::Read::read(&mut reader, &mut buf) {
                     Ok(0) => {
                         // EOF — PTY closed
-                        println!("[pty:{pty_id}] Reader EOF");
+                        log::info!(target: "vscodeee::pty::instance", "Reader EOF (pty:{pty_id})");
                         let _ = app_handle.emit(
                             &format!("pty-exit-{pty_id}"),
                             serde_json::json!({ "id": pty_id, "exitCode": 0 }),
@@ -115,12 +115,12 @@ impl PtyInstance {
                         // (xterm.js handles UTF-8 and escape sequences).
                         let data = buf[..n].to_vec();
                         if let Err(e) = app_handle.emit(&event_name, data) {
-                            eprintln!("[pty:{pty_id}] Failed to emit output event: {e}");
+                            log::error!(target: "vscodeee::pty::instance", "Failed to emit output event (pty:{pty_id}): {e}");
                             break;
                         }
                     }
                     Err(e) => {
-                        eprintln!("[pty:{pty_id}] Reader error: {e}");
+                        log::error!(target: "vscodeee::pty::instance", "Reader error (pty:{pty_id}): {e}");
                         let _ = app_handle.emit(
                             &format!("pty-exit-{pty_id}"),
                             serde_json::json!({ "id": pty_id, "exitCode": -1 }),

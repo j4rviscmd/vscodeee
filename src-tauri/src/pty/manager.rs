@@ -64,7 +64,7 @@ impl PtyManager {
             .map_err(|_| "PtyManager lock poisoned".to_string())?;
         instances.insert(id, instance);
 
-        println!("[pty-manager] Created PTY instance {id}");
+        log::info!(target: "vscodeee::pty::manager", "Created PTY instance {id}");
         Ok(id)
     }
 
@@ -108,7 +108,7 @@ impl PtyManager {
             .map_err(|_| "PtyManager lock poisoned".to_string())?;
 
         if instances.remove(&id).is_some() {
-            println!("[pty-manager] Closed PTY instance {id}");
+            log::info!(target: "vscodeee::pty::manager", "Closed PTY instance {id}");
             Ok(())
         } else {
             Err(format!("PTY {id} not found"))

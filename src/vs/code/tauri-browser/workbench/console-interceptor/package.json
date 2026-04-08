@@ -1,0 +1,13 @@
+{
+  "name": "console-interceptor",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Console interceptor — forwards all console.* calls to Rust backend via tauri-plugin-log",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --outfile=dist/console-interceptor.js --format=iife --target=es2020 --minify"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "typescript": "^5.0.0"
+  }
+}
