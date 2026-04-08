@@ -8,7 +8,7 @@
 //! Provides the extended window configuration needed by the Tauri workbench
 //! beyond the basic `get_window_configuration` in `mod.rs`.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
 /// Extended window state for the workbench.
@@ -73,4 +73,69 @@ pub fn get_extended_window_configuration(
         fullscreen,
         maximized,
     })
+}
+
+/// Options for opening a new window.
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWindowOptions {
+    #[serde(default)]
+    pub folder_uri: Option<String>,
+    #[serde(default)]
+    pub force_new_window: bool,
+}
+
+/// Open a new Tauri window.
+///
+/// Creates a new WebviewWindow with the same entry point as the main window,
+/// optionally opening a specific folder.
+#[tauri::command]
+pub async fn open_new_window(
+    app_handle: tauri::AppHandle,
+    options: OpenWindowOptions,
+) -> Result<(), String> {
+    use tauri::WebviewUrl;
+    use tauri::WebviewWindowBuilder;
+
+    // Generate a unique label for the new window
+    let window_count = app_handle.webview_windows().len();
+    let label = format!("main_{}", window_count + 1);
+
+    // Build URL with optional folder query param
+    let mut url_str = String::from("vs/code/tauri-browser/workbench/workbench-tauri.html");
+    if let Some(ref folder) = options.folder_uri {
+        // Simple percent-encoding for the folder URI
+        let encoded: String = folder
+            .chars()
+            .map(|c| match c {
+                ' ' => "%20".to_string(),
+                '#' => "%23".to_string(),
+                '&' => "%26".to_string(),
+                _ => c.to_string(),
+            })
+            .collect();
+        url_str = format!(
+            "vs/code/tauri-browser/workbench/workbench-tauri.html?folder={}",
+            encoded
+        );
+    }
+
+    let url = WebviewUrl::App(url_str.into());
+
+    WebviewWindowBuilder::new(&app_handle, &label, url)
+        .title("VS Codeee")
+        .inner_size(1200.0, 800.0)
+        .min_inner_size(400.0, 270.0)
+        .decorations(true)
+        .build()
+        .map_err(|e| format!("Failed to create window: {e}"))?;
+
+    log::info!(
+        target: "vscodeee::commands::window",
+        "Opened new window: {} (folder: {:?})",
+        label,
+        options.folder_uri
+    );
+
+    Ok(())
 }

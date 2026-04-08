@@ -67,6 +67,7 @@ import { TauriWorkbenchEnvironmentService, ITauriWindowConfiguration } from '../
 import { IBrowserWorkbenchEnvironmentService } from '../services/environment/browser/environmentService.js';
 import { IWorkbenchConstructionOptions, IWorkspace, IWorkspaceProvider } from '../browser/web.api.js';
 import { isFolderToOpen, isWorkspaceToOpen } from '../../platform/window/common/window.js';
+import { invoke } from '../../platform/tauri/common/tauriApi.js';
 
 export class TauriDesktopMain extends Disposable {
 
@@ -176,7 +177,7 @@ export class TauriDesktopMain extends Disposable {
 		serviceCollection.set(ISignService, signService);
 
 		// Local files — real disk I/O via Rust Tauri commands
-		const diskFileSystemProvider = this._register(new TauriDiskFileSystemProvider());
+		const diskFileSystemProvider = this._register(new TauriDiskFileSystemProvider(logService));
 		fileService.registerProvider(Schemas.file, diskFileSystemProvider);
 
 		// URI Identity
@@ -282,13 +283,27 @@ class TauriWorkspaceProvider implements IWorkspaceProvider {
 		const targetHref = this.createTargetUrl(workspace);
 		if (targetHref) {
 			if (options?.reuse) {
+				// Reuse current window: navigate to new URL
 				mainWindow.location.href = targetHref;
 				return true;
 			} else {
-				// Tauri doesn't support opening new windows via window.open,
-				// so always reload the current window.
-				mainWindow.location.href = targetHref;
-				return true;
+				// Open a new Tauri window via Rust command
+				let folderUri: string | undefined;
+				if (workspace && isFolderToOpen(workspace)) {
+					folderUri = workspace.folderUri.toString();
+				}
+				try {
+					await invoke('open_new_window', {
+						options: {
+							folderUri,
+							forceNewWindow: true,
+						}
+					});
+					return true;
+				} catch (err) {
+					console.error('[TauriWorkspaceProvider] Failed to open new window:', err);
+					return false;
+				}
 			}
 		}
 

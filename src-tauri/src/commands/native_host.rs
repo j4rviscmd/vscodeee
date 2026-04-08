@@ -8,6 +8,7 @@
 //! These commands are invoked from the WebView via `window.__TAURI__.invoke()`.
 
 use serde::Serialize;
+use tauri::Manager;
 
 // ─── Window Management ──────────────────────────────────────────────────
 
@@ -21,9 +22,7 @@ pub fn is_fullscreen(window: tauri::Window) -> Result<bool, String> {
 #[tauri::command]
 pub fn toggle_fullscreen(window: tauri::Window) -> Result<(), String> {
     let is_fs = window.is_fullscreen().map_err(|e| e.to_string())?;
-    window
-        .set_fullscreen(!is_fs)
-        .map_err(|e| e.to_string())
+    window.set_fullscreen(!is_fs).map_err(|e| e.to_string())
 }
 
 /// Check if the current window is maximized.
@@ -62,6 +61,189 @@ pub fn focus_window(window: tauri::Window) -> Result<(), String> {
 #[tauri::command]
 pub async fn open_external(url: String) -> Result<(), String> {
     open::that(&url).map_err(|e| e.to_string())
+}
+
+// ─── Trash ──────────────────────────────────────────────────────────────
+
+/// Move a file or directory to the system trash.
+#[tauri::command]
+pub async fn move_item_to_trash(path: String) -> Result<(), String> {
+    trash::delete(&path).map_err(|e| format!("Failed to move to trash: {e}"))
+}
+
+// ─── Process Management ─────────────────────────────────────────────────
+
+/// Kill a process by PID.
+#[tauri::command]
+pub fn kill_process(pid: u32, code: String) -> Result<(), String> {
+    let signal = match code.as_str() {
+        "SIGTERM" | "" => libc::SIGTERM,
+        "SIGKILL" => libc::SIGKILL,
+        "SIGINT" => libc::SIGINT,
+        other => return Err(format!("Unsupported signal: {other}")),
+    };
+
+    #[cfg(unix)]
+    {
+        let ret = unsafe { libc::kill(pid as i32, signal) };
+        if ret != 0 {
+            return Err(format!(
+                "Failed to kill process {pid}: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        // On Windows, use taskkill for graceful termination
+        let _ = signal; // suppress unused warning
+        let output = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/F"])
+            .output()
+            .map_err(|e| format!("Failed to run taskkill: {e}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "taskkill failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+// ─── Lifecycle (extended) ───────────────────────────────────────────────
+
+/// Relaunch the application.
+#[tauri::command]
+pub fn relaunch_app(app: tauri::AppHandle) -> Result<(), String> {
+    tauri::process::restart(&app.env());
+}
+
+// ─── Shell Command Installation ─────────────────────────────────────────
+
+/// Install a shell command (`codeee`) by creating a symlink.
+///
+/// On macOS, uses osascript for privilege escalation to /usr/local/bin.
+/// On Linux, creates the symlink directly (may need sudo).
+#[tauri::command]
+pub async fn install_shell_command(_app: tauri::AppHandle) -> Result<(), String> {
+    let exe_path =
+        std::env::current_exe().map_err(|e| format!("Failed to get executable path: {e}"))?;
+
+    let link_path = if cfg!(target_os = "macos") || cfg!(target_os = "linux") {
+        "/usr/local/bin/codeee"
+    } else if cfg!(windows) {
+        // On Windows, we'd add to PATH via registry — simplified for now
+        return Err("Shell command installation on Windows is not yet supported".to_string());
+    } else {
+        return Err("Unsupported platform".to_string());
+    };
+
+    let exe_str = exe_path.to_string_lossy();
+
+    #[cfg(target_os = "macos")]
+    {
+        // Use osascript for privilege escalation on macOS
+        let script = format!(
+            "do shell script \"ln -sf '{}' '{}'\" with administrator privileges",
+            exe_str, link_path
+        );
+        let output = std::process::Command::new("osascript")
+            .args(["-e", &script])
+            .output()
+            .map_err(|e| format!("Failed to run osascript: {e}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("User canceled") || stderr.contains("-128") {
+                return Err("User cancelled the operation".to_string());
+            }
+            return Err(format!("Failed to install shell command: {stderr}"));
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let _ = _app; // suppress unused warning
+                      // Try direct symlink first, may fail without sudo
+        if let Err(_) = std::os::unix::fs::symlink(&exe_str.as_ref(), link_path) {
+            return Err(format!(
+                "Failed to create symlink. Try: sudo ln -sf '{}' '{}'",
+                exe_str, link_path
+            ));
+        }
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        let _ = (_app, exe_str, link_path);
+        return Err("Unsupported platform".to_string());
+    }
+
+    log::info!(
+        target: "vscodeee::commands::native_host",
+        "Installed shell command: {} -> {}",
+        link_path,
+        exe_path.display()
+    );
+
+    Ok(())
+}
+
+/// Uninstall the shell command (`codeee`).
+#[tauri::command]
+pub async fn uninstall_shell_command(_app: tauri::AppHandle) -> Result<(), String> {
+    let link_path = if cfg!(target_os = "macos") || cfg!(target_os = "linux") {
+        "/usr/local/bin/codeee"
+    } else {
+        return Err("Unsupported platform".to_string());
+    };
+
+    if !std::path::Path::new(link_path).exists() {
+        return Ok(()); // Already uninstalled
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let script = format!(
+            "do shell script \"rm -f '{}'\" with administrator privileges",
+            link_path
+        );
+        let output = std::process::Command::new("osascript")
+            .args(["-e", &script])
+            .output()
+            .map_err(|e| format!("Failed to run osascript: {e}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("User canceled") || stderr.contains("-128") {
+                return Err("User cancelled the operation".to_string());
+            }
+            return Err(format!("Failed to uninstall shell command: {stderr}"));
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let _ = _app;
+        std::fs::remove_file(link_path).map_err(|e| format!("Failed to remove symlink: {e}"))?;
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        let _ = _app;
+        return Err("Unsupported platform".to_string());
+    }
+
+    log::info!(
+        target: "vscodeee::commands::native_host",
+        "Uninstalled shell command: {}",
+        link_path
+    );
+
+    Ok(())
 }
 
 // ─── OS Properties ──────────────────────────────────────────────────────
@@ -147,18 +329,14 @@ pub fn get_os_statistics() -> OsStatistics {
 #[tauri::command]
 pub fn read_clipboard_text(app: tauri::AppHandle) -> Result<String, String> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
-    app.clipboard()
-        .read_text()
-        .map_err(|e| e.to_string())
+    app.clipboard().read_text().map_err(|e| e.to_string())
 }
 
 /// Write text to the system clipboard.
 #[tauri::command]
 pub fn write_clipboard_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
-    app.clipboard()
-        .write_text(text)
-        .map_err(|e| e.to_string())
+    app.clipboard().write_text(text).map_err(|e| e.to_string())
 }
 
 // ─── Lifecycle ──────────────────────────────────────────────────────────

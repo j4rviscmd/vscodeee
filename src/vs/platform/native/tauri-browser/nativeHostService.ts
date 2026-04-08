@@ -115,8 +115,35 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 
 	async openWindow(_options?: IOpenEmptyWindowOptions): Promise<void>;
 	async openWindow(_toOpen: IWindowOpenable[], _options?: IOpenWindowOptions): Promise<void>;
-	async openWindow(_arg1?: IOpenEmptyWindowOptions | IWindowOpenable[], _arg2?: IOpenWindowOptions): Promise<void> {
-		notImplemented('openWindow');
+	async openWindow(arg1?: IOpenEmptyWindowOptions | IWindowOpenable[], arg2?: IOpenWindowOptions): Promise<void> {
+		if (Array.isArray(arg1)) {
+			// Opening specific resources — for now, take the first folder/workspace URI
+			const toOpen = arg1 as IWindowOpenable[];
+			const options = arg2 as IOpenWindowOptions | undefined;
+			for (const item of toOpen) {
+				let folderUri: string | undefined;
+				if ('folderUri' in item && item.folderUri) {
+					folderUri = item.folderUri.toString();
+				} else if ('workspaceUri' in item && item.workspaceUri) {
+					folderUri = item.workspaceUri.toString();
+				} else if ('fileUri' in item && item.fileUri) {
+					folderUri = item.fileUri.toString();
+				}
+				await invoke('open_new_window', {
+					options: {
+						folderUri,
+						forceNewWindow: options?.forceNewWindow ?? false,
+					}
+				});
+			}
+		} else {
+			// Opening empty window
+			await invoke('open_new_window', {
+				options: {
+					forceNewWindow: true,
+				}
+			});
+		}
 	}
 
 	async openAgentsWindow(): Promise<void> {
@@ -211,16 +238,37 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		return invoke<OpenDialogReturnValue>('show_open_dialog', { options });
 	}
 
-	async pickFileFolderAndOpen(_options: INativeOpenDialogOptions): Promise<void> {
-		notImplemented('pickFileFolderAndOpen');
+	async pickFileFolderAndOpen(options: INativeOpenDialogOptions): Promise<void> {
+		const result = await this.showOpenDialog({
+			properties: ['openFile', 'openDirectory'],
+			defaultPath: options.defaultPath,
+		});
+		if (result.filePaths.length > 0) {
+			const path = result.filePaths[0];
+			await this.openWindow([{ fileUri: URI.file(path) }], { forceNewWindow: options.forceNewWindow });
+		}
 	}
 
-	async pickFileAndOpen(_options: INativeOpenDialogOptions): Promise<void> {
-		notImplemented('pickFileAndOpen');
+	async pickFileAndOpen(options: INativeOpenDialogOptions): Promise<void> {
+		const result = await this.showOpenDialog({
+			properties: ['openFile'],
+			defaultPath: options.defaultPath,
+		});
+		if (result.filePaths.length > 0) {
+			const path = result.filePaths[0];
+			await this.openWindow([{ fileUri: URI.file(path) }], { forceNewWindow: options.forceNewWindow });
+		}
 	}
 
-	async pickFolderAndOpen(_options: INativeOpenDialogOptions): Promise<void> {
-		notImplemented('pickFolderAndOpen');
+	async pickFolderAndOpen(options: INativeOpenDialogOptions): Promise<void> {
+		const result = await this.showOpenDialog({
+			properties: ['openDirectory'],
+			defaultPath: options.defaultPath,
+		});
+		if (result.filePaths.length > 0) {
+			const path = result.filePaths[0];
+			await this.openWindow([{ folderUri: URI.file(path) }], { forceNewWindow: options.forceNewWindow });
+		}
 	}
 
 	async pickWorkspaceAndOpen(_options: INativeOpenDialogOptions): Promise<void> {
@@ -248,8 +296,8 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		return true;
 	}
 
-	async moveItemToTrash(_fullPath: string): Promise<void> {
-		notImplemented('moveItemToTrash');
+	async moveItemToTrash(fullPath: string): Promise<void> {
+		await invoke('move_item_to_trash', { path: fullPath });
 	}
 
 	async isAdmin(): Promise<boolean> {
@@ -300,8 +348,8 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		return undefined;
 	}
 
-	async killProcess(_pid: number, _code: string): Promise<void> {
-		notImplemented('killProcess');
+	async killProcess(pid: number, code: string): Promise<void> {
+		await invoke('kill_process', { pid, code });
 	}
 
 	// #endregion
@@ -361,11 +409,11 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 	// #region macOS Shell command
 
 	async installShellCommand(): Promise<void> {
-		notImplemented('installShellCommand');
+		await invoke('install_shell_command');
 	}
 
 	async uninstallShellCommand(): Promise<void> {
-		notImplemented('uninstallShellCommand');
+		await invoke('uninstall_shell_command');
 	}
 
 	// #endregion
@@ -377,7 +425,7 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 	}
 
 	async relaunch(_options?: { addArgs?: string[]; removeArgs?: string[] }): Promise<void> {
-		notImplemented('relaunch');
+		await invoke('relaunch_app');
 	}
 
 	async reload(_options?: { disableExtensions?: boolean }): Promise<void> {
