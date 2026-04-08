@@ -2,68 +2,81 @@
 <!-- Licensed under the MIT License. See License.txt in the project root for license information. -->
 <!DOCTYPE html>
 <html>
-	<head>
-		<meta charset="utf-8" />
-		<meta http-equiv="Content-Security-Policy" content="
-			default-src
-				'self'
-				tauri:
-				https://tauri.localhost
-				vscode-file:
-			;
-			img-src
-				'self'
-				data:
-				blob:
-				https:
-				tauri:
-				https://tauri.localhost
-				vscode-file:
-				vscode-remote-resource:
-			;
-			media-src
-				'self'
-			;
-			frame-src
-				'self'
-				vscode-webview:
-			;
-			script-src
-				'self'
-				'unsafe-eval'
-				'unsafe-inline'
-				blob:
-				tauri:
-				https://tauri.localhost
-				vscode-file:
-			;
-			style-src
-				'self'
-				'unsafe-inline'
-				vscode-file:
-			;
-			connect-src
-				'self'
-				https:
-				ws:
-				wss:
-				tauri:
-				https://tauri.localhost
-				ipc:
-				vscode-file:
-			;
-			font-src
-				'self'
-				https:
-				vscode-file:
-				vscode-remote-resource:
-			;
-		"/>
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
+<head>
+	<meta charset="utf-8" />
+	<meta http-equiv="Content-Security-Policy" content="
+		default-src
+			'self'
+			tauri:
+			https://tauri.localhost
+			vscode-file:
+		;
+		img-src
+			'self'
+			data:
+			blob:
+			https:
+			tauri:
+			https://tauri.localhost
+			vscode-file:
+			vscode-remote-resource:
+		;
+		media-src
+			'self'
+		;
+		frame-src
+			'self'
+			vscode-webview:
+		;
+		script-src
+			'self'
+			'unsafe-eval'
+			'unsafe-inline'
+			blob:
+			tauri:
+			https://tauri.localhost
+			vscode-file:
+		;
+		style-src
+			'self'
+			'unsafe-inline'
+			vscode-file:
+		;
+		connect-src
+			'self'
+			https:
+			ws:
+			wss:
+			tauri:
+			https://tauri.localhost
+			ipc:
+			vscode-file:
+		;
+		font-src
+			'self'
+			https:
+			vscode-file:
+			vscode-remote-resource:
+		;
+	"/>
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<!-- Console interceptor: forwards all console.* calls to Rust backend terminal -->
+	<script src="console-interceptor/dist/console-interceptor.js"></script>
+	<script>
+		// Wait for Tauri API to be available, then install the interceptor.
+	// __TAURI__ is injected by the webview runtime, but may not be ready at parse time.
+	(function tryInstall() {
+			if (window.__TAURI__?.core?.invoke) {
+				installConsoleInterceptor(window.__TAURI__.core.invoke, { passthrough: true });
+				return;
+			}
+			setTimeout(tryInstall, 50);
+		})();
+		</script>
 	</head>
-	<body aria-label="">
-	</body>
+<body aria-label="">
+</body>
 
-	<!-- Bootstrap (non-module): sets up NLS, CSS import maps, then dynamically imports workbench -->
-	<script src="workbench-tauri.js"></script>
+<!-- Bootstrap (non-module): sets up NLS, CSS import maps, then dynamically imports workbench -->
+<script src="workbench-tauri.js"></script>
 </html>

@@ -166,7 +166,7 @@ pub fn write_clipboard_text(app: tauri::AppHandle, text: String) -> Result<(), S
 /// Notify the backend that the workbench has finished loading.
 #[tauri::command]
 pub fn notify_ready() {
-    println!("[vscodeee] Workbench notified ready");
+    log::info!(target: "vscodeee::commands::native_host", "Workbench notified ready");
 }
 
 /// Close the current window.

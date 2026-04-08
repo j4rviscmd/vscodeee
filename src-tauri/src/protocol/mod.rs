@@ -82,8 +82,9 @@ pub fn init_protocol_state(app: &tauri::App) -> Arc<ProtocolState> {
 
     let state = Arc::new(ProtocolState { roots, is_dev });
 
-    println!(
-        "[protocol] Initialized with {} root(s), dev={}",
+    log::info!(
+        target: "vscodeee::protocol",
+        "Initialized with {} root(s), dev={}",
         state.roots.root_count(),
         state.is_dev
     );
@@ -109,7 +110,7 @@ pub fn handle_vscode_file_protocol<R: tauri::Runtime>(
         match serve_file(&state, &raw_uri) {
             Ok(response) => response,
             Err(e) => {
-                eprintln!("[protocol] {e}");
+                log::error!(target: "vscodeee::protocol", "{e}");
                 error_response(e.status_code(), e.reason().as_bytes())
             }
         }

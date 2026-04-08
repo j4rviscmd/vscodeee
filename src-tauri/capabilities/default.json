@@ -8,6 +8,7 @@
     "shell:allow-open",
     "dialog:default",
     "os:default",
-    "fs:default"
+    "fs:default",
+    "log:default"
   ]
 }

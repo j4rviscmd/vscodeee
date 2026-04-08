@@ -16,6 +16,9 @@ mod ipc;
 /// TODO(Phase 1-2): Replace PoC direct handshake with WebSocket relay + TypeScript IExtensionHost impl
 mod exthost;
 
+/// Logging configuration — tauri-plugin-log with AI-agent-readable format.
+mod logging;
+
 /// PTY (pseudo-terminal) management — spawn shells, relay I/O to xterm.js via Tauri events.
 /// Phase 0-4: Uses portable-pty for direct Rust PTY management.
 mod pty;
@@ -53,6 +56,7 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(logging::build_plugin().build())
         .manage(pty::manager::PtyManager::new())
         .manage(Arc::clone(&channel_router))
         .register_uri_scheme_protocol("vscode-file", move |ctx, request| {
@@ -102,7 +106,7 @@ pub fn run() {
             commands::window::get_extended_window_configuration,
         ])
         .setup(move |app| {
-            println!("[vscodeee] Tauri app started");
+            log::info!(target: "vscodeee", "Tauri app started");
 
             // Open devtools in debug builds for WebView debugging
             #[cfg(debug_assertions)]

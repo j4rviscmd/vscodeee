@@ -10,7 +10,7 @@
 //! the `vscode:ipc_message:{window_id}` channel.
 
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
 
 /// Manages event emission from Rust backend to WebView windows.
@@ -44,13 +44,16 @@ impl EventBus {
         if let Some(app) = handle.as_ref() {
             let event_name = format!("vscode:ipc_message:{}", window_id);
             if let Err(e) = app.emit(&event_name, data.to_string()) {
-                eprintln!(
-                    "[EventBus] Failed to emit to window {}: {}",
-                    window_id, e
+                log::error!(
+                    target: "vscodeee::ipc::event_bus",
+                    "Failed to emit to window {window_id}: {e}"
                 );
             }
         } else {
-            eprintln!("[EventBus] App handle not initialized, cannot emit to window {}", window_id);
+            log::warn!(
+                target: "vscodeee::ipc::event_bus",
+                "App handle not initialized, cannot emit to window {window_id}"
+            );
         }
     }
 
@@ -59,7 +62,7 @@ impl EventBus {
         let handle = self.app_handle.read().await;
         if let Some(app) = handle.as_ref() {
             if let Err(e) = app.emit(event, data.to_string()) {
-                eprintln!("[EventBus] Failed to emit global event '{}': {}", event, e);
+                log::error!(target: "vscodeee::ipc::event_bus", "Failed to emit global event '{event}': {e}");
             }
         }
     }

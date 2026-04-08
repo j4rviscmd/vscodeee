@@ -70,7 +70,7 @@ async fn spawn_extension_host_unix(
     app_handle: tauri::AppHandle,
 ) -> Result<ExtHostHandshakeResult, String> {
     let app_root = resolve_app_root(&app_handle)?;
-    println!("[exthost] App root: {}", app_root.display());
+    log::info!(target: "vscodeee::commands::spawn_exthost", "App root: {}", app_root.display());
 
     // Verify prerequisites
     let bootstrap_path = app_root.join("out/bootstrap-fork.js");
@@ -112,7 +112,7 @@ async fn spawn_and_handshake(
     // to avoid zombie processes.
     let _ = sidecar.child.kill().await;
     let _ = sidecar.child.wait().await;
-    println!("[exthost] ExtHost process terminated (PoC cleanup)");
+    log::info!(target: "vscodeee::commands::spawn_exthost", "ExtHost process terminated (PoC cleanup)");
 
     Ok(ExtHostHandshakeResult {
         success: true,

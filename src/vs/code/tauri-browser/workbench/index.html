@@ -59,6 +59,14 @@
 		"/>
 
 		<link rel="stylesheet" href="pty-poc/dist/terminal.css" />
+		<!-- Console interceptor: forwards all console.* calls to Rust backend terminal -->
+		<script src="console-interceptor/dist/console-interceptor.js"></script>
+		<script>
+			// Install immediately — MUST run before any other code that uses console.*
+			if (window.__TAURI__) {
+				installConsoleInterceptor(window.__TAURI__.core.invoke, { passthrough: true });
+			}
+		</script>
 		<title>VS Codeee</title>
 
 		<style>
