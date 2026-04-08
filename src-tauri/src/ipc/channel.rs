@@ -61,7 +61,7 @@ impl ChannelRouter {
         let raw = match STANDARD.decode(data) {
             Ok(bytes) => bytes,
             Err(e) => {
-                eprintln!("[IPC] Failed to decode base64 message: {}", e);
+                log::error!(target: "vscodeee::ipc::channel", "Failed to decode base64 message: {e}");
                 return;
             }
         };

@@ -34,6 +34,6 @@ pub async fn ipc_message(
 /// Returns the window ID to confirm the connection is established.
 #[tauri::command]
 pub async fn ipc_handshake(window_id: u32) -> Result<u32, String> {
-    println!("[IPC] Handshake for window {}", window_id);
+    log::info!(target: "vscodeee::commands::ipc_channel", "Handshake for window {window_id}");
     Ok(window_id)
 }

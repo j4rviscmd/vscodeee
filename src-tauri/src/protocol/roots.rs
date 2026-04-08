@@ -53,8 +53,9 @@ impl ValidRoots {
         let canonical = match path.canonicalize() {
             Ok(p) => p,
             Err(e) => {
-                eprintln!(
-                    "[protocol] Warning: could not canonicalize root {}: {e}",
+                log::warn!(
+                    target: "vscodeee::protocol::roots",
+                    "Could not canonicalize root {}: {e}",
                     path.display()
                 );
                 return;

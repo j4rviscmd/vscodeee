@@ -73,7 +73,7 @@ pub async fn spawn(
     // Mirrors _listenOnPipe() at extensionHostConnection.ts:337-348
     let listener = UnixListener::bind(&pipe_path).map_err(ExtHostError::PipeCreation)?;
 
-    println!("[exthost] Listening on pipe: {pipe_path}");
+    log::info!(target: "vscodeee::exthost::sidecar", "Listening on pipe: {pipe_path}");
 
     // Step 2: Spawn the Node.js process
     // If spawn or accept fails, clean up the socket file before returning.
@@ -124,7 +124,7 @@ async fn spawn_and_connect(
         .map_err(ExtHostError::Spawn)?;
 
     let pid = child.id().unwrap_or(0);
-    println!("[exthost] Spawned Node.js ExtHost process (PID: {pid})");
+    log::info!(target: "vscodeee::exthost::sidecar", "Spawned Node.js ExtHost process (PID: {pid})");
 
     // Step 3: Wait for the ExtHost to connect back (30s timeout)
     // Mirrors extensionHostConnection.ts:313-316
@@ -134,7 +134,7 @@ async fn spawn_and_connect(
         .map_err(|_| ExtHostError::Timeout)?
         .map_err(ExtHostError::PipeCreation)?;
 
-    println!("[exthost] ExtHost connected to pipe");
+    log::info!(target: "vscodeee::exthost::sidecar", "ExtHost connected to pipe");
 
     let sidecar = ExtHostSidecar {
         child,
