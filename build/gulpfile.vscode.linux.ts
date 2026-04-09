@@ -26,6 +26,13 @@ const commit = getVersion(root);
 
 const linuxPackageRevision = Math.floor(new Date().getTime() / 1000);
 
+/**
+ * Maps a CPU architecture name to the corresponding Debian package architecture string.
+ *
+ * @param arch - The CPU architecture (e.g. `'x64'`, `'armhf'`, `'arm64'`).
+ * @returns The Debian architecture string.
+ * @throws {Error} If the architecture is not recognized.
+ */
 function getDebPackageArch(arch: string): string {
 	switch (arch) {
 		case 'x64': return 'amd64';
@@ -35,6 +42,15 @@ function getDebPackageArch(arch: string): string {
 	}
 }
 
+/**
+ * Creates a gulp task factory that prepares the directory layout for a Debian package.
+ *
+ * Assembles desktop files, appdata, workspace MIME type, icon, shell completions,
+ * application binary, and the DEBIAN control file into the target directory structure.
+ *
+ * @param arch - The CPU architecture to build for.
+ * @returns A gulp task function that performs the preparation.
+ */
 function prepareDebPackage(arch: string) {
 	const binaryDir = '../VSCode-linux-' + arch;
 	const debArch = getDebPackageArch(arch);
@@ -121,6 +137,12 @@ function prepareDebPackage(arch: string) {
 	};
 }
 
+/**
+ * Creates a gulp task that builds a `.deb` package from the prepared directory structure.
+ *
+ * @param arch - The CPU architecture to build for.
+ * @returns An async gulp task function that invokes `dpkg-deb` to create the package.
+ */
 function buildDebPackage(arch: string) {
 	const debArch = getDebPackageArch(arch);
 	const cwd = `.build/linux/deb/${debArch}`;
@@ -132,10 +154,23 @@ function buildDebPackage(arch: string) {
 	};
 }
 
+/**
+ * Returns the RPM build root path for the given architecture.
+ *
+ * @param rpmArch - The RPM architecture string (e.g. `'x86_64'`).
+ * @returns The absolute path to the rpmbuild directory.
+ */
 function getRpmBuildPath(rpmArch: string): string {
 	return '.build/linux/rpm/' + rpmArch + '/rpmbuild';
 }
 
+/**
+ * Maps a CPU architecture name to the corresponding RPM package architecture string.
+ *
+ * @param arch - The CPU architecture (e.g. `'x64'`, `'armhf'`, `'arm64'`).
+ * @returns The RPM architecture string.
+ * @throws {Error} If the architecture is not recognized.
+ */
 function getRpmPackageArch(arch: string): string {
 	switch (arch) {
 		case 'x64': return 'x86_64';
@@ -145,6 +180,15 @@ function getRpmPackageArch(arch: string): string {
 	}
 }
 
+/**
+ * Creates a gulp task factory that prepares the directory layout for an RPM package.
+ *
+ * Assembles desktop files, appdata, workspace MIME type, icon, shell completions,
+ * application binary, and the RPM spec file into the rpmbuild directory structure.
+ *
+ * @param arch - The CPU architecture to build for.
+ * @returns A gulp task function that performs the preparation.
+ */
 function prepareRpmPackage(arch: string) {
 	const binaryDir = '../VSCode-linux-' + arch;
 	const rpmArch = getRpmPackageArch(arch);
@@ -216,6 +260,12 @@ function prepareRpmPackage(arch: string) {
 	};
 }
 
+/**
+ * Creates a gulp task that builds an `.rpm` package from the prepared rpmbuild directory.
+ *
+ * @param arch - The CPU architecture to build for.
+ * @returns An async gulp task function that invokes `rpmbuild` to create the package.
+ */
 function buildRpmPackage(arch: string) {
 	const rpmArch = getRpmPackageArch(arch);
 	const rpmBuildPath = getRpmBuildPath(rpmArch);
@@ -229,10 +279,25 @@ function buildRpmPackage(arch: string) {
 	};
 }
 
+/**
+ * Returns the snap package build path for the given architecture.
+ *
+ * @param arch - The CPU architecture (e.g. `'x64'`, `'armhf'`, `'arm64'`).
+ * @returns The absolute path to the snap build directory.
+ */
 function getSnapBuildPath(arch: string): string {
 	return `.build/linux/snap/${arch}/${product.applicationName}-${arch}`;
 }
 
+/**
+ * Creates a gulp task factory that prepares the directory layout for a Snap package.
+ *
+ * Assembles desktop files, icon, application binary, and snapcraft.yaml into
+ * the snap build directory structure.
+ *
+ * @param arch - The CPU architecture to build for.
+ * @returns A gulp task function that performs the preparation.
+ */
 function prepareSnapPackage(arch: string) {
 	const binaryDir = '../VSCode-linux-' + arch;
 	const destination = getSnapBuildPath(arch);
@@ -268,20 +333,26 @@ function prepareSnapPackage(arch: string) {
 			.pipe(replace('@@ARCHITECTURE@@', arch === 'x64' ? 'amd64' : arch))
 			.pipe(rename('snap/snapcraft.yaml'));
 
-		const electronLaunch = gulp.src('resources/linux/snap/electron-launch', { base: '.' })
-			.pipe(rename('electron-launch'));
-
-		const all = es.merge(desktops, icon, code, snapcraft, electronLaunch);
+		const all = es.merge(desktops, icon, code, snapcraft);
 
 		return all.pipe(vfs.dest(destination));
 	};
 }
 
+/**
+ * Creates a gulp task that builds a snap package using `snapcraft`.
+ *
+ * @param arch - The CPU architecture to build for.
+ * @returns An async gulp task function that invokes `snapcraft` to create the package.
+ */
 function buildSnapPackage(arch: string) {
 	const cwd = getSnapBuildPath(arch);
 	return () => exec('snapcraft', { cwd });
 }
 
+/**
+ * The list of CPU architectures for which Linux packages are built.
+ */
 const BUILD_TARGETS = [
 	{ arch: 'x64' },
 	{ arch: 'armhf' },
