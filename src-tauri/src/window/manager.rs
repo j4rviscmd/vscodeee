@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use tokio::sync::RwLock;
 
-use super::state::{OpenWindowOptions, WindowId, WindowInfo, WindowKind};
+use super::state::{OpenWindowOptions, WindowId, WindowInfo, WindowKind, WindowSessionEntry};
 
 /// Central registry for all open windows.
 ///
@@ -54,6 +54,7 @@ impl WindowManager {
             is_focused: true,
             is_fullscreen: false,
             is_maximized: false,
+            restore_consumed: false,
         };
 
         self.windows.write().await.insert(id, info);
@@ -81,7 +82,10 @@ impl WindowManager {
 
         // Workspace deduplication: if not forcing, find existing window with same workspace
         if !options.force_new_window {
-            let workspace_key = options.folder_uri.as_deref().or(options.workspace_uri.as_deref());
+            let workspace_key = options
+                .folder_uri
+                .as_deref()
+                .or(options.workspace_uri.as_deref());
             if let Some(key) = workspace_key {
                 if let Some(existing) = self.find_by_workspace(key).await {
                     // Focus the existing window instead of creating a new one
@@ -144,7 +148,10 @@ impl WindowManager {
             .map_err(|e| format!("Failed to create window: {e}"))?;
 
         // Register in state
-        let workspace_uri = options.folder_uri.clone().or_else(|| options.workspace_uri.clone());
+        let workspace_uri = options
+            .folder_uri
+            .clone()
+            .or_else(|| options.workspace_uri.clone());
         let info = WindowInfo {
             id,
             label: label.clone(),
@@ -154,6 +161,7 @@ impl WindowManager {
             is_focused: true,
             is_fullscreen: false,
             is_maximized: false,
+            restore_consumed: false,
         };
 
         self.windows.write().await.insert(id, info);
@@ -193,7 +201,11 @@ impl WindowManager {
 
     /// Get the Tauri label for a window ID (reverse lookup).
     pub async fn label_for_id(&self, id: WindowId) -> Option<String> {
-        self.windows.read().await.get(&id).map(|info| info.label.clone())
+        self.windows
+            .read()
+            .await
+            .get(&id)
+            .map(|info| info.label.clone())
     }
 
     /// Get window info by ID.
@@ -225,9 +237,10 @@ impl WindowManager {
     /// Find a window by workspace URI.
     pub async fn find_by_workspace(&self, workspace_uri: &str) -> Option<WindowInfo> {
         let windows = self.windows.read().await;
-        windows.values().find(|w| {
-            w.workspace_uri.as_deref() == Some(workspace_uri)
-        }).cloned()
+        windows
+            .values()
+            .find(|w| w.workspace_uri.as_deref() == Some(workspace_uri))
+            .cloned()
     }
 
     /// Update a window's focused state.
@@ -269,6 +282,18 @@ impl WindowManager {
         }
     }
 
+    /// Update a window's workspace URI.
+    ///
+    /// Called when the TypeScript layer opens a folder/workspace, so the Rust
+    /// side tracks which workspace each window has open for session persistence.
+    pub async fn set_workspace_uri(&self, label: &str, uri: Option<String>) {
+        if let Some(id) = self.id_for_label(label).await {
+            if let Some(info) = self.windows.write().await.get_mut(&id) {
+                info.workspace_uri = uri;
+            }
+        }
+    }
+
     /// Set the workspace URI for a window.
     pub async fn set_workspace(&self, label: &str, workspace_uri: Option<String>) {
         if let Some(id) = self.id_for_label(label).await {
@@ -276,6 +301,134 @@ impl WindowManager {
                 info.workspace_uri = workspace_uri;
             }
         }
+    }
+
+    /// Consume the restored workspace URI for a window.
+    ///
+    /// Returns the workspace URI on the first call after app start, then marks
+    /// the restore as consumed so subsequent calls (e.g. after "Close Folder"
+    /// reload) return `None`.
+    pub async fn consume_restored_uri(&self, label: &str) -> Option<String> {
+        if let Some(id) = self.id_for_label(label).await {
+            if let Some(info) = self.windows.write().await.get_mut(&id) {
+                if !info.restore_consumed {
+                    info.restore_consumed = true;
+                    return info.workspace_uri.clone();
+                }
+            }
+        }
+        None
+    }
+
+    /// Create a snapshot of all windows for session persistence.
+    ///
+    /// Returns a list of [`WindowSessionEntry`] structs capturing the
+    /// current state of all windows, suitable for saving to `sessions.json`.
+    pub async fn snapshot_for_session(&self) -> Vec<WindowSessionEntry> {
+        let windows = self.windows.read().await;
+        let last_active = *self.last_active.read().await;
+        let mut entries: Vec<WindowSessionEntry> = windows
+            .values()
+            .enumerate()
+            .map(|(order, info)| WindowSessionEntry {
+                id: info.id,
+                label: info.label.clone(),
+                workspace_uri: info.workspace_uri.clone(),
+                folder_uri: info.workspace_uri.clone(),
+                is_fullscreen: info.is_fullscreen,
+                is_maximized: info.is_maximized,
+                order: order as u32,
+                is_last_active: last_active == Some(info.id),
+            })
+            .collect();
+        entries.sort_by_key(|e| e.order);
+        entries
+    }
+
+    /// Create and register a restored window (not the initial "main" window).
+    ///
+    /// Used during session restore to create additional windows beyond
+    /// the first one (which is always created by `tauri.conf.json`).
+    pub async fn create_restored_window(
+        &self,
+        app_handle: &tauri::AppHandle,
+        label: &str,
+        folder_uri: Option<&str>,
+        workspace_uri: Option<&str>,
+        is_fullscreen: bool,
+    ) -> Result<WindowId, String> {
+        use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+
+        // Build URL with workspace/folder query params
+        let mut url_str = String::from("vs/code/tauri-browser/workbench/workbench-tauri.html");
+        let mut has_param = false;
+
+        if let Some(folder) = folder_uri {
+            url_str.push_str("?folder=");
+            url_str.push_str(&encode_uri_component(folder));
+            has_param = true;
+        } else if let Some(workspace) = workspace_uri {
+            url_str.push_str("?workspace=");
+            url_str.push_str(&encode_uri_component(workspace));
+            has_param = true;
+        }
+
+        let separator = if has_param { '&' } else { '?' };
+        url_str.push(separator);
+        url_str.push_str("windowLabel=");
+        url_str.push_str(label);
+
+        let url = WebviewUrl::App(url_str.into());
+
+        #[cfg(target_os = "macos")]
+        let builder = WebviewWindowBuilder::new(app_handle, label, url)
+            .title("VS Codeee")
+            .inner_size(1200.0, 800.0)
+            .min_inner_size(400.0, 270.0)
+            .decorations(false)
+            .title_bar_style(tauri::TitleBarStyle::Overlay)
+            .hidden_title(true)
+            .fullscreen(is_fullscreen);
+
+        #[cfg(not(target_os = "macos"))]
+        let builder = WebviewWindowBuilder::new(app_handle, label, url)
+            .title("VS Codeee")
+            .inner_size(1200.0, 800.0)
+            .min_inner_size(400.0, 270.0)
+            .decorations(false)
+            .fullscreen(is_fullscreen);
+
+        builder
+            .build()
+            .map_err(|e| format!("Failed to create restored window '{label}': {e}"))?;
+
+        let effective_uri = folder_uri
+            .map(String::from)
+            .or_else(|| workspace_uri.map(String::from));
+
+        let info = WindowInfo {
+            id,
+            label: label.to_string(),
+            kind: WindowKind::Main,
+            workspace_uri: effective_uri,
+            is_ready: false,
+            is_focused: false,
+            is_fullscreen,
+            is_maximized: false,
+            restore_consumed: false,
+        };
+
+        self.windows.write().await.insert(id, info);
+        self.label_to_id.write().await.insert(label.to_string(), id);
+
+        log::info!(
+            target: "vscodeee::window::manager",
+            "Created restored window: label={label}, id={id}"
+        );
+
+        Ok(id)
     }
 }
 

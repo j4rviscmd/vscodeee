@@ -11,5 +11,7 @@
 
 pub mod events;
 pub mod manager;
+pub mod restore;
 pub mod session;
+pub mod settings;
 pub mod state;

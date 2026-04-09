@@ -50,6 +50,14 @@ pub struct WindowConfiguration {
     /// Application data directory for user settings and state.
     /// e.g., `~/Library/Application Support/vscodeee` on macOS.
     pub app_data_dir: String,
+    /// Folder URI restored from the previous session, if any.
+    /// Used as a fallback when the URL query string doesn't contain `?folder=`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub restored_folder_uri: Option<String>,
+    /// Workspace URI restored from the previous session, if any.
+    /// Used as a fallback when the URL query string doesn't contain `?workspace=`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub restored_workspace_uri: Option<String>,
 }
 
 /// Retrieve native host environment information.
@@ -95,10 +103,7 @@ pub async fn get_window_configuration(
     use tauri::Manager;
 
     let label = window.label().to_string();
-    let window_id = window_manager
-        .id_for_label(&label)
-        .await
-        .unwrap_or(1); // Fallback for initial bootstrap race
+    let window_id = window_manager.id_for_label(&label).await.unwrap_or(1); // Fallback for initial bootstrap race
 
     let resource_dir = app_handle
         .path()
@@ -135,16 +140,33 @@ pub async fn get_window_configuration(
                 .unwrap_or_default()
         });
 
+    // Look up restored workspace/folder URI from the WindowManager state.
+    // `consume_restored_uri` returns the URI on the first call after app start
+    // and None on subsequent calls (e.g. after "Close Folder" page reload).
+    let restored_folder_uri = window_manager.consume_restored_uri(&label).await;
+    let restored_workspace_uri: Option<String> = None; // workspace files handled separately
+
     Ok(WindowConfiguration {
         window_id,
         log_level: 1, // Info
         resource_dir,
         frontend_dist,
         app_data_dir,
+        restored_folder_uri,
+        restored_workspace_uri,
     })
 }
 
 /// Recursively collect `.css` file paths under a directory.
+///
+/// Walks the directory tree rooted at `dir`, collecting all files with the
+/// `.css` extension. Paths are stored relative to `root`.
+///
+/// # Arguments
+///
+/// * `dir` - The directory to scan (recurses into subdirectories).
+/// * `root` - The base path used to compute relative paths for results.
+/// * `result` - Accumulator for discovered CSS file paths (relative to `root`).
 fn collect_css_files(dir: &Path, root: &Path, result: &mut Vec<String>) {
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,

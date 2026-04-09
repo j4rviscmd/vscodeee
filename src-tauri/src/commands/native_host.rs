@@ -74,6 +74,19 @@ pub async fn move_item_to_trash(path: String) -> Result<(), String> {
 // ─── Process Management ─────────────────────────────────────────────────
 
 /// Kill a process by PID.
+///
+/// Sends a signal to the specified process. On Unix, uses `libc::kill()`
+/// with the mapped signal. On Windows, falls back to `taskkill /F`.
+///
+/// # Arguments
+///
+/// * `pid` - The process ID to signal.
+/// * `code` - Signal name: `"SIGTERM"` (default), `"SIGKILL"`, or `"SIGINT"`.
+///
+/// # Errors
+///
+/// Returns an error string if the signal is unsupported, or if the
+/// OS-level kill/taskkill call fails.
 #[tauri::command]
 pub fn kill_process(pid: u32, code: String) -> Result<(), String> {
     let signal = match code.as_str() {
@@ -249,26 +262,47 @@ pub async fn uninstall_shell_command(_app: tauri::AppHandle) -> Result<(), Strin
 // ─── OS Properties ──────────────────────────────────────────────────────
 
 /// OS properties matching `IOSProperties` in VS Code.
+///
+/// Provides static system information (OS type, architecture, CPU info)
+/// used by the workbench for telemetry and environment detection.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OsProperties {
+    /// OS release version string (e.g. `"14.5"` on macOS, kernel version on Linux).
     pub os_release: String,
+    /// Machine hostname, or `"unknown"` if retrieval fails.
     pub os_hostname: String,
+    /// CPU architecture (e.g. `"aarch64"`, `"x86_64"`).
     pub arch: String,
+    /// OS platform identifier (e.g. `"macos"`, `"linux"`, `"windows"`).
     pub platform: String,
+    /// OS type string matching Node.js `os.type()` (e.g. `"Darwin"`, `"Linux"`, `"Windows_NT"`).
     pub r#type: String,
+    /// CPU profile information (model, speed, core count).
     pub cpu_profile: CpuProfile,
 }
 
+/// CPU profile information for the host machine.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CpuProfile {
+    /// CPU model name (currently `"unknown"` — not yet implemented).
     pub model: String,
+    /// CPU clock speed in MHz (currently `0` — not yet implemented).
     pub speed: u64,
+    /// Number of available CPU cores (logical parallelism).
     pub count: usize,
 }
 
 /// Retrieve OS properties for the workbench.
+///
+/// Returns static system information including OS type, architecture,
+/// hostname, and CPU profile. Matches the `IOSProperties` interface
+/// consumed by the TypeScript workbench.
+///
+/// # Returns
+///
+/// An [`OsProperties`] struct with the current system's static properties.
 #[tauri::command]
 pub fn get_os_properties() -> OsProperties {
     let hostname = hostname::get()
@@ -286,15 +320,30 @@ pub fn get_os_properties() -> OsProperties {
 }
 
 /// OS statistics matching `IOSStatistics` in VS Code.
+///
+/// Provides dynamic system metrics (memory usage, load average)
+/// that may change over time, unlike the static [`OsProperties`].
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OsStatistics {
+    /// Total physical memory in bytes.
     pub total_mem: u64,
+    /// Available (free) physical memory in bytes.
     pub free_mem: u64,
+    /// System load averages for the last 1, 5, and 15 minutes.
+    /// On Windows, all values are `0.0` (not supported).
     pub load_avg: [f64; 3],
 }
 
 /// Retrieve OS statistics (memory, load average).
+///
+/// Returns dynamic system metrics including total/free memory and
+/// load averages. Uses platform-specific APIs (`sysctl`/`host_statistics64`
+/// on macOS, `sysinfo` on Linux). Windows returns zeroed values.
+///
+/// # Returns
+///
+/// An [`OsStatistics`] struct with current memory and load data.
 #[tauri::command]
 pub fn get_os_statistics() -> OsStatistics {
     #[cfg(target_os = "macos")]
@@ -353,27 +402,79 @@ pub fn close_window(window: tauri::Window) -> Result<(), String> {
     window.close().map_err(|e| e.to_string())
 }
 
-/// Quit the application gracefully.
+/// Quit the application gracefully, saving the session first.
+///
+/// Persists the current window/workspace mapping to `sessions.json`
+/// via [`save_session_snapshot`](crate::window::events::save_session_snapshot),
+/// then exits the process with code `0`.
 #[tauri::command]
-pub fn quit_app(app: tauri::AppHandle) {
+pub async fn quit_app(
+    app: tauri::AppHandle,
+    window_manager: tauri::State<'_, std::sync::Arc<crate::window::manager::WindowManager>>,
+) -> Result<(), String> {
+    crate::window::events::save_session_snapshot(&window_manager).await;
     app.exit(0);
+    Ok(())
 }
 
-/// Exit the application with a specific code.
+/// Exit the application with a specific code, saving the session first.
+///
+/// Same as [`quit_app`] but allows specifying a non-zero exit code
+/// for error conditions.
+///
+/// # Arguments
+///
+/// * `code` - The process exit code.
 #[tauri::command]
-pub fn exit_app(app: tauri::AppHandle, code: i32) {
+pub async fn exit_app(
+    app: tauri::AppHandle,
+    code: i32,
+    window_manager: tauri::State<'_, std::sync::Arc<crate::window::manager::WindowManager>>,
+) -> Result<(), String> {
+    crate::window::events::save_session_snapshot(&window_manager).await;
     app.exit(code);
+    Ok(())
+}
+
+/// Explicitly save the current session (all windows + workspaces) to disk.
+#[tauri::command]
+pub async fn save_session(
+    window_manager: tauri::State<'_, std::sync::Arc<crate::window::manager::WindowManager>>,
+) -> Result<(), String> {
+    crate::window::events::save_session_snapshot(&window_manager).await;
+    Ok(())
 }
 
 // ─── Network ────────────────────────────────────────────────────────────
 
 /// Check if a given port is free for binding.
+///
+/// Attempts to bind a TCP listener on `127.0.0.1:<port>`. Returns `true`
+/// if binding succeeds (port is available), `false` otherwise.
+///
+/// # Arguments
+///
+/// * `port` - The TCP port number to check.
 #[tauri::command]
 pub fn is_port_free(port: u16) -> bool {
     std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
 }
 
 /// Find a free port starting from `start_port`.
+///
+/// Scans ports in increments of `stride` from `start_port` up to
+/// `start_port + give_up_after`, returning the first available port.
+///
+/// # Arguments
+///
+/// * `start_port` - The first port to try.
+/// * `give_up_after` - Maximum number of ports to scan before giving up.
+/// * `_timeout` - Reserved for future use (currently ignored).
+/// * `stride` - Increment between port attempts (clamped to 1 if 0).
+///
+/// # Errors
+///
+/// Returns an error string if no free port is found in the given range.
 #[tauri::command]
 pub fn find_free_port(
     start_port: u16,
@@ -397,6 +498,11 @@ pub fn find_free_port(
 
 // ─── Platform Helpers ───────────────────────────────────────────────────
 
+/// Return the OS release version string.
+///
+/// - macOS: Uses `sw_vers -productVersion` (e.g. `"14.5"`).
+/// - Linux: Uses `uname -r` (kernel version).
+/// - Windows: Returns `"windows"`.
 fn os_release() -> String {
     #[cfg(target_os = "macos")]
     {
@@ -422,6 +528,11 @@ fn os_release() -> String {
     }
 }
 
+/// Return the OS type string matching Node.js `os.type()` convention.
+///
+/// - macOS: `"Darwin"`
+/// - Linux: `"Linux"`
+/// - Windows: `"Windows_NT"`
 fn os_type() -> String {
     #[cfg(target_os = "macos")]
     {
@@ -437,6 +548,10 @@ fn os_type() -> String {
     }
 }
 
+/// Build a basic CPU profile with available parallelism count.
+///
+/// Model and speed are currently reported as `"unknown"` / `0` since
+/// Rust's standard library does not expose CPU model details.
 fn get_cpu_profile() -> CpuProfile {
     CpuProfile {
         model: "unknown".to_string(),
@@ -447,6 +562,11 @@ fn get_cpu_profile() -> CpuProfile {
     }
 }
 
+/// Retrieve the 1-, 5-, and 15-minute system load averages (Unix only).
+///
+/// # Safety
+///
+/// Calls `libc::getloadavg` which writes to a raw pointer.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn load_average() -> [f64; 3] {
     let mut load = [0.0f64; 3];
@@ -456,6 +576,7 @@ fn load_average() -> [f64; 3] {
     load
 }
 
+/// Retrieve total physical memory on macOS via `sysctl(HW_MEMSIZE)`.
 #[cfg(target_os = "macos")]
 fn macos_total_mem() -> u64 {
     use std::mem;
@@ -475,6 +596,9 @@ fn macos_total_mem() -> u64 {
     size
 }
 
+/// Retrieve free (unused) physical memory on macOS via `host_statistics64`.
+///
+/// Reports `vm_statistics64.free_count * vm_page_size` in bytes.
 #[cfg(target_os = "macos")]
 fn macos_free_mem() -> u64 {
     use std::mem;
@@ -493,6 +617,7 @@ fn macos_free_mem() -> u64 {
     (stats.free_count as u64) * (unsafe { libc::vm_page_size } as u64)
 }
 
+/// Retrieve total physical memory on Linux via `libc::sysinfo`.
 #[cfg(target_os = "linux")]
 fn linux_total_mem() -> u64 {
     let mut info: libc::sysinfo = unsafe { std::mem::zeroed() };
@@ -502,6 +627,7 @@ fn linux_total_mem() -> u64 {
     info.totalram * info.mem_unit as u64
 }
 
+/// Retrieve free physical memory on Linux via `libc::sysinfo`.
 #[cfg(target_os = "linux")]
 fn linux_free_mem() -> u64 {
     let mut info: libc::sysinfo = unsafe { std::mem::zeroed() };
