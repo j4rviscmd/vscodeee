@@ -30,6 +30,13 @@
 
 	//#region Splash Screen
 
+	/**
+	 * Display the initial splash screen with VS Code dark theme defaults.
+	 *
+	 * Injects minimal CSS (background/foreground colors) and sets the
+	 * `monaco-workbench vs-dark` class on the body. Must run synchronously
+	 * before any async work to avoid a white flash.
+	 */
 	function showSplash(): void {
 		performance.mark('code/willShowPartsSplash');
 
@@ -60,12 +67,25 @@
 
 	//#region Tauri API — use window.__TAURI__ directly (no npm imports)
 
+	/**
+	 * Minimal type definition for the `window.__TAURI__` global API.
+	 *
+	 * Only declares the `core.invoke` method used by the bootstrap script.
+	 * The full Tauri API types are available in `@tauri-apps/api` but are
+	 * not imported here to keep this script self-contained.
+	 */
 	interface ITauriGlobal {
 		core: {
 			invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T>;
 		};
 	}
 
+	/**
+	 * Retrieve the Tauri global API from `window.__TAURI__`.
+	 *
+	 * @returns The Tauri global API object.
+	 * @throws {Error} If the Tauri API is not available (e.g., running outside a Tauri WebView).
+	 */
 	function getTauri(): ITauriGlobal {
 		const tauri = (window as any).__TAURI__;
 		if (!tauri) {
@@ -80,14 +100,29 @@
 
 	//#region Configuration
 
+	/**
+	 * Window configuration returned by the `get_window_configuration` Tauri command.
+	 *
+	 * Provides the minimal set of values needed for workbench bootstrap,
+	 * including paths, window identity, and any restored workspace URIs
+	 * from the previous session.
+	 */
 	interface ITauriWindowConfig {
 		windowId: number;
 		logLevel: number;
 		resourceDir: string;
 		frontendDist: string;
 		appDataDir: string;
+		restoredFolderUri?: string;
+		restoredWorkspaceUri?: string;
 	}
 
+	/**
+	 * Native host information returned by the `get_native_host_info` Tauri command.
+	 *
+	 * Provides OS-level environment details (platform, architecture, paths)
+	 * that the workbench uses for feature detection and file system access.
+	 */
 	interface ITauriHostInfo {
 		homeDir: string;
 		tmpDir: string;
@@ -137,6 +172,17 @@
 	// We create an import map that intercepts each CSS URL and redirects it
 	// to a blob URL containing `globalThis._VSCODE_CSS_LOAD(url)`, which
 	// inserts a <link> element to load the actual CSS.
+	/**
+	 * Set up CSS import maps for ES module CSS imports.
+	 *
+	 * Port of Electron's `setupCSSImportMaps` mechanism. Fetches the list
+	 * of `.css` files from the Rust backend, then creates a `<script type="importmap">`
+	 * element that maps each CSS URL to a blob URL containing a
+	 * `globalThis._VSCODE_CSS_LOAD(url)` call. This allows transpiled ESM
+	 * modules to `import './foo.css'` and have it converted to a `<link>` injection.
+	 *
+	 * **Must be called before any `<script type="module">` is loaded.**
+	 */
 	async function setupCSSImportMaps(): Promise<void> {
 		performance.mark('code/willAddCssLoader');
 
@@ -186,9 +232,15 @@
 
 	// When a folder/workspace is opened, the page is reloaded with ?folder=<uri>
 	// or ?workspace=<uri> in the URL. Parse these to pass to the workbench.
+	// Fall back to restored URIs from the session if no URL params are present.
 	const query = new URL(document.location.href).searchParams;
-	const folderParam = query.get('folder');
-	const workspaceParam = query.get('workspace');
+	const folderParam = query.get('folder') ?? windowConfig.restoredFolderUri ?? null;
+	const workspaceParam = query.get('workspace') ?? windowConfig.restoredWorkspaceUri ?? null;
+
+	// Notify the Rust backend of the current workspace URI so it can be
+	// persisted in sessions.json when the app quits.
+	const effectiveUri = folderParam ?? workspaceParam ?? null;
+	tauri.core.invoke('set_workspace_uri', { uri: effectiveUri }).catch(() => { /* best-effort */ });
 
 	//#endregion
 

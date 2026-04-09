@@ -55,10 +55,7 @@ pub async fn get_extended_window_configuration(
     window_manager: tauri::State<'_, std::sync::Arc<crate::window::manager::WindowManager>>,
 ) -> Result<ExtendedWindowConfiguration, String> {
     let label = window.label().to_string();
-    let window_id = window_manager
-        .id_for_label(&label)
-        .await
-        .unwrap_or(1);
+    let window_id = window_manager.id_for_label(&label).await.unwrap_or(1);
 
     let resource_dir = app_handle
         .path()
@@ -179,4 +176,21 @@ pub async fn get_window_count(
 ) -> Result<u32, String> {
     let windows = window_manager.get_all().await;
     Ok(windows.len() as u32)
+}
+
+/// Notify the Rust backend of the current workspace URI for session persistence.
+///
+/// Called by the TypeScript workbench bootstrap when a folder or workspace is
+/// resolved from URL query parameters or restored URIs. This ensures the
+/// `WindowManager` tracks which workspace each window has open, so it can be
+/// saved in `sessions.json` on quit.
+#[tauri::command]
+pub async fn set_workspace_uri(
+    window: tauri::Window,
+    uri: Option<String>,
+    window_manager: tauri::State<'_, std::sync::Arc<crate::window::manager::WindowManager>>,
+) -> Result<(), String> {
+    let label = window.label().to_string();
+    window_manager.set_workspace_uri(&label, uri).await;
+    Ok(())
 }
