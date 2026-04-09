@@ -139,6 +139,17 @@ pub fn run() {
         .setup(move |app| {
             log::info!(target: "vscodeee", "Tauri app started");
 
+            // On Windows/Linux, disable decorations at runtime so we use our custom
+            // title bar. On macOS, we keep decorations=true + titleBarStyle=Overlay
+            // to preserve the native traffic lights and rounded corners.
+            #[cfg(not(target_os = "macos"))]
+            {
+                use tauri::Manager;
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_decorations(false);
+                }
+            }
+
             // Open devtools in debug builds for WebView debugging
             #[cfg(debug_assertions)]
             {
