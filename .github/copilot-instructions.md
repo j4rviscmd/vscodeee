@@ -148,5 +148,17 @@ function f(x: number, y: string): void { }
 - Avoid using events to drive control flow between components. Instead, prefer direct method calls or service interactions to ensure clearer dependencies and easier traceability of logic. Events should be reserved for broadcasting state changes or notifications rather than orchestrating behavior across components.
 - Service dependencies MUST be declared in constructors and MUST NOT be accessed through the `IInstantiationService` at any other point in time.
 
+## Tauri Migration Principles
+
+This repository is a fork of microsoft/vscode with the goal of migrating from Electron to Tauri 2.0.
+
+- **Prefer Tauri native APIs over Electron/browser patterns.** When a Tauri equivalent exists (e.g., `listen('tauri://resize')` vs DOM `window.resize`, Tauri event system vs Electron IPC), always use the Tauri API. The goal is complete Electron independence.
+- **Use English** for all commit messages, PR titles/bodies, and code comments (OSS project).
+- **Tauri layer naming**: `tauri-browser/` for WebView-side code, following VS Code's `electron-browser/` convention.
+- **Always leave TODO comments in source code** for future work, known issues, and migration notes. Format: `// TODO(Phase N): description`. Don't leave undocumented technical debt.
+
 ## Learnings
 - Minimize the amount of assertions in tests. Prefer one snapshot-style `assert.deepStrictEqual` over multiple precise assertions, as they are much more difficult to understand and to update.
+- `data-tauri-drag-region` attribute does NOT work like Electron's `-webkit-app-region: drag` — Tauri's handler calls `closest()` which triggers on buttons too. Use programmatic `mousedown` handler with interactive element exclusion.
+- `start_dragging` captures the mouse, preventing `dblclick` events from firing. Detect double-click via `e.detail >= 2` inside the `mousedown` handler instead.
+- On macOS, `decorations: false` removes everything (no traffic lights, no rounded corners). Use `decorations: true` + `titleBarStyle: "Overlay"` for macOS, with runtime `set_decorations(false)` only on Windows/Linux.

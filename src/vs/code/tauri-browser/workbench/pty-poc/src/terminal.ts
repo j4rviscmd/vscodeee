@@ -109,6 +109,7 @@ async function createTerminal(container: HTMLElement): Promise<PtyTerminal> {
 	});
 
 	// Handle window resize
+	// TODO(Phase 5): Replace DOM resize with Tauri's listen('tauri://resize') — see migration principle in CLAUDE.md
 	const onWindowResize = () => fitAddon.fit();
 	window.addEventListener('resize', onWindowResize);
 

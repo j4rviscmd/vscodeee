@@ -21,7 +21,9 @@
         "minHeight": 270,
         "resizable": true,
         "fullscreen": false,
-        "decorations": true
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {
