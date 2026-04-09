@@ -18,7 +18,7 @@ import { Disposable } from '../../../base/common/lifecycle.js';
 import { URI } from '../../../base/common/uri.js';
 import { VSBuffer } from '../../../base/common/buffer.js';
 import { INativeHostService, INativeHostOptions, IOSProperties, IOSStatistics, IToastOptions, IToastResult, SystemIdleState, ThermalState, PowerSaveBlockerType, FocusMode } from '../common/native.js';
-import { MessageBoxOptions, MessageBoxReturnValue, OpenDevToolsOptions, OpenDialogOptions, OpenDialogReturnValue, SaveDialogOptions, SaveDialogReturnValue } from '../../../base/parts/sandbox/common/electronTypes.js';
+import { MessageBoxOptions, MessageBoxReturnValue, OpenDevToolsOptions, OpenDialogOptions, OpenDialogReturnValue, SaveDialogOptions, SaveDialogReturnValue } from '../../../base/parts/sandbox/common/nativeDialogTypes.js';
 import { ISerializableCommandAction } from '../../action/common/action.js';
 import { INativeOpenDialogOptions } from '../../dialogs/common/dialogs.js';
 import { IV8Profile } from '../../profiling/common/profiling.js';
@@ -27,6 +27,13 @@ import { IPartsSplash } from '../../theme/common/themeService.js';
 import { IColorScheme, IOpenedAuxiliaryWindow, IOpenedMainWindow, IOpenEmptyWindowOptions, IOpenWindowOptions, IPoint, IRectangle, IWindowOpenable } from '../../window/common/window.js';
 import { invoke, listen } from '../../tauri/common/tauriApi.js';
 
+/**
+ * Throws an error indicating that the given method is not yet implemented
+ * in the Tauri native host service.
+ *
+ * @param method - The name of the unimplemented method.
+ * @throws {Error} Always throws with a descriptive message.
+ */
 function notImplemented(method: string): never {
 	throw new Error(`[TauriNativeHostService] ${method} is not yet implemented.`);
 }
@@ -100,34 +107,31 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 	 * `INativeHostService` events so the workbench reacts to native window changes.
 	 */
 	private _wireWindowEvents(): void {
+		const registerListener = <T>(eventName: string, handler: (payload: T) => void) => {
+			listen<T>(eventName, e => handler(e.payload))
+				.then(unlisten => this._register({ dispose: unlisten }));
+		};
+
 		// Focus event
-		listen<number>('vscodeee:window:focus', (event) => {
-			const id = event.payload;
+		registerListener<number>('vscodeee:window:focus', id => {
 			this._onDidFocusMainWindow.fire(id);
 			this._onDidFocusMainOrAuxiliaryWindow.fire(id);
-		}).then(unlisten => this._register({ dispose: unlisten }));
+		});
 
 		// Blur event
-		listen<number>('vscodeee:window:blur', (event) => {
-			const id = event.payload;
+		registerListener<number>('vscodeee:window:blur', id => {
 			this._onDidBlurMainWindow.fire(id);
 			this._onDidBlurMainOrAuxiliaryWindow.fire(id);
-		}).then(unlisten => this._register({ dispose: unlisten }));
+		});
 
 		// Maximize event
-		listen<number>('vscodeee:window:maximize', (event) => {
-			this._onDidMaximizeWindow.fire(event.payload);
-		}).then(unlisten => this._register({ dispose: unlisten }));
+		registerListener<number>('vscodeee:window:maximize', id => this._onDidMaximizeWindow.fire(id));
 
 		// Unmaximize event
-		listen<number>('vscodeee:window:unmaximize', (event) => {
-			this._onDidUnmaximizeWindow.fire(event.payload);
-		}).then(unlisten => this._register({ dispose: unlisten }));
+		registerListener<number>('vscodeee:window:unmaximize', id => this._onDidUnmaximizeWindow.fire(id));
 
 		// Window opened event
-		listen<number>('vscodeee:window:opened', (event) => {
-			this._onDidOpenMainWindow.fire(event.payload);
-		}).then(unlisten => this._register({ dispose: unlisten }));
+		registerListener<number>('vscodeee:window:opened', id => this._onDidOpenMainWindow.fire(id));
 	}
 
 	// #region Window
@@ -158,14 +162,17 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		}
 	}
 
+	/** Returns the ID of the currently active window. Always returns the local window ID in Phase 1. */
 	async getActiveWindowId(): Promise<number | undefined> {
 		return this.windowId;
 	}
 
+	/** Returns the position of the active window. Not implemented in Phase 1. */
 	async getActiveWindowPosition(): Promise<IRectangle | undefined> {
 		return undefined;
 	}
 
+	/** Returns the native OS window handle. Not implemented in Phase 1. */
 	async getNativeWindowHandle(_windowId: number): Promise<VSBuffer | undefined> {
 		return undefined;
 	}
@@ -210,14 +217,17 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		}
 	}
 
+	/** Opens the agents session window. Not implemented in Phase 1. */
 	async openAgentsWindow(): Promise<void> {
 		notImplemented('openAgentsWindow');
 	}
 
+	/** Returns whether the window is currently in fullscreen mode. */
 	async isFullScreen(_options?: INativeHostOptions): Promise<boolean> {
 		return invoke<boolean>('is_fullscreen');
 	}
 
+	/** Toggles the window in and out of fullscreen mode. */
 	async toggleFullScreen(_options?: INativeHostOptions): Promise<void> {
 		return invoke('toggle_fullscreen');
 	}
@@ -226,18 +236,22 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		notImplemented('getCursorScreenPoint');
 	}
 
+	/** Returns whether the window is currently maximized. */
 	async isMaximized(_options?: INativeHostOptions): Promise<boolean> {
 		return invoke<boolean>('is_maximized');
 	}
 
+	/** Maximizes the window. */
 	async maximizeWindow(_options?: INativeHostOptions): Promise<void> {
 		return invoke('maximize_window');
 	}
 
+	/** Unmaximizes (restores) the window. */
 	async unmaximizeWindow(_options?: INativeHostOptions): Promise<void> {
 		return invoke('unmaximize_window');
 	}
 
+	/** Minimizes the window. */
 	async minimizeWindow(_options?: INativeHostOptions): Promise<void> {
 		return invoke('minimize_window');
 	}
@@ -290,18 +304,22 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 
 	// #region Dialogs
 
+	/** Shows a native message box dialog via Tauri. */
 	async showMessageBox(options: MessageBoxOptions & INativeHostOptions): Promise<MessageBoxReturnValue> {
 		return invoke<MessageBoxReturnValue>('show_message_box', { options });
 	}
 
+	/** Shows a native save-file dialog via Tauri. */
 	async showSaveDialog(options: SaveDialogOptions & INativeHostOptions): Promise<SaveDialogReturnValue> {
 		return invoke<SaveDialogReturnValue>('show_save_dialog', { options });
 	}
 
+	/** Shows a native open-file dialog via Tauri. */
 	async showOpenDialog(options: OpenDialogOptions & INativeHostOptions): Promise<OpenDialogReturnValue> {
 		return invoke<OpenDialogReturnValue>('show_open_dialog', { options });
 	}
 
+	/** Opens a native file-or-folder picker and opens the selected entry in a new window or editor. */
 	async pickFileFolderAndOpen(options: INativeOpenDialogOptions): Promise<void> {
 		const result = await this.showOpenDialog({
 			properties: ['openFile', 'openDirectory'],
@@ -313,6 +331,7 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		}
 	}
 
+	/** Opens a native file picker and opens the selected file in a new window or editor. */
 	async pickFileAndOpen(options: INativeOpenDialogOptions): Promise<void> {
 		const result = await this.showOpenDialog({
 			properties: ['openFile'],
@@ -324,6 +343,7 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		}
 	}
 
+	/** Opens a native folder picker and opens the selected folder in a new window. */
 	async pickFolderAndOpen(options: INativeOpenDialogOptions): Promise<void> {
 		const result = await this.showOpenDialog({
 			properties: ['openDirectory'],
@@ -343,6 +363,7 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 
 	// #region OS
 
+	/** Reveals the given file path in the system file manager. */
 	async showItemInFolder(path: string): Promise<void> {
 		await invoke('fs_show_item_in_folder', { path });
 	}
@@ -355,11 +376,13 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		// No-op: macOS-specific feature
 	}
 
+	/** Opens the given URL in the system's default browser. */
 	async openExternal(url: string, _defaultApplication?: string): Promise<boolean> {
 		await invoke('open_external', { url });
 		return true;
 	}
 
+	/** Moves the given file or directory to the system trash. */
 	async moveItemToTrash(fullPath: string): Promise<void> {
 		await invoke('move_item_to_trash', { path: fullPath });
 	}
@@ -376,10 +399,12 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		return false;
 	}
 
+	/** Returns the operating system properties (type, arch, platform, CPU info). */
 	async getOSProperties(): Promise<IOSProperties> {
 		return invoke<IOSProperties>('get_os_properties');
 	}
 
+	/** Returns the operating system memory and load statistics. */
 	async getOSStatistics(): Promise<IOSStatistics> {
 		return invoke<IOSStatistics>('get_os_statistics');
 	}
@@ -412,6 +437,7 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		return undefined;
 	}
 
+	/** Kills a process by PID with the given exit code. */
 	async killProcess(pid: number, code: string): Promise<void> {
 		await invoke('kill_process', { pid, code });
 	}
@@ -424,10 +450,12 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		notImplemented('triggerPaste');
 	}
 
+	/** Reads text content from the system clipboard. */
 	async readClipboardText(_type?: 'selection' | 'clipboard'): Promise<string> {
 		return invoke<string>('read_clipboard_text');
 	}
 
+	/** Writes text content to the system clipboard. */
 	async writeClipboardText(text: string, _type?: 'selection' | 'clipboard'): Promise<void> {
 		return invoke('write_clipboard_text', { text });
 	}
@@ -484,10 +512,12 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 
 	// #region Lifecycle
 
+	/** Notifies the Tauri backend that the window is ready to display. */
 	async notifyReady(): Promise<void> {
 		return invoke('notify_ready');
 	}
 
+	/** Relaunches the application via the Tauri backend. */
 	async relaunch(_options?: { addArgs?: string[]; removeArgs?: string[] }): Promise<void> {
 		await invoke('relaunch_app');
 	}
@@ -496,10 +526,12 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		window.location.reload();
 	}
 
+	/** Closes the current window via the Tauri backend. */
 	async closeWindow(_options?: INativeHostOptions): Promise<void> {
 		return invoke('close_window');
 	}
 
+	/** Quits the application via the Tauri backend. */
 	async quit(): Promise<void> {
 		return invoke('quit_app');
 	}
@@ -555,10 +587,12 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		return [];
 	}
 
+	/** Checks whether a given network port is free. */
 	async isPortFree(_port: number): Promise<boolean> {
 		return invoke<boolean>('is_port_free', { port: _port });
 	}
 
+	/** Finds a free network port starting from the given port number. */
 	async findFreePort(startPort: number, giveUpAfter: number, timeout: number, stride?: number): Promise<number> {
 		return invoke<number>('find_free_port', { startPort, giveUpAfter, timeout, stride: stride ?? 1 });
 	}
