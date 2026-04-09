@@ -30,6 +30,7 @@ export interface ITauriWindowConfiguration {
 	readonly appDataDir: string;
 	readonly homeDir?: string;
 	readonly tmpDir?: string;
+	readonly windowLabel?: string;
 }
 
 /**

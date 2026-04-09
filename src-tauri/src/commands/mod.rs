@@ -80,15 +80,25 @@ pub fn get_native_host_info() -> NativeHostInfo {
 /// Retrieve window startup configuration.
 ///
 /// Returns the minimal window settings needed for workbench initialization.
-/// In the Phase 0 PoC this returns fixed values, but it will be updated
-/// dynamically as multi-window support is implemented.
+/// Resolves the window ID dynamically from the `WindowManager` using the
+/// Tauri window label (instead of the old hardcoded value of 1).
 ///
 /// # Returns
 ///
 /// A [`WindowConfiguration`] representing the current window settings.
 #[tauri::command]
-pub fn get_window_configuration(app_handle: tauri::AppHandle) -> WindowConfiguration {
+pub async fn get_window_configuration(
+    app_handle: tauri::AppHandle,
+    window: tauri::Window,
+    window_manager: tauri::State<'_, std::sync::Arc<crate::window::manager::WindowManager>>,
+) -> Result<WindowConfiguration, String> {
     use tauri::Manager;
+
+    let label = window.label().to_string();
+    let window_id = window_manager
+        .id_for_label(&label)
+        .await
+        .unwrap_or(1); // Fallback for initial bootstrap race
 
     let resource_dir = app_handle
         .path()
@@ -110,34 +120,28 @@ pub fn get_window_configuration(app_handle: tauri::AppHandle) -> WindowConfigura
         .unwrap_or_default();
 
     // Application data directory for user settings/state.
-    // Uses Tauri's path resolver which maps to platform-specific locations:
-    //   macOS:   ~/Library/Application Support/vscodeee
-    //   Windows: %APPDATA%/vscodeee
-    //   Linux:   ~/.config/vscodeee
     let app_data_dir = app_handle
         .path()
         .app_data_dir()
         .or_else(|_| {
-            // Fallback: use dirs crate to build a path manually
             dirs::data_dir()
                 .map(|d| d.join("vscodeee"))
                 .ok_or(tauri::Error::UnknownPath)
         })
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|_| {
-            // Last resort: use home dir + .vscodeee
             dirs::home_dir()
                 .map(|h| h.join(".vscodeee").to_string_lossy().to_string())
                 .unwrap_or_default()
         });
 
-    WindowConfiguration {
-        window_id: 1,
+    Ok(WindowConfiguration {
+        window_id,
         log_level: 1, // Info
         resource_dir,
         frontend_dist,
         app_data_dir,
-    }
+    })
 }
 
 /// Recursively collect `.css` file paths under a directory.

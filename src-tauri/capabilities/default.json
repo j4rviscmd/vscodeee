@@ -2,13 +2,14 @@
   "$schema": "../gen/schemas/capabilities.json",
   "identifier": "default",
   "description": "Default capability set for VS Codeee",
-  "windows": ["main"],
+  "windows": ["main", "main_*"],
   "permissions": [
     "core:default",
     "shell:allow-open",
     "dialog:default",
     "os:default",
     "fs:default",
-    "log:default"
+    "log:default",
+    "clipboard-manager:default"
   ]
 }
