@@ -25,7 +25,7 @@ import { IV8Profile } from '../../profiling/common/profiling.js';
 import { AuthInfo, Credentials } from '../../request/common/request.js';
 import { IPartsSplash } from '../../theme/common/themeService.js';
 import { IColorScheme, IOpenedAuxiliaryWindow, IOpenedMainWindow, IOpenEmptyWindowOptions, IOpenWindowOptions, IPoint, IRectangle, IWindowOpenable } from '../../window/common/window.js';
-import { invoke } from '../../tauri/common/tauriApi.js';
+import { invoke, listen } from '../../tauri/common/tauriApi.js';
 
 function notImplemented(method: string): never {
 	throw new Error(`[TauriNativeHostService] ${method} is not yet implemented.`);
@@ -87,18 +87,75 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 	constructor(windowId: number) {
 		super();
 		this.windowId = windowId;
+
+		// Wire Tauri window events to VS Code emitters
+		this._wireWindowEvents();
+	}
+
+	/**
+	 * Subscribe to Tauri window lifecycle events and forward them to VS Code emitters.
+	 *
+	 * Listens for focus, blur, maximize, unmaximize, and window-opened events
+	 * from the Rust `window::events` module and fires the corresponding
+	 * `INativeHostService` events so the workbench reacts to native window changes.
+	 */
+	private _wireWindowEvents(): void {
+		// Focus event
+		listen<number>('vscodeee:window:focus', (event) => {
+			const id = event.payload;
+			this._onDidFocusMainWindow.fire(id);
+			this._onDidFocusMainOrAuxiliaryWindow.fire(id);
+		}).then(unlisten => this._register({ dispose: unlisten }));
+
+		// Blur event
+		listen<number>('vscodeee:window:blur', (event) => {
+			const id = event.payload;
+			this._onDidBlurMainWindow.fire(id);
+			this._onDidBlurMainOrAuxiliaryWindow.fire(id);
+		}).then(unlisten => this._register({ dispose: unlisten }));
+
+		// Maximize event
+		listen<number>('vscodeee:window:maximize', (event) => {
+			this._onDidMaximizeWindow.fire(event.payload);
+		}).then(unlisten => this._register({ dispose: unlisten }));
+
+		// Unmaximize event
+		listen<number>('vscodeee:window:unmaximize', (event) => {
+			this._onDidUnmaximizeWindow.fire(event.payload);
+		}).then(unlisten => this._register({ dispose: unlisten }));
+
+		// Window opened event
+		listen<number>('vscodeee:window:opened', (event) => {
+			this._onDidOpenMainWindow.fire(event.payload);
+		}).then(unlisten => this._register({ dispose: unlisten }));
 	}
 
 	// #region Window
 
+	/**
+	 * Return all open main and auxiliary windows.
+	 *
+	 * Queries the Rust `WindowManager` via the `get_all_windows` command.
+	 * Falls back to a single-window list if the command fails.
+	 */
 	async getWindows(_options: { includeAuxiliaryWindows: true }): Promise<Array<IOpenedMainWindow | IOpenedAuxiliaryWindow>>;
 	async getWindows(_options: { includeAuxiliaryWindows: false }): Promise<Array<IOpenedMainWindow>>;
 	async getWindows(_options: { includeAuxiliaryWindows: boolean }): Promise<Array<IOpenedMainWindow | IOpenedAuxiliaryWindow>> {
-		return [{ id: this.windowId, title: 'VS Codeee', dirty: false }];
+		try {
+			const windows = await invoke<Array<{ id: number; label: string; workspace?: string }>>('get_all_windows');
+			return windows.map(w => ({ id: w.id, title: 'VS Codeee', dirty: false }));
+		} catch {
+			return [{ id: this.windowId, title: 'VS Codeee', dirty: false }];
+		}
 	}
 
+	/** Return the count of open windows from the Rust `WindowManager`. Falls back to 1 on error. */
 	async getWindowCount(): Promise<number> {
-		return 1;
+		try {
+			return await invoke<number>('get_window_count');
+		} catch {
+			return 1;
+		}
 	}
 
 	async getActiveWindowId(): Promise<number | undefined> {
@@ -113,6 +170,13 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		return undefined;
 	}
 
+	/**
+	 * Open one or more windows via the Rust `WindowManager`.
+	 *
+	 * When called with an array of {@link IWindowOpenable}, each item is opened
+	 * in a new window (or reused, depending on `forceNewWindow`). When called
+	 * with {@link IOpenEmptyWindowOptions} or no arguments, opens a blank window.
+	 */
 	async openWindow(_options?: IOpenEmptyWindowOptions): Promise<void>;
 	async openWindow(_toOpen: IWindowOpenable[], _options?: IOpenWindowOptions): Promise<void>;
 	async openWindow(arg1?: IOpenEmptyWindowOptions | IWindowOpenable[], arg2?: IOpenWindowOptions): Promise<void> {

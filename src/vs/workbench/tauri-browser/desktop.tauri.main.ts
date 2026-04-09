@@ -56,7 +56,6 @@ import { BufferLogger } from '../../platform/log/common/bufferLog.js';
 import { LogService } from '../../platform/log/common/logService.js';
 import { IDefaultAccountService } from '../../platform/defaultAccount/common/defaultAccount.js';
 import { DefaultAccountService } from '../services/accounts/browser/defaultAccount.js';
-import { ILoggerService } from '../../platform/log/common/log.js';
 import { IRequestService } from '../../platform/request/common/request.js';
 import { BrowserRequestService } from '../services/request/browser/requestService.js';
 import { mainWindow } from '../../base/browser/window.js';
@@ -68,6 +67,7 @@ import { IBrowserWorkbenchEnvironmentService } from '../services/environment/bro
 import { IWorkbenchConstructionOptions, IWorkspace, IWorkspaceProvider } from '../browser/web.api.js';
 import { isFolderToOpen, isWorkspaceToOpen } from '../../platform/window/common/window.js';
 import { invoke } from '../../platform/tauri/common/tauriApi.js';
+import { ITauriWindowService, TauriWindowService } from '../../platform/window/tauri-browser/windowService.js';
 
 export class TauriDesktopMain extends Disposable {
 
@@ -169,8 +169,12 @@ export class TauriDesktopMain extends Disposable {
 		serviceCollection.set(IPolicyService, policyService);
 
 		// --- NativeHost ---
-		const nativeHostService = new TauriNativeHostService(this.tauriConfig.windowId);
+		const nativeHostService = this._register(new TauriNativeHostService(this.tauriConfig.windowId));
 		serviceCollection.set(INativeHostService, nativeHostService);
+
+		// --- Tauri Window Service ---
+		const tauriWindowService = this._register(new TauriWindowService());
+		serviceCollection.set(ITauriWindowService, tauriWindowService);
 
 		// --- Sign ---
 		const signService = new SignService(productService);
