@@ -32,6 +32,7 @@ Maintain the current functionality of VSCode while achieving the following:
 |  3A    | [Window Registry](#phase-3-window-management)                    | Dynamic window IDs, scoped IPC, multi-window registry   | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/31)  |
 |  3B    | [Custom Title Bar](#phase-3-window-management)                   | Draggable title bar, traffic lights, window controls    | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/34)  |
 |  3C    | [State Persistence](#phase-3-window-management)                  | Window position/size + workspace session restore        | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/36)  |
+|  3D    | [Lifecycle Close Handshake](#phase-3-window-management)          | Two-phase close for reliable session restore            | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/39)  |
 | **4**  | [**Native Host Services**](#phase-4-native-host-services)        | **Dialogs, clipboard, shell, OS integration (~80 methods)** |                      **📋 Up Next**                           |
 |   5    | [Process Model](#phase-5-process-model)                          | Extension Host, Terminal (PTY), Shared Process          |                          📋 Planned                           |
 |   6    | [Platform Features](#phase-6-platform-features)                  | Auto-update, native menus, system tray                  |                          📋 Planned                           |
@@ -146,6 +147,18 @@ Persist window position/size and workspace state across restarts using `tauri-pl
 | Restore on launch             | Re-open same windows with same workspace on restart        |   ✅   |
 | Settings reader               | JSONC-aware reader for `window.restoreWindows` setting     |   ✅   |
 | 5 restore modes               | Strategy pattern: preserve/all/folders/one/none            |   ✅   |
+
+#### Phase 3D: Lifecycle Close Handshake ✅
+
+Two-phase close handshake between Rust and TypeScript to ensure IndexedDB writes complete before window destruction. Fixes editor tabs not being restored after session restore ([#35](https://github.com/j4rviscmd/vscodeee/issues/35)).
+
+| Task                          | Description                                                | Status |
+| ----------------------------- | ---------------------------------------------------------- | :----: |
+| Rust close gate               | `api.prevent_close()` + emit to TS + 30s timeout           |   ✅   |
+| TauriLifecycleService         | Full rewrite extending `AbstractLifecycleService` directly |   ✅   |
+| Async veto support            | `fireBeforeShutdown` with async veto + `finalVeto`         |   ✅   |
+| Storage flush before close    | `storageService.flush(SHUTDOWN)` before `window.destroy()` |   ✅   |
+| Rust confirmed/vetoed cmds    | `lifecycle_close_confirmed` + `lifecycle_close_vetoed`     |   ✅   |
 
 ### Phase 4: Native Host Services
 
