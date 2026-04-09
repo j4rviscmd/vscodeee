@@ -10,10 +10,59 @@
 //! updates the `WindowManager` state and emits scoped Tauri events that the
 //! TypeScript `ITauriWindowService` / `TauriNativeHostService` listens on.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tauri::{Emitter, Manager};
+use tokio::sync::oneshot;
 
 use super::manager::WindowManager;
+
+/// Tracks pending close handshakes so that a safety-net timeout can be
+/// cancelled when the TypeScript layer confirms or vetoes the close.
+///
+/// Each window label maps to a [`oneshot::Sender`] that, when dropped or
+/// sent, cancels the corresponding timeout task.
+pub struct PendingCloses {
+    inner: Mutex<HashMap<String, oneshot::Sender<()>>>,
+}
+
+impl PendingCloses {
+    /// Creates a new empty `PendingCloses` tracker.
+    pub fn new() -> Self {
+        Self {
+            inner: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Register a pending close for the given window label.
+    /// Returns the receiver that the timeout task should await.
+    pub fn register(&self, label: &str) -> oneshot::Receiver<()> {
+        let (tx, rx) = oneshot::channel();
+        let mut map = self.inner.lock().unwrap();
+        // If a previous pending close exists for this label (unlikely but
+        // possible if the user clicks close twice quickly), the old sender
+        // is dropped which cancels the old timeout.
+        map.insert(label.to_string(), tx);
+        rx
+    }
+
+    /// Cancel a pending close for the given window label.
+    /// Returns `true` if a pending close was found and cancelled.
+    pub fn cancel(&self, label: &str) -> bool {
+        let mut map = self.inner.lock().unwrap();
+        if let Some(tx) = map.remove(label) {
+            let _ = tx.send(());
+            true
+        } else {
+            false
+        }
+    }
+}
+
+/// Safety-net timeout for the close handshake.
+/// If TS does not respond within this duration, the window is force-destroyed.
+const CLOSE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Payload for the unified fullscreen change event.
 ///
@@ -52,6 +101,11 @@ pub mod event_names {
     pub const WINDOW_CLOSE: &str = "vscodeee:window:close";
     /// Emitted when a new window has been opened and registered.
     pub const WINDOW_OPENED: &str = "vscodeee:window:opened";
+
+    /// Emitted to the TypeScript layer when the OS requests a window close.
+    /// The TypeScript `TauriLifecycleService` handles veto logic and responds
+    /// with either `lifecycle_close_confirmed` or `lifecycle_close_vetoed`.
+    pub const LIFECYCLE_CLOSE_REQUESTED: &str = "vscodeee:lifecycle:close-requested";
 }
 
 /// Handle a single window event — called from `Builder::on_window_event()`.
@@ -88,21 +142,60 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
                 }
             });
         }
-        tauri::WindowEvent::CloseRequested { .. } => {
+        tauri::WindowEvent::CloseRequested { api, .. } => {
+            // Prevent the window from closing immediately — the TypeScript
+            // layer must complete its shutdown handshake first (flush storage,
+            // run onWillShutdown joiners, etc.).
+            api.prevent_close();
+
             let wm = handle.state::<Arc<WindowManager>>();
             let wm = wm.inner().clone();
+            let pending = handle.state::<Arc<PendingCloses>>();
+            let pending = pending.inner().clone();
             let label_c = label.clone();
             let handle_c = handle.clone();
+
+            // Register a cancel channel for the safety-net timeout.
+            let cancel_rx = pending.register(&label_c);
+
             tauri::async_runtime::spawn(async move {
                 if let Some(id) = wm.id_for_label(&label_c).await {
-                    let _ = handle_c.emit(event_names::WINDOW_CLOSE, id);
+                    // Notify the TypeScript lifecycle service.
+                    let _ = handle_c.emit_to(
+                        &label_c,
+                        event_names::LIFECYCLE_CLOSE_REQUESTED,
+                        id,
+                    );
+                } else {
+                    // Unknown window — force-destroy immediately.
+                    log::warn!(
+                        "CloseRequested for unknown window label '{label_c}', force-destroying"
+                    );
+                    if let Some(w) = handle_c.get_webview_window(&label_c) {
+                        let _ = w.destroy();
+                    }
+                    return;
                 }
 
-                // Save session BEFORE unregistering — otherwise closing the
-                // last window would produce an empty snapshot.
-                save_session_snapshot(&wm).await;
-
-                wm.unregister(&label_c).await;
+                // Safety-net timeout: if the TypeScript layer does not respond
+                // within CLOSE_TIMEOUT, force-destroy the window. This only
+                // fires when TS is unresponsive (crash / hang).
+                tokio::select! {
+                    _ = cancel_rx => {
+                        // TS responded (confirmed or vetoed) — nothing to do.
+                    }
+                    _ = tokio::time::sleep(CLOSE_TIMEOUT) => {
+                        log::warn!(
+                            "Close handshake timed out for window '{label_c}' after {}s — force-destroying",
+                            CLOSE_TIMEOUT.as_secs()
+                        );
+                        save_session_snapshot(&wm).await;
+                        wm.unregister(&label_c).await;
+                        if let Some(w) = handle_c.get_webview_window(&label_c) {
+                            let _ = w.destroy();
+                        }
+                    }
+                }
             });
         }
         tauri::WindowEvent::Resized(_) => {

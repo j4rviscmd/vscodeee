@@ -55,6 +55,9 @@ pub fn run() {
     // Window management — centralized registry for all open windows
     let window_manager = Arc::new(window::manager::WindowManager::new());
 
+    // Lifecycle — tracks pending close handshakes for safety-net timeouts
+    let pending_closes = Arc::new(window::events::PendingCloses::new());
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -67,6 +70,7 @@ pub fn run() {
         .manage(commands::file_watcher::FileWatcherState::new())
         .manage(Arc::clone(&channel_router))
         .manage(Arc::clone(&window_manager))
+        .manage(Arc::clone(&pending_closes))
         .on_window_event(window::events::handle_window_event)
         .register_uri_scheme_protocol("vscode-file", move |ctx, request| {
             // On first call the state will have been initialized by setup().
@@ -113,6 +117,8 @@ pub fn run() {
             commands::native_host::write_clipboard_text,
             commands::native_host::notify_ready,
             commands::native_host::close_window,
+            commands::native_host::lifecycle_close_confirmed,
+            commands::native_host::lifecycle_close_vetoed,
             commands::native_host::quit_app,
             commands::native_host::exit_app,
             commands::native_host::save_session,

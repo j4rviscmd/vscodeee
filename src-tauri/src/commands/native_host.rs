@@ -138,8 +138,16 @@ pub fn relaunch_app(app: tauri::AppHandle) -> Result<(), String> {
 
 /// Install a shell command (`codeee`) by creating a symlink.
 ///
-/// On macOS, uses osascript for privilege escalation to /usr/local/bin.
+/// On macOS, uses osascript for privilege escalation to `/usr/local/bin`.
 /// On Linux, creates the symlink directly (may need sudo).
+///
+/// # Errors
+///
+/// Returns an error string if:
+/// - The executable path cannot be determined.
+/// - The platform is Windows (not yet supported) or unrecognized.
+/// - The user cancels the macOS privilege escalation dialog.
+/// - The symlink creation fails (e.g., insufficient permissions on Linux).
 #[tauri::command]
 pub async fn install_shell_command(_app: tauri::AppHandle) -> Result<(), String> {
     let exe_path =
@@ -205,7 +213,17 @@ pub async fn install_shell_command(_app: tauri::AppHandle) -> Result<(), String>
     Ok(())
 }
 
-/// Uninstall the shell command (`codeee`).
+/// Uninstall the shell command (`codeee`) by removing the symlink.
+///
+/// On macOS, uses osascript for privilege escalation to remove `/usr/local/bin/codeee`.
+/// On Linux, removes the symlink directly. No-op if the symlink does not exist.
+///
+/// # Errors
+///
+/// Returns an error string if:
+/// - The platform is unsupported (Windows or unrecognized).
+/// - The user cancels the macOS privilege escalation dialog.
+/// - The symlink removal fails (e.g., insufficient permissions on Linux).
 #[tauri::command]
 pub async fn uninstall_shell_command(_app: tauri::AppHandle) -> Result<(), String> {
     let link_path = if cfg!(target_os = "macos") || cfg!(target_os = "linux") {
@@ -400,6 +418,50 @@ pub fn notify_ready() {
 #[tauri::command]
 pub fn close_window(window: tauri::Window) -> Result<(), String> {
     window.close().map_err(|e| e.to_string())
+}
+
+/// Confirm window close after the TypeScript lifecycle handshake completes.
+///
+/// Called by `TauriLifecycleService` after `onWillShutdown` joiners finish
+/// and storage has been flushed. Saves the session snapshot, unregisters the
+/// window from the `WindowManager`, cancels the safety-net timeout, and
+/// destroys the window (bypassing `CloseRequested` to avoid re-entry).
+#[tauri::command]
+pub async fn lifecycle_close_confirmed(
+    window: tauri::Window,
+    window_manager: tauri::State<'_, std::sync::Arc<crate::window::manager::WindowManager>>,
+    pending_closes: tauri::State<'_, std::sync::Arc<crate::window::events::PendingCloses>>,
+) -> Result<(), String> {
+    let label = window.label().to_string();
+    log::info!(target: "vscodeee::lifecycle", "Close confirmed for window '{label}'");
+
+    // Cancel the safety-net timeout.
+    pending_closes.cancel(&label);
+
+    // Save session BEFORE unregistering — otherwise closing the last
+    // window would produce an empty snapshot.
+    crate::window::events::save_session_snapshot(&window_manager).await;
+    window_manager.unregister(&label).await;
+
+    // destroy() bypasses CloseRequested — no re-entry loop.
+    window.destroy().map_err(|e| e.to_string())
+}
+
+/// Signal that a window close was vetoed by the TypeScript layer.
+///
+/// Called by `TauriLifecycleService` when a `BeforeShutdownEvent` veto is
+/// raised (e.g., unsaved changes dialog where the user clicked "Cancel").
+/// Cancels the safety-net timeout so the window stays open.
+#[tauri::command]
+pub fn lifecycle_close_vetoed(
+    window: tauri::Window,
+    pending_closes: tauri::State<'_, std::sync::Arc<crate::window::events::PendingCloses>>,
+) -> Result<(), String> {
+    let label = window.label().to_string();
+    log::info!(target: "vscodeee::lifecycle", "Close vetoed for window '{label}'");
+
+    pending_closes.cancel(&label);
+    Ok(())
 }
 
 /// Quit the application gracefully, saving the session first.
