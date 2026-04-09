@@ -15,6 +15,18 @@ use tauri::{Emitter, Manager};
 
 use super::manager::WindowManager;
 
+/// Payload for the unified fullscreen change event.
+///
+/// Emitted on the `vscodeee:window:fullscreen` channel whenever a window
+/// transitions into or out of fullscreen mode.
+#[derive(Clone, serde::Serialize)]
+struct FullscreenPayload {
+    /// The unique ID of the window whose fullscreen state changed.
+    window_id: u32,
+    /// `true` if the window entered fullscreen, `false` if it left.
+    fullscreen: bool,
+}
+
 /// Event name constants emitted to the WebView.
 ///
 /// These string constants define the Tauri event channels used to communicate
@@ -34,6 +46,8 @@ pub mod event_names {
     pub const WINDOW_ENTER_FULLSCREEN: &str = "vscodeee:window:enter-fullscreen";
     /// Emitted when a window leaves fullscreen mode.
     pub const WINDOW_LEAVE_FULLSCREEN: &str = "vscodeee:window:leave-fullscreen";
+    /// Unified fullscreen change event with `{ window_id, fullscreen }` payload.
+    pub const WINDOW_FULLSCREEN: &str = "vscodeee:window:fullscreen";
     /// Emitted when a window is about to close (close requested).
     pub const WINDOW_CLOSE: &str = "vscodeee:window:close";
     /// Emitted when a new window has been opened and registered.
@@ -43,6 +57,13 @@ pub mod event_names {
 /// Handle a single window event — called from `Builder::on_window_event()`.
 ///
 /// Updates `WindowManager` state and emits scoped events to the WebView.
+/// Handles the following event types:
+///
+/// - **Focused**: Updates focus state, emits `WINDOW_FOCUS` / `WINDOW_BLUR`.
+/// - **CloseRequested**: Saves the session snapshot, unregisters the window,
+///   and emits `WINDOW_CLOSE`.
+/// - **Resized**: Detects maximize/unmaximize and fullscreen transitions,
+///   emits the corresponding events with the window ID.
 pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
     let label = window.label().to_string();
     let handle = window.app_handle().clone();
@@ -76,11 +97,17 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
                 if let Some(id) = wm.id_for_label(&label_c).await {
                     let _ = handle_c.emit(event_names::WINDOW_CLOSE, id);
                 }
+
+                // Save session BEFORE unregistering — otherwise closing the
+                // last window would produce an empty snapshot.
+                save_session_snapshot(&wm).await;
+
                 wm.unregister(&label_c).await;
             });
         }
         tauri::WindowEvent::Resized(_) => {
             let is_maximized = window.is_maximized().unwrap_or(false);
+            let is_fullscreen = window.is_fullscreen().unwrap_or(false);
             let wm = handle.state::<Arc<WindowManager>>();
             let wm = wm.inner().clone();
             let label_c = label.clone();
@@ -88,7 +115,9 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
             tauri::async_runtime::spawn(async move {
                 let old_info = wm.get_by_label(&label_c).await;
                 let was_maximized = old_info.as_ref().map_or(false, |i| i.is_maximized);
+                let was_fullscreen = old_info.as_ref().map_or(false, |i| i.is_fullscreen);
                 wm.set_maximized(&label_c, is_maximized).await;
+                wm.set_fullscreen(&label_c, is_fullscreen).await;
 
                 if let Some(id) = wm.id_for_label(&label_c).await {
                     if is_maximized && !was_maximized {
@@ -98,9 +127,38 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
                         let _ = handle_c.emit_to(&label_c, event_names::WINDOW_UNMAXIMIZE, id);
                         let _ = handle_c.emit(event_names::WINDOW_UNMAXIMIZE, id);
                     }
+
+                    if is_fullscreen && !was_fullscreen {
+                        let payload = FullscreenPayload {
+                            window_id: id,
+                            fullscreen: true,
+                        };
+                        let _ =
+                            handle_c.emit_to(&label_c, event_names::WINDOW_ENTER_FULLSCREEN, id);
+                        let _ = handle_c.emit(event_names::WINDOW_ENTER_FULLSCREEN, id);
+                        let _ = handle_c.emit(event_names::WINDOW_FULLSCREEN, payload);
+                    } else if !is_fullscreen && was_fullscreen {
+                        let payload = FullscreenPayload {
+                            window_id: id,
+                            fullscreen: false,
+                        };
+                        let _ =
+                            handle_c.emit_to(&label_c, event_names::WINDOW_LEAVE_FULLSCREEN, id);
+                        let _ = handle_c.emit(event_names::WINDOW_LEAVE_FULLSCREEN, id);
+                        let _ = handle_c.emit(event_names::WINDOW_FULLSCREEN, payload);
+                    }
                 }
             });
         }
         _ => {}
     }
+}
+
+/// Take a snapshot of all current windows and save to `sessions.json`.
+///
+/// Called from event handlers (close, quit) to persist the session.
+pub async fn save_session_snapshot(wm: &WindowManager) {
+    let entries = wm.snapshot_for_session().await;
+    let session = super::session::SessionStore { entries };
+    session.save();
 }

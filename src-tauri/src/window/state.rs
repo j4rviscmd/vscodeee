@@ -47,6 +47,11 @@ pub struct WindowInfo {
     pub is_fullscreen: bool,
     /// Whether this window is in the maximized state.
     pub is_maximized: bool,
+    /// Whether the initial restore URIs have been consumed by the first
+    /// `get_window_configuration` call. Once consumed, subsequent calls
+    /// (e.g. after "Close Folder" reload) will not return restored URIs.
+    #[serde(skip)]
+    pub restore_consumed: bool,
 }
 
 /// Options for opening a new window (received from TypeScript).
@@ -69,6 +74,44 @@ pub struct OpenWindowOptions {
     pub force_reuse_window: bool,
 }
 
+/// The `window.restoreWindows` setting values from VS Code's settings.json.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum RestoreWindowsMode {
+    /// Restore all windows from the previous session, including their workspaces.
+    Preserve,
+    /// Restore all windows (same as Preserve in our implementation).
+    #[default]
+    All,
+    /// Only restore windows that had a folder/workspace open.
+    Folders,
+    /// Restore only the last active window.
+    One,
+    /// Do not restore any windows — always open a fresh empty window.
+    None,
+}
+
+impl RestoreWindowsMode {
+    /// Parse a string value from settings.json into a `RestoreWindowsMode`.
+    /// Returns the default (`All`) for unrecognized values.
+    pub fn from_setting(value: &str) -> Self {
+        match value {
+            "preserve" => Self::Preserve,
+            "all" => Self::All,
+            "folders" => Self::Folders,
+            "one" => Self::One,
+            "none" => Self::None,
+            _ => {
+                log::warn!(
+                    target: "vscodeee::window::state",
+                    "Unknown restoreWindows value: {value:?}, defaulting to 'all'"
+                );
+                Self::All
+            }
+        }
+    }
+}
+
 /// Serializable workspace state for session restore.
 ///
 /// Captures the minimal information needed to reopen a window with the same
@@ -84,4 +127,16 @@ pub struct WindowSessionEntry {
     pub workspace_uri: Option<String>,
     /// The folder URI that was open, if any.
     pub folder_uri: Option<String>,
+    /// Whether this window was in fullscreen mode.
+    #[serde(default)]
+    pub is_fullscreen: bool,
+    /// Whether this window was maximized.
+    #[serde(default)]
+    pub is_maximized: bool,
+    /// Display order (lower = earlier). Used to restore window stacking.
+    #[serde(default)]
+    pub order: u32,
+    /// Whether this was the last active (focused) window before shutdown.
+    #[serde(default)]
+    pub is_last_active: bool,
 }

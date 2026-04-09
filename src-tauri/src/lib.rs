@@ -61,6 +61,7 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(logging::build_plugin().build())
         .manage(pty::manager::PtyManager::new())
         .manage(commands::file_watcher::FileWatcherState::new())
@@ -114,6 +115,7 @@ pub fn run() {
             commands::native_host::close_window,
             commands::native_host::quit_app,
             commands::native_host::exit_app,
+            commands::native_host::save_session,
             commands::native_host::is_port_free,
             commands::native_host::find_free_port,
             commands::filesystem::fs_stat,
@@ -132,12 +134,31 @@ pub fn run() {
             commands::window::open_new_window,
             commands::window::get_all_windows,
             commands::window::get_window_count,
+            commands::window::set_workspace_uri,
             commands::file_watcher::fs_watch_start,
             commands::file_watcher::fs_watch_stop,
             commands::file_watcher::fs_watch_stop_all,
         ])
         .setup(move |app| {
             log::info!(target: "vscodeee", "Tauri app started");
+
+            // ── Read user settings and load session ──
+            let settings = window::settings::read_window_settings();
+            let session = window::session::SessionStore::load();
+
+            // ── Compute restore plan ──
+            let restore_plan = window::restore::compute_restore_plan(
+                settings.restore_windows,
+                settings.restore_fullscreen,
+                &session,
+            );
+
+            log::info!(
+                target: "vscodeee",
+                "Restore plan: {} windows (mode={:?})",
+                restore_plan.len(),
+                settings.restore_windows
+            );
 
             // On Windows/Linux, disable decorations at runtime so we use our custom
             // title bar. On macOS, we keep decorations=true + titleBarStyle=Overlay
@@ -170,13 +191,81 @@ pub fn run() {
                 eb.init(app_handle).await;
             });
 
-            // Register the initial window created by tauri.conf.json (label="main").
-            // Use block_on here (safe: setup() runs before the event loop starts)
-            // to avoid a race where early window events arrive before registration.
+            // ── Register the initial "main" window from tauri.conf.json ──
+            // The first entry in the restore plan always maps to label "main".
             let wm = Arc::clone(&window_manager);
-            tauri::async_runtime::block_on(async move {
-                wm.register_initial_window("main").await;
+            let first_entry = restore_plan.first().cloned();
+            tauri::async_runtime::block_on(async {
+                let id = wm.register_initial_window("main").await;
+
+                // If the first restored entry has a workspace, set it on the main window
+                if let Some(ref entry) = first_entry {
+                    let workspace = entry
+                        .folder_uri
+                        .clone()
+                        .or_else(|| entry.workspace_uri.clone());
+                    if workspace.is_some() {
+                        wm.set_workspace("main", workspace).await;
+                    }
+                    if entry.is_fullscreen {
+                        wm.set_fullscreen("main", true).await;
+                    }
+                }
+
+                log::info!(
+                    target: "vscodeee",
+                    "Registered initial window: id={id}"
+                );
             });
+
+            // Apply fullscreen to the main window if restored
+            if let Some(ref entry) = first_entry {
+                if entry.is_fullscreen {
+                    use tauri::Manager;
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.set_fullscreen(true);
+                    }
+                }
+            }
+
+            // ── Create additional restored windows ──
+            // Windows beyond the first one need to be created programmatically.
+            if restore_plan.len() > 1 {
+                let wm = Arc::clone(&window_manager);
+                let handle = app.handle().clone();
+                let additional_entries: Vec<_> = restore_plan[1..].to_vec();
+
+                tauri::async_runtime::block_on(async {
+                    for entry in &additional_entries {
+                        match wm
+                            .create_restored_window(
+                                &handle,
+                                &entry.label,
+                                entry.folder_uri.as_deref(),
+                                entry.workspace_uri.as_deref(),
+                                entry.is_fullscreen,
+                            )
+                            .await
+                        {
+                            Ok(id) => {
+                                log::info!(
+                                    target: "vscodeee",
+                                    "Restored window: label={}, id={id}, folder={:?}",
+                                    entry.label,
+                                    entry.folder_uri
+                                );
+                            }
+                            Err(e) => {
+                                log::error!(
+                                    target: "vscodeee",
+                                    "Failed to restore window '{}': {e}",
+                                    entry.label
+                                );
+                            }
+                        }
+                    }
+                });
+            }
 
             Ok(())
         })

@@ -11,6 +11,7 @@
     "os:default",
     "fs:default",
     "log:default",
-    "clipboard-manager:default"
+    "clipboard-manager:default",
+    "window-state:default"
   ]
 }

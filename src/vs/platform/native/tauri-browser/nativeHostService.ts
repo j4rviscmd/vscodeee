@@ -7,8 +7,13 @@
  * Tauri implementation of `INativeHostService`.
  *
  * Unlike the Electron renderer implementation that uses `ProxyChannel.toService()`
- * to proxy calls to the main process, this directly invokes Tauri commands.
+ * to proxy calls to the main process, this directly invokes Tauri commands
+ * via `window.__TAURI__.invoke()`. Each method maps to a corresponding Rust
+ * command in `src-tauri/src/commands/`.
+ *
  * Methods are incrementally implemented as each Phase progresses.
+ * Unimplemented methods either throw via {@link notImplemented} or return
+ * sensible no-op defaults.
  *
  * Phase 1: Window lifecycle, basic OS info, clipboard (most methods stubbed).
  */
@@ -42,6 +47,7 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 
 	declare readonly _serviceBrand: undefined;
 
+	/** The unique window ID assigned by the Rust `WindowManager`. */
 	readonly windowId: number;
 
 	// Events — empty emitters for Phase 1; wired to Tauri events in later phases
@@ -91,6 +97,14 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 	private readonly _onDidTriggerWindowSystemContextMenu = this._register(new Emitter<{ readonly windowId: number; readonly x: number; readonly y: number }>());
 	readonly onDidTriggerWindowSystemContextMenu = this._onDidTriggerWindowSystemContextMenu.event;
 
+	/**
+	 * Create a new `TauriNativeHostService` for the given window.
+	 *
+	 * Registers Tauri event listeners for window lifecycle events (focus, blur,
+	 * maximize, fullscreen) and wires them to the VS Code emitter API.
+	 *
+	 * @param windowId - The unique window ID assigned by the Rust `WindowManager`.
+	 */
 	constructor(windowId: number) {
 		super();
 		this.windowId = windowId;
@@ -132,6 +146,11 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 
 		// Window opened event
 		registerListener<number>('vscodeee:window:opened', id => this._onDidOpenMainWindow.fire(id));
+
+		// Fullscreen events — emitted by Rust when window enters/leaves fullscreen
+		registerListener<{ window_id: number; fullscreen: boolean }>('vscodeee:window:fullscreen', payload => {
+			this._onDidChangeWindowFullScreen.fire({ windowId: payload.window_id, fullscreen: payload.fullscreen });
+		});
 	}
 
 	// #region Window
@@ -232,6 +251,7 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		return invoke('toggle_fullscreen');
 	}
 
+	/** Returns the cursor screen point and display bounds. Not implemented in Phase 1. */
 	async getCursorScreenPoint(): Promise<{ readonly point: IPoint; readonly display: IRectangle }> {
 		notImplemented('getCursorScreenPoint');
 	}
@@ -256,14 +276,17 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		return invoke('minimize_window');
 	}
 
+	/** Moves the window to the top of the z-order. Not implemented in Phase 1. */
 	async moveWindowTop(_options?: INativeHostOptions): Promise<void> {
 		notImplemented('moveWindowTop');
 	}
 
+	/** Positions the window at the given screen rectangle. Not implemented in Phase 1. */
 	async positionWindow(_position: IRectangle, _options?: INativeHostOptions): Promise<void> {
 		notImplemented('positionWindow');
 	}
 
+	/** Returns whether the window is pinned to always-on-top. Always returns `false` in Phase 1. */
 	async isWindowAlwaysOnTop(_options?: INativeHostOptions): Promise<boolean> {
 		return false;
 	}
@@ -296,6 +319,7 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		// No-op for Phase 1
 	}
 
+	/** Focuses the window via the Rust backend. */
 	async focusWindow(_options?: INativeHostOptions & { mode?: FocusMode }): Promise<void> {
 		return invoke('focus_window');
 	}
@@ -387,6 +411,7 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		await invoke('move_item_to_trash', { path: fullPath });
 	}
 
+	/** Returns whether the current user has administrator/root privileges. Always `false` in Phase 1. */
 	async isAdmin(): Promise<boolean> {
 		return false;
 	}
@@ -395,6 +420,7 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		notImplemented('writeElevated');
 	}
 
+	/** Returns whether the process is running under ARM64 translation (e.g., Rosetta 2). Always `false` in Phase 1. */
 	async isRunningUnderARM64Translation(): Promise<boolean> {
 		return false;
 	}
@@ -409,10 +435,12 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		return invoke<IOSStatistics>('get_os_statistics');
 	}
 
+	/** Returns a heuristic score indicating if running in a VM. Always `0` (unlikely) in Phase 1. */
 	async getOSVirtualMachineHint(): Promise<number> {
 		return 0;
 	}
 
+	/** Returns the OS color scheme. Defaults to dark mode, non-high-contrast in Phase 1. */
 	async getOSColorScheme(): Promise<IColorScheme> {
 		return { dark: true, highContrast: false };
 	}
@@ -500,10 +528,12 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 
 	// #region macOS Shell command
 
+	/** Installs the `codeee` shell command by creating a symlink via the Rust backend. */
 	async installShellCommand(): Promise<void> {
 		await invoke('install_shell_command');
 	}
 
+	/** Removes the `codeee` shell command symlink via the Rust backend. */
 	async uninstallShellCommand(): Promise<void> {
 		await invoke('uninstall_shell_command');
 	}
@@ -522,6 +552,7 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		await invoke('relaunch_app');
 	}
 
+	/** Reloads the current window by navigating the WebView. */
 	async reload(_options?: { disableExtensions?: boolean }): Promise<void> {
 		window.location.reload();
 	}
@@ -536,6 +567,7 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		return invoke('quit_app');
 	}
 
+	/** Exits the application with the given exit code, saving the session first. */
 	async exit(_code: number): Promise<void> {
 		return invoke('exit_app', { code: _code });
 	}
