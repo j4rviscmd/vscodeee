@@ -21,7 +21,7 @@ Maintain the current functionality of VSCode while achieving the following:
 
 ## Roadmap
 
-> **Current Phase: Phase 3 — Window Management** 🚧
+> **Current Phase: Phase 3B — Custom Title Bar** 🚧
 
 | Phase  | Name                                                             | Goal                                                    |                            Status                             |
 | :----: | ---------------------------------------------------------------- | ------------------------------------------------------- | :-----------------------------------------------------------: |
@@ -29,7 +29,9 @@ Maintain the current functionality of VSCode while achieving the following:
 |   1    | [Foundation Layer](#phase-1-foundation-layer)                    | Render workbench shell in Tauri WebView                 |  [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/9)  |
 |   2A   | [Functional File Editing](#phase-2a-functional-file-editing)     | Open, edit, and save local files                        | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/17)  |
 | **2B** | [**Editing Polish**](#phase-2b-editing-polish)                   | **File watchers, remaining native methods**             | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/25)  |
-| **3**  | [**Window Management**](#phase-3-window-management)              | **Multi-window, title bar, auxiliary windows**          |                        **🚧 In Progress**                     |
+|  3A    | [Window Registry](#phase-3-window-management)                    | Dynamic window IDs, scoped IPC, multi-window registry   | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/31)  |
+| **3B** | [**Custom Title Bar**](#phase-3-window-management)               | **Draggable title bar, traffic lights, window controls**|                        **🚧 Up Next**                         |
+|   3C   | [State Persistence](#phase-3-window-management)                  | Window position/size + workspace session restore        |                          📋 Planned                           |
 |   4    | [Native Host Services](#phase-4-native-host-services)            | Dialogs, clipboard, shell, OS integration (~80 methods) |                          📋 Planned                           |
 |   5    | [Process Model](#phase-5-process-model)                          | Extension Host, Terminal (PTY), Shared Process          |                          📋 Planned                           |
 |   6    | [Platform Features](#phase-6-platform-features)                  | Auto-update, native menus, system tray                  |                          📋 Planned                           |
@@ -107,6 +109,41 @@ Architecture:
 ### Phase 3: Window Management
 
 Replace Electron `BrowserWindow` with Tauri `WebviewWindow`. Multi-window, title bar customization, auxiliary windows.
+
+#### Phase 3A: Window Registry ✅
+
+Centralized window management with unique monotonic IDs, `WindowManager` registry, scoped IPC delivery (`emit_to`), and `ITauriWindowService` DI integration. Foundation for all multi-window features.
+
+| Task                          | Description                                                | Status |
+| ----------------------------- | ---------------------------------------------------------- | :----: |
+| Rust `window/` module         | state, manager, events, session modules                    |   ✅   |
+| WindowManager registry        | Atomic ID generation, RwLock-based HashMap, label→ID map   |   ✅   |
+| Scoped IPC                    | `emit_to(label)` instead of global `app.emit()`           |   ✅   |
+| ITauriWindowService           | TS DI service for window lifecycle events                  |   ✅   |
+| NativeHostService wiring      | `getWindows()`, `getWindowCount()`, event listeners        |   ✅   |
+| Dynamic window label          | URL query param resolution for multi-window bootstrap      |   ✅   |
+
+#### Phase 3B: Custom Title Bar 🚧
+
+Hide OS decorations, implement CSS-based draggable title bar with platform-appropriate window controls.
+
+| Task                          | Description                                                | Status |
+| ----------------------------- | ---------------------------------------------------------- | :----: |
+| macOS decorations             | `decorations(true)` + `TitleBarStyle::Overlay`             |   📋   |
+| `isTauri` platform flag       | Add to `platform.ts`, gate `getTitleBarStyle()` → CUSTOM   |   📋   |
+| Drag region                   | `data-tauri-drag-region` on title bar                      |   📋   |
+| Window controls (Win/Linux)   | CSS minimize/maximize/close buttons                        |   📋   |
+| Tauri CSS                     | `titlebarpart.tauri.css` for platform-specific styles      |   📋   |
+
+#### Phase 3C: State Persistence 📋
+
+Persist window position/size and workspace state across restarts using `tauri-plugin-window-state` and a custom `SessionStore`.
+
+| Task                          | Description                                                | Status |
+| ----------------------------- | ---------------------------------------------------------- | :----: |
+| Window state plugin           | `tauri-plugin-window-state` for position/size persistence  |   📋   |
+| SessionStore                  | `sessions.json` read/write for workspace restoration       |   📋   |
+| Restore on launch             | Re-open same windows with same workspace on restart        |   📋   |
 
 ### Phase 4: Native Host Services
 
