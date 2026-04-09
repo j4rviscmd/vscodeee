@@ -1,0 +1,17 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) VS Codeee Contributors. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/* Tauri-specific titlebar overrides */
+
+/* Override -webkit-app-region for Tauri — dragging is handled programmatically
+   via mousedown + start_dragging invoke in TauriTitlebarPart */
+.monaco-workbench.tauri .titlebar-drag-region {
+	-webkit-app-region: unset;
+}
+
+/* macOS: Reserve space for native traffic lights (TitleBarStyle::Overlay) */
+.monaco-workbench.tauri.mac .titlebar-left {
+	padding-left: 70px;
+}
