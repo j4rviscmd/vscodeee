@@ -6,11 +6,17 @@
 
 // #######################################################################
 // ###                                                                 ###
-// ###      electron.d.ts types we need in a common layer for reuse    ###
-// ###                    (copied from Electron 29.x)                  ###
+// ###      Native dialog/input types shared across platforms          ###
+// ###    (originally copied from Electron 29.x electron.d.ts)         ###
 // ###                                                                 ###
 // #######################################################################
 
+/**
+ * Options for showing a native message box dialog.
+ *
+ * Originally extracted from Electron 29.x `electron.d.ts` to provide
+ * a platform-independent type definition for native dialogs.
+ */
 export interface MessageBoxOptions {
 	/**
 	 * Content of the message box.
@@ -87,6 +93,9 @@ export interface MessageBoxOptions {
 	normalizeAccessKeys?: boolean;
 }
 
+/**
+ * Return value from a native message box dialog.
+ */
 export interface MessageBoxReturnValue {
 	/**
 	 * The index of the clicked button.
@@ -98,6 +107,9 @@ export interface MessageBoxReturnValue {
 	checkboxChecked: boolean;
 }
 
+/**
+ * Options for showing a native save-file dialog.
+ */
 export interface SaveDialogOptions {
 	/**
 	 * The dialog title. Cannot be displayed on some _Linux_ desktop environments.
@@ -142,6 +154,9 @@ export interface SaveDialogOptions {
 	securityScopedBookmarks?: boolean;
 }
 
+/**
+ * Return value from a native save-file dialog.
+ */
 export interface SaveDialogReturnValue {
 	/**
 	 * whether or not the dialog was canceled.
@@ -161,8 +176,17 @@ export interface SaveDialogReturnValue {
 	bookmark?: string;
 }
 
+/**
+ * Options for showing a native open-file dialog.
+ */
 export interface OpenDialogOptions {
+	/**
+	 * The dialog title. Cannot be displayed on some _Linux_ desktop environments.
+	 */
 	title?: string;
+	/**
+	 * Absolute directory path, absolute file path, or file name to use by default.
+	 */
 	defaultPath?: string;
 	/**
 	 * Custom label for the confirmation button, when left empty the default label will
@@ -189,6 +213,9 @@ export interface OpenDialogOptions {
 	securityScopedBookmarks?: boolean;
 }
 
+/**
+ * Return value from a native open-file dialog.
+ */
 export interface OpenDialogReturnValue {
 	/**
 	 * whether or not the dialog was canceled.
@@ -209,14 +236,24 @@ export interface OpenDialogReturnValue {
 	bookmarks?: string[];
 }
 
+/**
+ * A file filter that can be applied to file dialogs.
+ *
+ * @see https://electronjs.org/docs/api/structures/file-filter
+ */
 export interface FileFilter {
 
 	// Docs: https://electronjs.org/docs/api/structures/file-filter
 
+	/** File extensions to include in the filter (e.g. `['js', 'ts']`). */
 	extensions: string[];
+	/** Human-readable label for the filter (e.g. `'TypeScript'`). */
 	name: string;
 }
 
+/**
+ * Options for opening the developer tools window.
+ */
 export interface OpenDevToolsOptions {
 	/**
 	 * Opens the devtools with specified dock state, can be `left`, `right`, `bottom`,
@@ -260,6 +297,11 @@ interface InputEvent {
 	type: ('undefined' | 'mouseDown' | 'mouseUp' | 'mouseMove' | 'mouseEnter' | 'mouseLeave' | 'contextMenu' | 'mouseWheel' | 'rawKeyDown' | 'keyDown' | 'keyUp' | 'char' | 'gestureScrollBegin' | 'gestureScrollEnd' | 'gestureScrollUpdate' | 'gestureFlingStart' | 'gestureFlingCancel' | 'gesturePinchBegin' | 'gesturePinchEnd' | 'gesturePinchUpdate' | 'gestureTapDown' | 'gestureShowPress' | 'gestureTap' | 'gestureTapCancel' | 'gestureShortPress' | 'gestureLongPress' | 'gestureLongTap' | 'gestureTwoFingerTap' | 'gestureTapUnconfirmed' | 'gestureDoubleTap' | 'touchStart' | 'touchMove' | 'touchEnd' | 'touchCancel' | 'touchScrollStarted' | 'pointerDown' | 'pointerUp' | 'pointerMove' | 'pointerRawUpdate' | 'pointerCancel' | 'pointerCausedUaAction');
 }
 
+/**
+ * A mouse-specific input event.
+ *
+ * @see https://electronjs.org/docs/api/structures/mouse-input-event
+ */
 export interface MouseInputEvent extends InputEvent {
 
 	// Docs: https://electronjs.org/docs/api/structures/mouse-input-event
@@ -268,16 +310,23 @@ export interface MouseInputEvent extends InputEvent {
 	 * The button pressed, can be `left`, `middle`, `right`.
 	 */
 	button?: ('left' | 'middle' | 'right');
+	/** The number of times the mouse button was clicked. */
 	clickCount?: number;
+	/** The X coordinate of the mouse pointer in screen coordinates. */
 	globalX?: number;
+	/** The Y coordinate of the mouse pointer in screen coordinates. */
 	globalY?: number;
+	/** The change in X coordinate since the last mouse move event. */
 	movementX?: number;
+	/** The change in Y coordinate since the last mouse move event. */
 	movementY?: number;
 	/**
 	 * The type of the event, can be `mouseDown`, `mouseUp`, `mouseEnter`,
 	 * `mouseLeave`, `contextMenu`, `mouseWheel` or `mouseMove`.
 	 */
 	type: ('mouseDown' | 'mouseUp' | 'mouseEnter' | 'mouseLeave' | 'contextMenu' | 'mouseWheel' | 'mouseMove');
+	/** The X coordinate of the mouse pointer relative to the window. */
 	x: number;
+	/** The Y coordinate of the mouse pointer relative to the window. */
 	y: number;
 }
