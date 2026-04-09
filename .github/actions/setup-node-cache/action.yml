@@ -11,7 +11,7 @@ runs:
     - name: Compute node modules cache key
       id: nodeModulesCacheKey
       shell: bash
-      run: echo "value=$(node build/azure-pipelines/common/computeNodeModulesCacheKey.ts)" >> $GITHUB_OUTPUT
+      run: echo "value=$(node --experimental-strip-types build/azure-pipelines/common/computeNodeModulesCacheKey.ts)" >> $GITHUB_OUTPUT
 
     - name: Cache node modules
       id: cacheNodeModules
@@ -48,4 +48,5 @@ runs:
       env:
         PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
         ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+        NODE_OPTIONS: --experimental-strip-types
       run: npm ci

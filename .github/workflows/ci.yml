@@ -111,8 +111,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          sparse-checkout: |
-            src-tauri
+          persist-credentials: false
+
+      # Create empty out/ directory so tauri::generate_context!() can resolve frontendDist: "../out"
+      - name: Create frontend dist stub
+        run: mkdir -p out
 
       - name: Install system dependencies
         run: |
