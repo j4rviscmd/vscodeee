@@ -12,7 +12,7 @@
 
 import product from '../../platform/product/common/product.js';
 import { Workbench } from '../browser/workbench.js';
-import { domContentLoaded } from '../../base/browser/dom.js';
+import { domContentLoaded, addDisposableListener, EventType } from '../../base/browser/dom.js';
 import { ServiceCollection } from '../../platform/instantiation/common/serviceCollection.js';
 import { ILogService, ILoggerService, getLogLevel, ConsoleLogger } from '../../platform/log/common/log.js';
 import { FileLoggerService } from '../../platform/log/common/fileLog.js';
@@ -59,6 +59,7 @@ import { DefaultAccountService } from '../services/accounts/browser/defaultAccou
 import { IRequestService } from '../../platform/request/common/request.js';
 import { BrowserRequestService } from '../services/request/browser/requestService.js';
 import { mainWindow } from '../../base/browser/window.js';
+import { IWorkbenchLayoutService } from '../services/layout/browser/layoutService.js';
 
 import { TauriIPCMainProcessService } from '../../platform/ipc/tauri-browser/mainProcessService.js';
 import { TauriNativeHostService } from '../../platform/native/tauri-browser/nativeHostService.js';
@@ -66,7 +67,7 @@ import { TauriWorkbenchEnvironmentService, ITauriWindowConfiguration } from '../
 import { IBrowserWorkbenchEnvironmentService } from '../services/environment/browser/environmentService.js';
 import { IWorkbenchConstructionOptions, IWorkspace, IWorkspaceProvider } from '../browser/web.api.js';
 import { isFolderToOpen, isWorkspaceToOpen } from '../../platform/window/common/window.js';
-import { invoke } from '../../platform/tauri/common/tauriApi.js';
+import { invoke, listen } from '../../platform/tauri/common/tauriApi.js';
 import { ITauriWindowService, TauriWindowService } from '../../platform/window/tauri-browser/windowService.js';
 
 export class TauriDesktopMain extends Disposable {
@@ -103,8 +104,28 @@ export class TauriDesktopMain extends Disposable {
 		// Listeners
 		this.registerListeners(workbench, services.storageService);
 
-		// Startup
-		workbench.startup();
+		// Startup — returns the instantiation service with all resolved services
+		const instantiationService = workbench.startup();
+
+		// Wire window events to trigger layout recalculation.
+		// Two listeners are needed for complete coverage:
+		// - tauri://resize: OS-level window resize (Tauri native API)
+		// - DOM resize: viewport changes that don't resize the window (e.g., DevTools dock/undock)
+		instantiationService.invokeFunction(accessor => {
+			const layoutService = accessor.get(IWorkbenchLayoutService);
+			const nativeHostService = accessor.get(INativeHostService);
+
+			listen('tauri://resize', () => layoutService.layout())
+				.then(unlisten => this._register({ dispose: unlisten }));
+			this._register(addDisposableListener(mainWindow, EventType.RESIZE, () => layoutService.layout()));
+
+			this._register(nativeHostService.onDidMaximizeWindow(() => {
+				layoutService.updateWindowMaximizedState(mainWindow, true);
+			}));
+			this._register(nativeHostService.onDidUnmaximizeWindow(() => {
+				layoutService.updateWindowMaximizedState(mainWindow, false);
+			}));
+		});
 	}
 
 	private registerListeners(workbench: Workbench, storageService: BrowserStorageService): void {
@@ -124,7 +145,10 @@ export class TauriDesktopMain extends Disposable {
 		serviceCollection.set(IMainProcessService, mainProcessService);
 
 		// --- Environment ---
-		const appDataDir = this.tauriConfig.appDataDir ?? this.tauriConfig.tmpDir ?? '/tmp';
+		const appDataDir = this.tauriConfig.appDataDir ?? this.tauriConfig.tmpDir;
+		if (!appDataDir) {
+			throw new Error('appDataDir or tmpDir must be provided in Tauri window configuration');
+		}
 		const logsHome = URI.file(`${appDataDir}/logs`);
 		const workspaceId = 'tauri-default';
 
@@ -293,13 +317,17 @@ class TauriWorkspaceProvider implements IWorkspaceProvider {
 			} else {
 				// Open a new Tauri window via Rust command
 				let folderUri: string | undefined;
+				let workspaceUri: string | undefined;
 				if (workspace && isFolderToOpen(workspace)) {
 					folderUri = workspace.folderUri.toString();
+				} else if (workspace && isWorkspaceToOpen(workspace)) {
+					workspaceUri = workspace.workspaceUri.toString();
 				}
 				try {
 					await invoke('open_new_window', {
 						options: {
 							folderUri,
+							workspaceUri,
 							forceNewWindow: true,
 						}
 					});

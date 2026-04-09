@@ -6,7 +6,7 @@
 import { VSBuffer } from '../../../base/common/buffer.js';
 import { IStringDictionary } from '../../../base/common/collections.js';
 import { PerformanceMark } from '../../../base/common/performance.js';
-import { isMacintosh, isNative, isWeb } from '../../../base/common/platform.js';
+import { isMacintosh, isNative, isTauri, isWeb } from '../../../base/common/platform.js';
 import { URI, UriComponents, UriDto } from '../../../base/common/uri.js';
 import { ISandboxConfiguration } from '../../../base/parts/sandbox/common/sandboxTypes.js';
 import { IConfigurationService } from '../../configuration/common/configuration.js';
@@ -280,8 +280,13 @@ export function getTitleBarStyle(configurationService: IConfigurationService): T
 }
 
 export function getWindowControlsStyle(configurationService: IConfigurationService): WindowControlsStyle {
-	if (isWeb || isMacintosh || getTitleBarStyle(configurationService) === TitlebarStyle.NATIVE) {
-		return WindowControlsStyle.NATIVE; // only supported on Windows/Linux desktop with custom titlebar
+	if (isMacintosh || getTitleBarStyle(configurationService) === TitlebarStyle.NATIVE) {
+		return WindowControlsStyle.NATIVE;
+	}
+
+	// Web (non-Tauri): browser handles window controls
+	if (isWeb && !isTauri) {
+		return WindowControlsStyle.NATIVE;
 	}
 
 	const configuration = configurationService.getValue<IWindowSettings | undefined>('window');

@@ -9,7 +9,7 @@ import { ILayoutService } from '../../../../platform/layout/browser/layoutServic
 import { Part } from '../../../browser/part.js';
 import { IDimension } from '../../../../base/browser/dom.js';
 import { Direction, IViewSize } from '../../../../base/browser/ui/grid/grid.js';
-import { isMacintosh, isNative, isWeb } from '../../../../base/common/platform.js';
+import { isMacintosh, isNative, isTauri, isWeb } from '../../../../base/common/platform.js';
 import { isAuxiliaryWindow } from '../../../../base/browser/window.js';
 import { CustomTitleBarVisibility, TitleBarSetting, getMenuBarVisibility, hasCustomTitlebar, hasNativeMenu, hasNativeTitlebar } from '../../../../platform/window/common/window.js';
 import { isFullscreen, isWCOEnabled } from '../../../../base/browser/browser.js';
@@ -388,8 +388,10 @@ export function shouldShowCustomTitleBar(configurationService: IConfigurationSer
 		return false;
 	}
 
-	// macOS desktop does not need a title bar when full screen
-	if (isMacintosh && isNative) {
+	// macOS (Electron or Tauri): title bar not needed when fullscreen.
+	// Tauri's TitleBarStyle::Overlay provides native traffic lights when windowed,
+	// so the title bar must remain visible to provide spacing and a drag region.
+	if (isMacintosh && (isNative || isTauri)) {
 		return !inFullscreen;
 	}
 
