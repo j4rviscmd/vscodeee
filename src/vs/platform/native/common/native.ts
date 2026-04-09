@@ -6,7 +6,7 @@
 import { VSBuffer } from '../../../base/common/buffer.js';
 import { Event } from '../../../base/common/event.js';
 import { URI } from '../../../base/common/uri.js';
-import { MessageBoxOptions, MessageBoxReturnValue, OpenDevToolsOptions, OpenDialogOptions, OpenDialogReturnValue, SaveDialogOptions, SaveDialogReturnValue } from '../../../base/parts/sandbox/common/electronTypes.js';
+import { MessageBoxOptions, MessageBoxReturnValue, OpenDevToolsOptions, OpenDialogOptions, OpenDialogReturnValue, SaveDialogOptions, SaveDialogReturnValue } from '../../../base/parts/sandbox/common/nativeDialogTypes.js';
 import { ISerializableCommandAction } from '../../action/common/action.js';
 import { INativeOpenDialogOptions } from '../../dialogs/common/dialogs.js';
 import { createDecorator } from '../../instantiation/common/instantiation.js';
@@ -15,6 +15,9 @@ import { AuthInfo, Credentials } from '../../request/common/request.js';
 import { IPartsSplash } from '../../theme/common/themeService.js';
 import { IColorScheme, IOpenedAuxiliaryWindow, IOpenedMainWindow, IOpenEmptyWindowOptions, IOpenWindowOptions, IPoint, IRectangle, IWindowOpenable } from '../../window/common/window.js';
 
+/**
+ * Options for showing a toast notification.
+ */
 export interface IToastOptions {
 	readonly id: string;
 
@@ -26,6 +29,9 @@ export interface IToastOptions {
 	readonly silent?: boolean;
 }
 
+/**
+ * Result of a toast notification interaction.
+ */
 export interface IToastResult {
 	readonly supported: boolean;
 
@@ -33,11 +39,17 @@ export interface IToastResult {
 	readonly actionIndex?: number;
 }
 
+/**
+ * CPU information properties reported by the native host.
+ */
 export interface ICPUProperties {
 	model: string;
 	speed: number;
 }
 
+/**
+ * Operating system properties reported by the native host.
+ */
 export interface IOSProperties {
 	type: string;
 	release: string;
@@ -46,16 +58,25 @@ export interface IOSProperties {
 	cpus: ICPUProperties[];
 }
 
+/**
+ * Operating system memory and load statistics.
+ */
 export interface IOSStatistics {
 	totalmem: number;
 	freemem: number;
 	loadavg: number[];
 }
 
+/**
+ * Options that accompany native host service calls to target a specific window.
+ */
 export interface INativeHostOptions {
 	readonly targetWindowId?: number;
 }
 
+/**
+ * Controls how window focus is transferred when the editor is focused.
+ */
 export const enum FocusMode {
 
 	/**
@@ -78,6 +99,11 @@ export const enum FocusMode {
 	Force,
 }
 
+/**
+ * Common native host service interface shared between Electron and Tauri
+ * implementations. Provides window management, dialog, OS interaction,
+ * clipboard, and lifecycle methods.
+ */
 export interface ICommonNativeHostService {
 
 	readonly _serviceBrand: undefined;

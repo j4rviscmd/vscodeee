@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { SaveDialogOptions, OpenDialogOptions } from '../../../../base/parts/sandbox/common/electronTypes.js';
+import { SaveDialogOptions, OpenDialogOptions } from '../../../../base/parts/sandbox/common/nativeDialogTypes.js';
 import { IHostService } from '../../host/browser/host.js';
 import { IPickAndOpenOptions, ISaveDialogOptions, IOpenDialogOptions, IFileDialogService, IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
@@ -64,6 +64,13 @@ export class TauriFileDialogService extends AbstractFileDialogService implements
 			configurationService, fileService, openerService, dialogService, languageService, workspacesService, labelService, pathService, commandService, editorService, codeEditorService, logService, remoteAgentService);
 	}
 
+	/**
+	 * Convert workbench pick-and-open options to native open dialog options.
+	 *
+	 * @param options - The workbench pick-and-open options.
+	 * @param properties - The native dialog properties (openFile, openDirectory, etc.).
+	 * @returns The native open dialog options targeting the active window.
+	 */
 	private toNativeOpenDialogOptions(options: IPickAndOpenOptions, properties: Array<'openFile' | 'openDirectory' | 'multiSelections' | 'showHiddenFiles' | 'createDirectory' | 'promptToCreate' | 'noResolveAliases' | 'treatPackageAsDirectory' | 'dontAddToRecent'>): OpenDialogOptions & INativeHostOptions {
 		return {
 			title: undefined,
@@ -73,9 +80,17 @@ export class TauriFileDialogService extends AbstractFileDialogService implements
 		};
 	}
 
+	/**
+	 * Determines whether to use the simplified (web-based) dialog instead of the
+	 * native dialog. The simplified dialog is used for non-file schemas or when
+	 * the `files.simpleDialog.enable` setting is enabled.
+	 *
+	 * @param schema - The URI scheme of the target file system.
+	 * @returns `true` if the simplified dialog should be used.
+	 */
 	private shouldUseSimplified(schema: string): boolean {
-		const setting = (this.configurationService.getValue('files.simpleDialog.enable') === true);
-		return ((schema !== Schemas.file) && (schema !== Schemas.vscodeUserData)) || setting;
+		const setting = this.configurationService.getValue('files.simpleDialog.enable') === true;
+		return (schema !== Schemas.file && schema !== Schemas.vscodeUserData) || setting;
 	}
 
 	async pickFileFolderAndOpen(options: IPickAndOpenOptions): Promise<void> {
@@ -196,6 +211,12 @@ export class TauriFileDialogService extends AbstractFileDialogService implements
 		return;
 	}
 
+	/**
+	 * Convert workbench save dialog options to native save dialog options.
+	 *
+	 * @param options - The workbench save dialog options.
+	 * @returns The native save dialog options targeting the active window.
+	 */
 	private toNativeSaveDialogOptions(options: ISaveDialogOptions): SaveDialogOptions & INativeHostOptions {
 		options.defaultUri = options.defaultUri ? URI.file(options.defaultUri.path) : undefined;
 		return {

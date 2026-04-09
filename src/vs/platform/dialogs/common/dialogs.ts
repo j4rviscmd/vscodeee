@@ -13,18 +13,24 @@ import { URI } from '../../../base/common/uri.js';
 import { localize } from '../../../nls.js';
 import { createDecorator } from '../../instantiation/common/instantiation.js';
 import { ITelemetryData } from '../../telemetry/common/telemetry.js';
-import { MessageBoxOptions } from '../../../base/parts/sandbox/common/electronTypes.js';
+import { MessageBoxOptions } from '../../../base/parts/sandbox/common/nativeDialogTypes.js';
 import { mnemonicButtonLabel } from '../../../base/common/labels.js';
 import { isLinux, isMacintosh, isWindows } from '../../../base/common/platform.js';
 import { IProductService } from '../../product/common/productService.js';
 import { deepClone } from '../../../base/common/objects.js';
 
+/**
+ * Arguments for a dialog request. Exactly one of the sub-args should be provided.
+ */
 export interface IDialogArgs {
 	readonly confirmArgs?: IConfirmDialogArgs;
 	readonly inputArgs?: IInputDialogArgs;
 	readonly promptArgs?: IPromptDialogArgs;
 }
 
+/**
+ * Base options shared by all dialog types.
+ */
 export interface IBaseDialogOptions {
 	readonly type?: Severity | DialogType;
 
@@ -51,10 +57,16 @@ export interface IBaseDialogOptions {
 	readonly token?: CancellationToken;
 }
 
+/**
+ * Arguments for a confirmation dialog.
+ */
 export interface IConfirmDialogArgs {
 	readonly confirmation: IConfirmation;
 }
 
+/**
+ * Options for a confirmation dialog with primary and cancel buttons.
+ */
 export interface IConfirmation extends IBaseDialogOptions {
 
 	/**
@@ -68,6 +80,9 @@ export interface IConfirmation extends IBaseDialogOptions {
 	readonly cancelButton?: string;
 }
 
+/**
+ * Result of a confirmation dialog interaction.
+ */
 export interface IConfirmationResult extends ICheckboxResult {
 
 	/**
@@ -76,10 +91,16 @@ export interface IConfirmationResult extends ICheckboxResult {
 	readonly confirmed: boolean;
 }
 
+/**
+ * Arguments for an input dialog.
+ */
 export interface IInputDialogArgs {
 	readonly input: IInput;
 }
 
+/**
+ * Options for an input dialog that prompts the user for text input.
+ */
 export interface IInput extends IConfirmation {
 	readonly inputs: IInputElement[];
 
@@ -89,12 +110,18 @@ export interface IInput extends IConfirmation {
 	readonly primaryButton?: string;
 }
 
+/**
+ * An input element within a dialog (text or password field).
+ */
 export interface IInputElement {
 	readonly type?: 'text' | 'password';
 	readonly value?: string;
 	readonly placeholder?: string;
 }
 
+/**
+ * Result of an input dialog interaction.
+ */
 export interface IInputResult extends IConfirmationResult {
 
 	/**
@@ -103,10 +130,18 @@ export interface IInputResult extends IConfirmationResult {
 	readonly values?: string[];
 }
 
+/**
+ * Arguments for a prompt dialog.
+ */
 export interface IPromptDialogArgs {
 	readonly prompt: IPrompt<unknown>;
 }
 
+/**
+ * Base interface for a button in a prompt dialog that produces a result.
+ *
+ * @typeParam T - The type of result returned when the button is pressed.
+ */
 export interface IPromptBaseButton<T> {
 
 	/**
@@ -116,10 +151,20 @@ export interface IPromptBaseButton<T> {
 	run(checkbox: ICheckboxResult): T | Promise<T>;
 }
 
+/**
+ * A labeled button in a prompt dialog that produces a typed result.
+ *
+ * @typeParam T - The type of result returned when the button is pressed.
+ */
 export interface IPromptButton<T> extends IPromptBaseButton<T> {
 	readonly label: string;
 }
 
+/**
+ * A cancel button in a prompt dialog that produces a typed result.
+ *
+ * @typeParam T - The type of result returned when the button is pressed.
+ */
 export interface IPromptCancelButton<T> extends IPromptBaseButton<T> {
 
 	/**
@@ -129,6 +174,11 @@ export interface IPromptCancelButton<T> extends IPromptBaseButton<T> {
 	readonly label?: string;
 }
 
+/**
+ * Options for a prompt dialog with configurable buttons and cancel behavior.
+ *
+ * @typeParam T - The type of result returned from the pressed button.
+ */
 export interface IPrompt<T> extends IBaseDialogOptions {
 
 	/**
@@ -144,14 +194,29 @@ export interface IPrompt<T> extends IBaseDialogOptions {
 	readonly cancelButton?: IPromptCancelButton<T> | true | string;
 }
 
+/**
+ * A prompt with a custom cancel button that returns a result.
+ *
+ * @typeParam T - The type of result returned from the pressed button.
+ */
 export interface IPromptWithCustomCancel<T> extends IPrompt<T> {
 	readonly cancelButton: IPromptCancelButton<T>;
 }
 
+/**
+ * A prompt with a default cancel button (true or a string label).
+ *
+ * @typeParam T - The type of result returned from the pressed button.
+ */
 export interface IPromptWithDefaultCancel<T> extends IPrompt<T> {
 	readonly cancelButton: true | string;
 }
 
+/**
+ * Result of a prompt dialog interaction.
+ *
+ * @typeParam T - The type of result from the pressed button.
+ */
 export interface IPromptResult<T> extends ICheckboxResult {
 
 	/**
@@ -160,10 +225,20 @@ export interface IPromptResult<T> extends ICheckboxResult {
 	readonly result?: T;
 }
 
+/**
+ * Result of a prompt with a custom cancel button. The result is always defined.
+ *
+ * @typeParam T - The type of result from the pressed button.
+ */
 export interface IPromptResultWithCancel<T> extends IPromptResult<T> {
 	readonly result: T;
 }
 
+/**
+ * Result of a prompt dialog interaction where the result is wrapped in a Promise.
+ *
+ * @typeParam T - The type of result from the pressed button.
+ */
 export interface IAsyncPromptResult<T> extends ICheckboxResult {
 
 	/**
@@ -172,19 +247,32 @@ export interface IAsyncPromptResult<T> extends ICheckboxResult {
 	readonly result?: Promise<T>;
 }
 
+/**
+ * Result of a prompt with a custom cancel button where the result is a Promise.
+ *
+ * @typeParam T - The type of result from the pressed button.
+ */
 export interface IAsyncPromptResultWithCancel<T> extends IAsyncPromptResult<T> {
 	readonly result: Promise<T>;
 }
 
+/** Union type of all possible dialog result types. */
 export type IDialogResult = IConfirmationResult | IInputResult | IAsyncPromptResult<unknown>;
 
+/** The type of a dialog, controlling the icon displayed. */
 export type DialogType = 'none' | 'info' | 'error' | 'question' | 'warning';
 
+/**
+ * A checkbox option that can be shown in a dialog.
+ */
 export interface ICheckbox {
 	readonly label: string;
 	readonly checked?: boolean;
 }
 
+/**
+ * Result that includes the checkbox state from a dialog.
+ */
 export interface ICheckboxResult {
 
 	/**
@@ -194,6 +282,9 @@ export interface ICheckboxResult {
 	readonly checkboxChecked?: boolean;
 }
 
+/**
+ * Options for the pick-and-open file/folder dialog flow.
+ */
 export interface IPickAndOpenOptions {
 	readonly forceNewWindow?: boolean;
 	defaultUri?: URI;
@@ -202,6 +293,10 @@ export interface IPickAndOpenOptions {
 	remoteAuthority?: string | null;
 }
 
+/**
+ * A file filter used in save/open dialogs. Each entry provides a human-readable
+ * label and a list of file extensions to match.
+ */
 export interface FileFilter {
 	readonly extensions: string[];
 	readonly name: string;
@@ -284,6 +379,9 @@ export interface IOpenDialogOptions {
 
 export const IDialogService = createDecorator<IDialogService>('dialogService');
 
+/**
+ * Additional options for custom-styled dialogs.
+ */
 export interface ICustomDialogOptions {
 	readonly buttonDetails?: string[];
 	readonly markdownDetails?: ICustomDialogMarkdown[];
@@ -292,6 +390,9 @@ export interface ICustomDialogOptions {
 	readonly disableCloseAction?: boolean;
 }
 
+/**
+ * Markdown content to display in a custom dialog.
+ */
 export interface ICustomDialogMarkdown {
 	readonly markdown: IMarkdownString;
 	readonly classes?: string[];
@@ -331,16 +432,38 @@ enum DialogKind {
 	Input
 }
 
+/**
+ * Abstract base class for dialog handlers. Provides shared logic for building
+ * button labels, determining dialog types, and computing prompt results.
+ *
+ * Implementations must override the `confirm`, `input`, `prompt`, and `about`
+ * methods to provide platform-specific dialog behavior.
+ */
 export abstract class AbstractDialogHandler implements IDialogHandler {
 
+	/**
+	 * Get the button labels for a confirmation dialog.
+	 * @param dialog - The confirmation dialog options.
+	 * @returns An array of localized button label strings.
+	 */
 	protected getConfirmationButtons(dialog: IConfirmation): string[] {
 		return this.getButtons(dialog, DialogKind.Confirmation);
 	}
 
+	/**
+	 * Get the button labels for a prompt dialog.
+	 * @param dialog - The prompt dialog options.
+	 * @returns An array of localized button label strings.
+	 */
 	protected getPromptButtons(dialog: IPrompt<unknown>): string[] {
 		return this.getButtons(dialog, DialogKind.Prompt);
 	}
 
+	/**
+	 * Get the button labels for an input dialog.
+	 * @param dialog - The input dialog options.
+	 * @returns An array of localized button label strings.
+	 */
 	protected getInputButtons(dialog: IInput): string[] {
 		return this.getButtons(dialog, DialogKind.Input);
 	}
@@ -348,6 +471,17 @@ export abstract class AbstractDialogHandler implements IDialogHandler {
 	private getButtons(dialog: IConfirmation, kind: DialogKind.Confirmation): string[];
 	private getButtons(dialog: IPrompt<unknown>, kind: DialogKind.Prompt): string[];
 	private getButtons(dialog: IInput, kind: DialogKind.Input): string[];
+	/**
+	 * Build the list of button labels for a dialog based on its kind.
+	 *
+	 * For confirmation dialogs, defaults to "Yes" and "Cancel".
+	 * For prompt dialogs, uses the provided button labels or defaults to "OK".
+	 * For input dialogs, defaults to "OK" and "Cancel".
+	 *
+	 * @param dialog - The dialog options containing button configuration.
+	 * @param kind - The kind of dialog to build buttons for.
+	 * @returns An array of localized button label strings.
+	 */
 	private getButtons(dialog: IConfirmation | IInput | IPrompt<unknown>, kind: DialogKind): string[] {
 
 		// We put buttons in the order of "default" button first and "cancel"
@@ -423,18 +557,36 @@ export abstract class AbstractDialogHandler implements IDialogHandler {
 		return buttons;
 	}
 
+	/**
+	 * Convert a `Severity` or `DialogType` value to a `DialogType`.
+	 *
+	 * @param type - The severity level or dialog type string.
+	 * @returns The corresponding `DialogType`, or `undefined` if not provided.
+	 */
 	protected getDialogType(type: Severity | DialogType | undefined): DialogType | undefined {
 		if (typeof type === 'string') {
 			return type;
 		}
 
 		if (typeof type === 'number') {
-			return (type === Severity.Info) ? 'info' : (type === Severity.Error) ? 'error' : (type === Severity.Warning) ? 'warning' : 'none';
+			if (type === Severity.Info) { return 'info'; }
+			if (type === Severity.Error) { return 'error'; }
+			if (type === Severity.Warning) { return 'warning'; }
+			return 'none';
 		}
 
 		return undefined;
 	}
 
+	/**
+	 * Compute the result of a prompt dialog based on the pressed button index.
+	 *
+	 * @typeParam T - The type of result returned by the prompt buttons.
+	 * @param prompt - The prompt options containing button definitions.
+	 * @param buttonIndex - The index of the button that was pressed.
+	 * @param checkboxChecked - Whether the checkbox was checked, if present.
+	 * @returns The async prompt result wrapping the button's return value.
+	 */
 	protected getPromptResult<T>(prompt: IPrompt<T>, buttonIndex: number, checkboxChecked: boolean | undefined): IAsyncPromptResult<T> {
 		const promptButtons: IPromptBaseButton<T>[] = [...(prompt.buttons ?? [])];
 		if (prompt.cancelButton && typeof prompt.cancelButton !== 'string' && typeof prompt.cancelButton !== 'boolean') {
@@ -605,6 +757,16 @@ export const enum ConfirmResult {
 }
 
 const MAX_CONFIRM_FILES = 10;
+
+/**
+ * Build a human-readable message listing file names for a save-confirmation dialog.
+ *
+ * Shows up to {@link MAX_CONFIRM_FILES} file names, then appends a summary
+ * line for any additional files not shown.
+ *
+ * @param fileNamesOrResources - An array of file names or URIs to list.
+ * @returns A newline-separated string of file names with a trailing blank line.
+ */
 export function getFileNamesMessage(fileNamesOrResources: readonly (string | URI)[]): string {
 	const message: string[] = [];
 	message.push(...fileNamesOrResources.slice(0, MAX_CONFIRM_FILES).map(fileNameOrResource => typeof fileNameOrResource === 'string' ? fileNameOrResource : basename(fileNameOrResource)));
@@ -621,6 +783,9 @@ export function getFileNamesMessage(fileNamesOrResources: readonly (string | URI
 	return message.join('\n');
 }
 
+/**
+ * Options for native open dialogs used by the native host service.
+ */
 export interface INativeOpenDialogOptions {
 	readonly forceNewWindow?: boolean;
 
@@ -630,6 +795,11 @@ export interface INativeOpenDialogOptions {
 	readonly telemetryExtraData?: ITelemetryData;
 }
 
+/**
+ * The result of {@link massageMessageBoxOptions}. Contains the platform-adjusted
+ * dialog options and a mapping from the new button order back to the original
+ * indices.
+ */
 export interface IMassagedMessageBoxOptions {
 
 	/**
