@@ -244,6 +244,21 @@
 
 	//#endregion
 
+	//#region Product Configuration — must be set before importing workbench modules
+
+	// product.ts checks globalThis._VSCODE_PRODUCT_JSON and _VSCODE_PACKAGE_JSON
+	// to configure services like the Extension Gallery (marketplace).
+	// Without this, the fallback path provides a hardcoded default without extensionsGallery.
+	try {
+		const productPackage = await tauri.core.invoke<{ product: object; package: object }>('get_product_json');
+		(globalThis as any)._VSCODE_PRODUCT_JSON = productPackage.product;
+		(globalThis as any)._VSCODE_PACKAGE_JSON = productPackage.package;
+	} catch (err) {
+		console.warn('[Tauri Bootstrap] Failed to load product.json, using defaults:', err);
+	}
+
+	//#endregion
+
 	//#region Load Workbench
 
 	try {
