@@ -161,11 +161,7 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
             tauri::async_runtime::spawn(async move {
                 if let Some(id) = wm.id_for_label(&label_c).await {
                     // Notify the TypeScript lifecycle service.
-                    let _ = handle_c.emit_to(
-                        &label_c,
-                        event_names::LIFECYCLE_CLOSE_REQUESTED,
-                        id,
-                    );
+                    let _ = handle_c.emit_to(&label_c, event_names::LIFECYCLE_CLOSE_REQUESTED, id);
                 } else {
                     // Unknown window — force-destroy immediately.
                     log::warn!(

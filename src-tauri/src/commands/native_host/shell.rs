@@ -19,7 +19,8 @@ pub async fn open_external(url: String) -> Result<(), NativeHostError> {
 /// Move a file or directory to the system trash.
 #[tauri::command]
 pub async fn move_item_to_trash(path: String) -> Result<(), NativeHostError> {
-    trash::delete(&path).map_err(|e| NativeHostError::Other(format!("Failed to move to trash: {e}")))
+    trash::delete(&path)
+        .map_err(|e| NativeHostError::Other(format!("Failed to move to trash: {e}")))
 }
 
 /// Kill a process by PID.

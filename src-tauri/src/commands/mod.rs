@@ -213,10 +213,18 @@ pub fn get_product_json() -> Result<ProductPackageJson, String> {
     let product_path = project_root.join("product.json");
     let package_path = project_root.join("package.json");
 
-    let product_str = std::fs::read_to_string(&product_path)
-        .map_err(|e| format!("Failed to read product.json at {}: {e}", product_path.display()))?;
-    let package_str = std::fs::read_to_string(&package_path)
-        .map_err(|e| format!("Failed to read package.json at {}: {e}", package_path.display()))?;
+    let product_str = std::fs::read_to_string(&product_path).map_err(|e| {
+        format!(
+            "Failed to read product.json at {}: {e}",
+            product_path.display()
+        )
+    })?;
+    let package_str = std::fs::read_to_string(&package_path).map_err(|e| {
+        format!(
+            "Failed to read package.json at {}: {e}",
+            package_path.display()
+        )
+    })?;
 
     let product: serde_json::Value = serde_json::from_str(&product_str)
         .map_err(|e| format!("Failed to parse product.json: {e}"))?;

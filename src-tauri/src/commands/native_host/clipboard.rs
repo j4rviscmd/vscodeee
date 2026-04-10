@@ -52,7 +52,10 @@ pub fn write_clipboard_buffer(
 /// Returns the clipboard content as a base64-encoded string.
 /// The TypeScript side decodes it back into a VSBuffer.
 #[tauri::command]
-pub fn read_clipboard_buffer(app: tauri::AppHandle, _format: String) -> Result<String, NativeHostError> {
+pub fn read_clipboard_buffer(
+    app: tauri::AppHandle,
+    _format: String,
+) -> Result<String, NativeHostError> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
     app.clipboard()
         .read_text()
@@ -226,9 +229,7 @@ fn linux_trigger_paste() -> Result<(), NativeHostError> {
         .map_err(|e| NativeHostError::Other(format!("Failed to trigger paste (xdotool): {e}")))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(NativeHostError::Other(format!(
-            "xdotool failed: {stderr}"
-        )));
+        return Err(NativeHostError::Other(format!("xdotool failed: {stderr}")));
     }
     Ok(())
 }
