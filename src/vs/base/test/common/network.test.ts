@@ -5,7 +5,7 @@
 
 import assert from 'assert';
 import { FileAccess, Schemas } from '../../common/network.js';
-import { isWeb } from '../../common/platform.js';
+import { isTauri, isWeb } from '../../common/platform.js';
 import { isEqual } from '../../common/resources.js';
 import { URI } from '../../common/uri.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from './utils.js';
@@ -68,5 +68,36 @@ suite('network', () => {
 		const originalRemoteUri = URI.file('network.test.ts').with({ scheme: Schemas.vscodeRemote });
 		const browserUri = FileAccess.uriToBrowserUri(originalRemoteUri);
 		assert.notStrictEqual(originalRemoteUri.scheme, browserUri.scheme);
+	});
+
+	// Tauri tests: file:// → vscode-file:// URI conversion (issue #47)
+	// These tests verify that in a Tauri environment (isWeb=true, isTauri=true),
+	// file:// URIs are correctly rewritten to vscode-file:// URIs.
+	// Skipped in non-Tauri environments where file:// is handled natively.
+
+	(isTauri ? test : test.skip)('FileAccess: URI rewrite in Tauri (file → vscode-file)', () => {
+		const originalFileUri = URI.file('network.test.ts');
+		const browserUri = FileAccess.uriToBrowserUri(originalFileUri);
+		assert.strictEqual(browserUri.scheme, Schemas.vscodeFileResource);
+		assert.ok(browserUri.authority.length > 0);
+
+		const fileUri = FileAccess.uriToFileUri(browserUri);
+		assert.strictEqual(fileUri.authority.length, 0);
+		assert(isEqual(originalFileUri, fileUri));
+	});
+
+	(isTauri ? test : test.skip)('FileAccess: Tauri preserves existing authority', () => {
+		const originalFileUri = URI.file('network.test.ts').with({ authority: 'test-authority' });
+		const browserUri = FileAccess.uriToBrowserUri(originalFileUri);
+		assert.strictEqual(browserUri.scheme, Schemas.vscodeFileResource);
+		assert.strictEqual(browserUri.authority, originalFileUri.authority);
+	});
+
+	(isTauri ? test : test.skip)('FileAccess: Tauri drops query and fragment on rewrite', () => {
+		const originalFileUri = URI.file('network.test.ts').with({ query: 'foo=bar', fragment: 'something' });
+		const browserUri = FileAccess.uriToBrowserUri(originalFileUri);
+		assert.strictEqual(browserUri.scheme, Schemas.vscodeFileResource);
+		assert.strictEqual(browserUri.query, '');
+		assert.strictEqual(browserUri.fragment, '');
 	});
 });
