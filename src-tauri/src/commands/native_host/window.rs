@@ -105,7 +105,10 @@ pub fn position_window(
         .set_position(LogicalPosition::new(position.x as f64, position.y as f64))
         .map_err(|e| NativeHostError::Window(e.to_string()))?;
     window
-        .set_size(LogicalSize::new(position.width as f64, position.height as f64))
+        .set_size(LogicalSize::new(
+            position.width as f64,
+            position.height as f64,
+        ))
         .map_err(|e| NativeHostError::Window(e.to_string()))
 }
 

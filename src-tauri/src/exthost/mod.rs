@@ -36,6 +36,8 @@ pub mod protocol;
 pub mod handshake;
 #[cfg(unix)]
 pub mod sidecar;
+#[cfg(unix)]
+pub mod ws_relay;
 
 /// Errors that can occur during Extension Host sidecar operations.
 #[derive(Debug)]

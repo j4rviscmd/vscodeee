@@ -166,9 +166,7 @@ fn macos_thermal_state() -> ThermalState {
 #[cfg(target_os = "macos")]
 fn macos_is_on_battery() -> bool {
     use std::process::Command;
-    let output = Command::new("pmset")
-        .args(["-g", "batt"])
-        .output();
+    let output = Command::new("pmset").args(["-g", "batt"]).output();
 
     if let Ok(output) = output {
         let stdout = String::from_utf8_lossy(&output.stdout);
