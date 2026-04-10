@@ -9,13 +9,17 @@
  * Unlike the Electron renderer implementation that uses `ProxyChannel.toService()`
  * to proxy calls to the main process, this directly invokes Tauri commands
  * via `window.__TAURI__.invoke()`. Each method maps to a corresponding Rust
- * command in `src-tauri/src/commands/`.
+ * command in `src-tauri/src/commands/native_host/`.
  *
- * Methods are incrementally implemented as each Phase progresses.
- * Unimplemented methods either throw via {@link notImplemented} or return
- * sensible no-op defaults.
- *
- * Phase 1: Window lifecycle, basic OS info, clipboard (most methods stubbed).
+ * Methods are organized by category matching the Rust submodule structure:
+ * - `window.rs`: Window management (focus, position, fullscreen, etc.)
+ * - `clipboard.rs`: Clipboard read/write/find pasteboard
+ * - `os.rs`: OS info (admin, ARM64, VM detection, color scheme, etc.)
+ * - `lifecycle.rs`: App lifecycle (quit, relaunch, close)
+ * - `network.rs`: Proxy resolution, certificates
+ * - `shell.rs`: External open, trash, process management
+ * - `power.rs`: System idle, battery, thermal state
+ * - `misc.rs`: Toast notifications, zip creation, elevated write
  */
 
 import { Event, Emitter } from '../../../base/common/event.js';
@@ -31,17 +35,6 @@ import { AuthInfo, Credentials } from '../../request/common/request.js';
 import { IPartsSplash } from '../../theme/common/themeService.js';
 import { IColorScheme, IOpenedAuxiliaryWindow, IOpenedMainWindow, IOpenEmptyWindowOptions, IOpenWindowOptions, IPoint, IRectangle, IWindowOpenable } from '../../window/common/window.js';
 import { invoke, listen } from '../../tauri/common/tauriApi.js';
-
-/**
- * Throws an error indicating that the given method is not yet implemented
- * in the Tauri native host service.
- *
- * @param method - The name of the unimplemented method.
- * @throws {Error} Always throws with a descriptive message.
- */
-function notImplemented(method: string): never {
-	throw new Error(`[TauriNativeHostService] ${method} is not yet implemented.`);
-}
 
 export class TauriNativeHostService extends Disposable implements INativeHostService {
 
@@ -111,6 +104,8 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 
 		// Wire Tauri window events to VS Code emitters
 		this._wireWindowEvents();
+		// Wire OS color scheme changes via matchMedia
+		this._wireColorSchemeEvents();
 	}
 
 	/**
@@ -153,6 +148,31 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		});
 	}
 
+	/**
+	 * Subscribe to OS color scheme changes via `matchMedia` and fire
+	 * the `onDidChangeColorScheme` event so the workbench reacts to
+	 * system theme changes (light/dark, high contrast).
+	 */
+	private _wireColorSchemeEvents(): void {
+		const darkQuery = window.matchMedia?.('(prefers-color-scheme: dark)');
+		const hcQuery = window.matchMedia?.('(forced-colors: active)');
+
+		const fireChange = () => {
+			const dark = darkQuery?.matches ?? true;
+			const highContrast = hcQuery?.matches ?? false;
+			this._onDidChangeColorScheme.fire({ dark, highContrast });
+		};
+
+		if (darkQuery) {
+			darkQuery.addEventListener('change', fireChange);
+			this._register({ dispose: () => darkQuery.removeEventListener('change', fireChange) });
+		}
+		if (hcQuery) {
+			hcQuery.addEventListener('change', fireChange);
+			this._register({ dispose: () => hcQuery.removeEventListener('change', fireChange) });
+		}
+	}
+
 	// #region Window
 
 	/**
@@ -186,9 +206,13 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		return this.windowId;
 	}
 
-	/** Returns the position of the active window. Not implemented in Phase 1. */
+	/** Returns the position of the active window via the Rust backend. */
 	async getActiveWindowPosition(): Promise<IRectangle | undefined> {
-		return undefined;
+		try {
+			return await invoke<IRectangle>('get_active_window_position');
+		} catch {
+			return undefined;
+		}
 	}
 
 	/** Returns the native OS window handle. Not implemented in Phase 1. */
@@ -236,9 +260,9 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		}
 	}
 
-	/** Opens the agents session window. Not implemented in Phase 1. */
+	/** Opens the agents session window. No-op — no callers yet. */
 	async openAgentsWindow(): Promise<void> {
-		notImplemented('openAgentsWindow');
+		// No-op: Agent sessions window is not implemented yet
 	}
 
 	/** Returns whether the window is currently in fullscreen mode. */
@@ -251,9 +275,9 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		return invoke('toggle_fullscreen');
 	}
 
-	/** Returns the cursor screen point and display bounds. Not implemented in Phase 1. */
+	/** Returns the cursor screen point and display bounds via the Rust backend. */
 	async getCursorScreenPoint(): Promise<{ readonly point: IPoint; readonly display: IRectangle }> {
-		notImplemented('getCursorScreenPoint');
+		return invoke<{ readonly point: IPoint; readonly display: IRectangle }>('get_cursor_screen_point');
 	}
 
 	/** Returns whether the window is currently maximized. */
@@ -276,27 +300,27 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		return invoke('minimize_window');
 	}
 
-	/** Moves the window to the top of the z-order. Not implemented in Phase 1. */
+	/** Moves the window to the top of the z-order via the Rust backend. */
 	async moveWindowTop(_options?: INativeHostOptions): Promise<void> {
-		notImplemented('moveWindowTop');
+		return invoke('move_window_top');
 	}
 
-	/** Positions the window at the given screen rectangle. Not implemented in Phase 1. */
-	async positionWindow(_position: IRectangle, _options?: INativeHostOptions): Promise<void> {
-		notImplemented('positionWindow');
+	/** Positions the window at the given screen rectangle via the Rust backend. */
+	async positionWindow(position: IRectangle, _options?: INativeHostOptions): Promise<void> {
+		return invoke('position_window', { position });
 	}
 
-	/** Returns whether the window is pinned to always-on-top. Always returns `false` in Phase 1. */
+	/** Returns whether the window is pinned to always-on-top via the Rust backend. */
 	async isWindowAlwaysOnTop(_options?: INativeHostOptions): Promise<boolean> {
-		return false;
+		return invoke<boolean>('is_always_on_top');
 	}
 
 	async toggleWindowAlwaysOnTop(_options?: INativeHostOptions): Promise<void> {
-		notImplemented('toggleWindowAlwaysOnTop');
+		return invoke('toggle_always_on_top');
 	}
 
-	async setWindowAlwaysOnTop(_alwaysOnTop: boolean, _options?: INativeHostOptions): Promise<void> {
-		notImplemented('setWindowAlwaysOnTop');
+	async setWindowAlwaysOnTop(alwaysOnTop: boolean, _options?: INativeHostOptions): Promise<void> {
+		return invoke('set_always_on_top', { alwaysOnTop });
 	}
 
 	async updateWindowControls(_options: INativeHostOptions & { height?: number; backgroundColor?: string; foregroundColor?: string; dimmed?: boolean }): Promise<void> {
@@ -307,8 +331,8 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		// No-op for Phase 1
 	}
 
-	async setMinimumSize(_width: number | undefined, _height: number | undefined): Promise<void> {
-		// No-op for Phase 1
+	async setMinimumSize(width: number | undefined, height: number | undefined): Promise<void> {
+		await invoke('set_minimum_size', { width: width ?? 0, height: height ?? 0 });
 	}
 
 	async saveWindowSplash(_splash: IPartsSplash): Promise<void> {
@@ -379,8 +403,17 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		}
 	}
 
-	async pickWorkspaceAndOpen(_options: INativeOpenDialogOptions): Promise<void> {
-		notImplemented('pickWorkspaceAndOpen');
+	/** Opens a native workspace picker and opens the selected workspace in a new window. */
+	async pickWorkspaceAndOpen(options: INativeOpenDialogOptions): Promise<void> {
+		const result = await this.showOpenDialog({
+			properties: ['openFile'],
+			defaultPath: options.defaultPath,
+			filters: [{ name: 'Workspace', extensions: ['code-workspace'] }],
+		});
+		if (result.filePaths.length > 0) {
+			const path = result.filePaths[0];
+			await this.openWindow([{ workspaceUri: URI.file(path) }], { forceNewWindow: options.forceNewWindow });
+		}
 	}
 
 	// #endregion
@@ -411,18 +444,23 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		await invoke('move_item_to_trash', { path: fullPath });
 	}
 
-	/** Returns whether the current user has administrator/root privileges. Always `false` in Phase 1. */
+	/** Returns whether the current user has administrator/root privileges via the Rust backend. */
 	async isAdmin(): Promise<boolean> {
-		return false;
+		return invoke<boolean>('is_admin');
 	}
 
-	async writeElevated(_source: URI, _target: URI, _options?: { unlock?: boolean }): Promise<void> {
-		notImplemented('writeElevated');
+	/** Writes a file with elevated privileges via the Rust backend (osascript/pkexec). */
+	async writeElevated(source: URI, target: URI, options?: { unlock?: boolean }): Promise<void> {
+		await invoke('write_elevated', {
+			source: source.fsPath,
+			target: target.fsPath,
+			unlock: options?.unlock ?? false,
+		});
 	}
 
-	/** Returns whether the process is running under ARM64 translation (e.g., Rosetta 2). Always `false` in Phase 1. */
+	/** Returns whether the process is running under ARM64 translation (e.g., Rosetta 2) via the Rust backend. */
 	async isRunningUnderARM64Translation(): Promise<boolean> {
-		return false;
+		return invoke<boolean>('is_running_under_arm64_translation');
 	}
 
 	/** Returns the operating system properties (type, arch, platform, CPU info). */
@@ -435,18 +473,20 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		return invoke<IOSStatistics>('get_os_statistics');
 	}
 
-	/** Returns a heuristic score indicating if running in a VM. Always `0` (unlikely) in Phase 1. */
+	/** Returns a heuristic score indicating if running in a VM via the Rust backend. */
 	async getOSVirtualMachineHint(): Promise<number> {
-		return 0;
+		return invoke<number>('get_os_virtual_machine_hint');
 	}
 
-	/** Returns the OS color scheme. Defaults to dark mode, non-high-contrast in Phase 1. */
+	/** Returns the OS color scheme using matchMedia with Rust fallback. */
 	async getOSColorScheme(): Promise<IColorScheme> {
-		return { dark: true, highContrast: false };
+		const dark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true;
+		const highContrast = window.matchMedia?.('(forced-colors: active)').matches ?? false;
+		return { dark, highContrast };
 	}
 
 	async hasWSLFeatureInstalled(): Promise<boolean> {
-		return false;
+		return invoke<boolean>('has_wsl_feature_installed');
 	}
 
 	// #endregion
@@ -462,7 +502,7 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 	// #region Process
 
 	async getProcessId(): Promise<number | undefined> {
-		return undefined;
+		return invoke<number>('get_process_id');
 	}
 
 	/** Kills a process by PID with the given exit code. */
@@ -474,8 +514,9 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 
 	// #region Clipboard
 
+	/** Triggers a paste action via the Rust backend (simulates Cmd/Ctrl+V). */
 	async triggerPaste(_options?: INativeHostOptions): Promise<void> {
-		notImplemented('triggerPaste');
+		return invoke('trigger_paste');
 	}
 
 	/** Reads text content from the system clipboard. */
@@ -488,28 +529,48 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		return invoke('write_clipboard_text', { text });
 	}
 
+	/** Reads the macOS Find Pasteboard text via the Rust backend. */
 	async readClipboardFindText(): Promise<string> {
-		return '';
+		return invoke<string>('read_clipboard_find_text');
 	}
 
-	async writeClipboardFindText(_text: string): Promise<void> {
-		// No-op
+	/** Writes to the macOS Find Pasteboard via the Rust backend. */
+	async writeClipboardFindText(text: string): Promise<void> {
+		return invoke('write_clipboard_find_text', { text });
 	}
 
-	async writeClipboardBuffer(_format: string, _buffer: VSBuffer, _type?: 'selection' | 'clipboard'): Promise<void> {
-		notImplemented('writeClipboardBuffer');
+	/** Writes binary data to the clipboard in the given format via the Rust backend. */
+	async writeClipboardBuffer(format: string, buffer: VSBuffer, _type?: 'selection' | 'clipboard'): Promise<void> {
+		const base64 = buffer.toString();
+		await invoke('write_clipboard_buffer', { format, buffer: base64 });
 	}
 
-	async readClipboardBuffer(_format: string): Promise<VSBuffer> {
-		return VSBuffer.alloc(0);
+	/** Reads binary data from the clipboard for the given format via the Rust backend. */
+	async readClipboardBuffer(format: string): Promise<VSBuffer> {
+		const base64 = await invoke<string>('read_clipboard_buffer', { format });
+		if (!base64) {
+			return VSBuffer.alloc(0);
+		}
+		return VSBuffer.fromString(base64);
 	}
 
-	async hasClipboard(_format: string, _type?: 'selection' | 'clipboard'): Promise<boolean> {
-		return false;
+	/** Returns whether the clipboard has data in the given format via the Rust backend. */
+	async hasClipboard(format: string, _type?: 'selection' | 'clipboard'): Promise<boolean> {
+		return invoke<boolean>('has_clipboard', { format });
 	}
 
+	/** Reads an image from the clipboard as raw bytes via the Rust backend. */
 	async readImage(): Promise<Uint8Array> {
-		return new Uint8Array(0);
+		const base64 = await invoke<string>('read_clipboard_image');
+		if (!base64) {
+			return new Uint8Array(0);
+		}
+		const binary = atob(base64);
+		const bytes = new Uint8Array(binary.length);
+		for (let i = 0; i < binary.length; i++) {
+			bytes[i] = binary.charCodeAt(i);
+		}
+		return bytes;
 	}
 
 	// #endregion
@@ -603,8 +664,10 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 
 	// #region Connectivity
 
-	async resolveProxy(_url: string): Promise<string | undefined> {
-		return undefined;
+	/** Resolves a proxy URL for the given target via the Rust backend. */
+	async resolveProxy(url: string): Promise<string | undefined> {
+		const result = await invoke<string | null>('resolve_proxy', { url });
+		return result ?? undefined;
 	}
 
 	async lookupAuthorization(_authInfo: AuthInfo): Promise<Credentials | undefined> {
@@ -615,8 +678,9 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		return undefined;
 	}
 
+	/** Loads system SSL/TLS certificates via the Rust backend. */
 	async loadCertificates(): Promise<string[]> {
-		return [];
+		return invoke<string[]>('load_certificates');
 	}
 
 	/** Checks whether a given network port is free. */
@@ -633,59 +697,77 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 
 	// #region Registry (Windows only)
 
-	async windowsGetStringRegKey(_hive: 'HKEY_CURRENT_USER' | 'HKEY_LOCAL_MACHINE' | 'HKEY_CLASSES_ROOT' | 'HKEY_USERS' | 'HKEY_CURRENT_CONFIG', _path: string, _name: string): Promise<string | undefined> {
-		return undefined;
+	/** Reads a Windows registry string value via the Rust backend. */
+	async windowsGetStringRegKey(hive: 'HKEY_CURRENT_USER' | 'HKEY_LOCAL_MACHINE' | 'HKEY_CLASSES_ROOT' | 'HKEY_USERS' | 'HKEY_CURRENT_CONFIG', path: string, name: string): Promise<string | undefined> {
+		const result = await invoke<string | null>('windows_get_string_reg_key', { hive, path, name });
+		return result ?? undefined;
 	}
 
 	// #endregion
 
 	// #region Toast Notifications
 
-	async showToast(_options: IToastOptions): Promise<IToastResult> {
-		return { supported: false, clicked: false };
+	/** Shows a desktop toast notification via the Rust backend (notify-rust). */
+	async showToast(options: IToastOptions): Promise<IToastResult> {
+		return invoke<IToastResult>('show_toast', { options });
 	}
 
-	async clearToast(_id: string): Promise<void> { }
-	async clearToasts(): Promise<void> { }
+	/** Clears a toast notification by ID via the Rust backend. */
+	async clearToast(id: string): Promise<void> {
+		await invoke('clear_toast', { id });
+	}
+
+	/** Clears all toast notifications via the Rust backend. */
+	async clearToasts(): Promise<void> {
+		await invoke('clear_toasts');
+	}
 
 	// #endregion
 
 	// #region Zip
 
-	async createZipFile(_zipPath: URI, _files: { path: string; contents: string }[]): Promise<void> {
-		notImplemented('createZipFile');
+	/** Creates a zip file from the given entries via the Rust backend. */
+	async createZipFile(zipPath: URI, files: { path: string; contents: string }[]): Promise<void> {
+		await invoke('create_zip_file', { zipPath: zipPath.fsPath, files });
 	}
 
 	// #endregion
 
 	// #region Power
 
-	async getSystemIdleState(_idleThreshold: number): Promise<SystemIdleState> {
-		return 'active';
+	/** Gets the system idle state via the Rust backend. */
+	async getSystemIdleState(idleThreshold: number): Promise<SystemIdleState> {
+		return invoke<SystemIdleState>('get_system_idle_state', { idleThreshold });
 	}
 
+	/** Gets the system idle time in seconds via the Rust backend. */
 	async getSystemIdleTime(): Promise<number> {
-		return 0;
+		return invoke<number>('get_system_idle_time');
 	}
 
+	/** Gets the current thermal state via the Rust backend. */
 	async getCurrentThermalState(): Promise<ThermalState> {
-		return 'nominal';
+		return invoke<ThermalState>('get_current_thermal_state');
 	}
 
+	/** Returns whether the system is running on battery power via the Rust backend. */
 	async isOnBatteryPower(): Promise<boolean> {
-		return false;
+		return invoke<boolean>('is_on_battery_power');
 	}
 
-	async startPowerSaveBlocker(_type: PowerSaveBlockerType): Promise<number> {
-		return 0;
+	/** Starts a power save blocker via the Rust backend. Returns blocker ID. */
+	async startPowerSaveBlocker(type: PowerSaveBlockerType): Promise<number> {
+		return invoke<number>('start_power_save_blocker', { blockerType: type });
 	}
 
-	async stopPowerSaveBlocker(_id: number): Promise<boolean> {
-		return false;
+	/** Stops a power save blocker by ID via the Rust backend. */
+	async stopPowerSaveBlocker(id: number): Promise<boolean> {
+		return invoke<boolean>('stop_power_save_blocker', { id });
 	}
 
-	async isPowerSaveBlockerStarted(_id: number): Promise<boolean> {
-		return false;
+	/** Returns whether a power save blocker is active via the Rust backend. */
+	async isPowerSaveBlockerStarted(id: number): Promise<boolean> {
+		return invoke<boolean>('is_power_save_blocker_started', { id });
 	}
 
 	// #endregion

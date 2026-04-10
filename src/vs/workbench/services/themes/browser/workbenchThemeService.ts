@@ -33,7 +33,7 @@ import { updateColorThemeConfigurationSchemas, updateFileIconThemeConfigurationS
 import { ProductIconThemeData, DEFAULT_PRODUCT_ICON_THEME_ID } from './productIconThemeData.js';
 import { registerProductIconThemeSchemas } from '../common/productIconThemeSchema.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
-import { isWeb } from '../../../../base/common/platform.js';
+import { isWeb, isTauri } from '../../../../base/common/platform.js';
 import { ColorScheme, ThemeTypeSelector } from '../../../../platform/theme/common/theme.js';
 import { IHostColorSchemeService } from '../common/hostColorSchemeService.js';
 import { RunOnceScheduler, Sequencer } from '../../../../base/common/async.js';
@@ -160,7 +160,7 @@ export class WorkbenchThemeService extends Disposable implements IWorkbenchTheme
 			}
 		}
 		if (!themeData) {
-			const colorScheme = this.settings.getPreferredColorScheme() ?? (isWeb ? ColorScheme.LIGHT : ColorScheme.DARK);
+			const colorScheme = this.settings.getPreferredColorScheme() ?? ((isWeb && !isTauri) ? ColorScheme.LIGHT : ColorScheme.DARK);
 			themeData = ColorThemeData.createUnloadedThemeForThemeType(colorScheme, defaultColorMap);
 		}
 		themeData.setCustomizations(this.settings);
@@ -546,6 +546,17 @@ export class WorkbenchThemeService extends Disposable implements IWorkbenchTheme
 					theme.setCustomizations(this.settings);
 					await this.applyTheme(theme, undefined, true);
 				}
+				return true;
+			}
+			// Fallback: if preferred theme not found (e.g., extensions not loaded yet),
+			// apply base theme for the preferred color scheme so dark/light switching works.
+			// Use silent=false so onColorThemeChange fires and the editor updates.
+			const preferredScheme = this.settings.getPreferredColorScheme();
+			if (preferredScheme) {
+				const defaultColorMap = preferredScheme === ColorScheme.LIGHT ? COLOR_THEME_LIGHT_INITIAL_COLORS : preferredScheme === ColorScheme.DARK ? COLOR_THEME_DARK_INITIAL_COLORS : undefined;
+				const fallbackTheme = ColorThemeData.createUnloadedThemeForThemeType(preferredScheme, defaultColorMap);
+				fallbackTheme.setCustomizations(this.settings);
+				await this.applyTheme(fallbackTheme, undefined, false);
 				return true;
 			}
 			return false;
