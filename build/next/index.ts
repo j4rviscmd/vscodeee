@@ -756,6 +756,12 @@ async function transpile(outDir: string, excludeTests: boolean): Promise<void> {
  * Transpile built-in extensions under extensions/ that have a tsconfig.json.
  * Each extension is compiled in parallel using esbuild single-file transform,
  * which is much faster than running tsc for each extension separately.
+ *
+ * Extensions with `"type": "module"` in package.json are transpiled as ESM;
+ * all others are transpiled as CJS. This matches the behavior of the gulp
+ * ESBuildTranspiler in build/lib/tsb/transpiler.ts and ensures that CJS
+ * extensions can be loaded via require() in Node.js without
+ * --experimental-require-module.
  */
 async function transpileExtensions(): Promise<void> {
 	const extensionsDir = path.join(REPO_ROOT, 'extensions');
@@ -778,6 +784,7 @@ async function transpileExtensions(): Promise<void> {
 	console.log(`[transpile-extensions] Found ${extensionDirs.length} extensions with tsconfig.json`);
 
 	let totalFiles = 0;
+	let esmCount = 0;
 
 	await Promise.all(extensionDirs.map(async (extName) => {
 		const extDir = path.join(extensionsDir, extName);
@@ -808,6 +815,38 @@ async function transpileExtensions(): Promise<void> {
 			return; // No source directory
 		}
 
+		// Determine output format from package.json "type" field.
+		// Extensions with "type": "module" use ESM; all others use CJS.
+		let isESM = false;
+		const packageJsonPath = path.join(extDir, 'package.json');
+		try {
+			const packageJson = JSON.parse(await fs.promises.readFile(packageJsonPath, 'utf-8'));
+			isESM = packageJson.type === 'module';
+		} catch {
+			// No package.json or parse error — default to CJS
+		}
+
+		if (isESM) {
+			esmCount++;
+		}
+
+		// Build extension-specific transform options matching the gulp
+		// ESBuildTranspiler behavior (build/lib/tsb/transpiler.ts:330-348)
+		const extTransformOptions: esbuild.TransformOptions = {
+			loader: 'ts',
+			format: isESM ? 'esm' : 'cjs',
+			platform: isESM ? undefined : 'node',
+			target: 'es2024',
+			sourcemap: 'inline',
+			sourcesContent: false,
+			tsconfigRaw: JSON.stringify({
+				compilerOptions: {
+					experimentalDecorators: true,
+					useDefineForClassFields: false,
+				}
+			}),
+		};
+
 		// Find all .ts files in the extension source
 		const files = await globAsync('**/*.ts', {
 			cwd: srcDir,
@@ -820,15 +859,23 @@ async function transpileExtensions(): Promise<void> {
 
 		totalFiles += files.length;
 
-		// Transpile each file using esbuild
+		// Transpile each file using esbuild with extension-specific options
 		await Promise.all(files.map(async (file) => {
 			const srcPath = path.join(srcDir, file);
 			const destPath = path.join(destDir, file.replace(/\.ts$/, '.js'));
-			await transpileFile(srcPath, destPath);
+
+			const source = await fs.promises.readFile(srcPath, 'utf-8');
+			const result = await esbuild.transform(source, {
+				...extTransformOptions,
+				sourcefile: srcPath,
+			});
+
+			await fs.promises.mkdir(path.dirname(destPath), { recursive: true });
+			await fs.promises.writeFile(destPath, result.code);
 		}));
 	}));
 
-	console.log(`[transpile-extensions] Transpiled ${totalFiles} files across ${extensionDirs.length} extensions`);
+	console.log(`[transpile-extensions] Transpiled ${totalFiles} files across ${extensionDirs.length} extensions (${esmCount} ESM, ${extensionDirs.length - esmCount} CJS)`);
 }
 
 // ============================================================================
