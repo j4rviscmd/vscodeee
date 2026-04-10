@@ -34,7 +34,11 @@ class ExtensionResourceLoaderService extends AbstractExtensionResourceLoaderServ
 	async readExtensionResource(uri: URI): Promise<string> {
 		uri = FileAccess.uriToBrowserUri(uri);
 
-		if (uri.scheme !== Schemas.http && uri.scheme !== Schemas.https && uri.scheme !== Schemas.data) {
+		// In Tauri, file:// URIs are rewritten to vscode-file:// by uriToBrowserUri.
+		// The vscode-file:// scheme is served by Tauri's custom protocol handler, not
+		// by an IFileService provider, so we must use fetch() to load these resources.
+		// For http/https/data schemes, we also use fetch() (with optional gallery headers).
+		if (uri.scheme !== Schemas.http && uri.scheme !== Schemas.https && uri.scheme !== Schemas.data && uri.scheme !== Schemas.vscodeFileResource) {
 			const result = await this._fileService.readFile(uri);
 			return result.value.toString();
 		}
