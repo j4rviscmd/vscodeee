@@ -325,10 +325,13 @@ async function main() {
 		log('.', `Created ${claudeMdLinkType} .claude/CLAUDE.md -> .github/copilot-instructions.md`);
 	}
 
-	const claudeSkillsLink = path.join(claudeDir, 'skills');
-	const claudeSkillsLinkType = ensureAgentHarnessLink(path.join('..', '.agents', 'skills'), claudeSkillsLink);
-	if (claudeSkillsLinkType !== 'existing') {
-		log('.', `Created ${claudeSkillsLinkType} .claude/skills -> .agents/skills`);
+	const agentSkillsSource = path.join(root, '.agents', 'skills');
+	if (fs.existsSync(agentSkillsSource)) {
+		const claudeSkillsLink = path.join(claudeDir, 'skills');
+		const claudeSkillsLinkType = ensureAgentHarnessLink(path.join('..', '.agents', 'skills'), claudeSkillsLink);
+		if (claudeSkillsLinkType !== 'existing') {
+			log('.', `Created ${claudeSkillsLinkType} .claude/skills -> .agents/skills`);
+		}
 	}
 
 	// Temporary: patch @github/copilot-sdk session.js to fix ESM import
