@@ -185,6 +185,47 @@ fn collect_css_files(dir: &Path, root: &Path, result: &mut Vec<String>) {
     }
 }
 
+/// Read product.json and package.json from the project root.
+///
+/// Returns both files as raw JSON values so the bootstrap script can set
+/// `globalThis._VSCODE_PRODUCT_JSON` and `globalThis._VSCODE_PACKAGE_JSON`
+/// before any workbench modules are imported. This is critical because
+/// `product.ts` checks these globals to configure services like the
+/// Extension Gallery (marketplace).
+///
+/// The project root is resolved as `../` relative to `src-tauri/` (the
+/// Tauri process working directory during `cargo tauri dev`).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProductPackageJson {
+    /// Contents of `product.json` as a raw JSON value.
+    pub product: serde_json::Value,
+    /// Contents of `package.json` as a raw JSON value.
+    pub package: serde_json::Value,
+}
+
+#[tauri::command]
+pub fn get_product_json() -> Result<ProductPackageJson, String> {
+    let project_root = std::env::current_dir()
+        .map_err(|e| format!("Failed to get cwd: {e}"))?
+        .join("..");
+
+    let product_path = project_root.join("product.json");
+    let package_path = project_root.join("package.json");
+
+    let product_str = std::fs::read_to_string(&product_path)
+        .map_err(|e| format!("Failed to read product.json at {}: {e}", product_path.display()))?;
+    let package_str = std::fs::read_to_string(&package_path)
+        .map_err(|e| format!("Failed to read package.json at {}: {e}", package_path.display()))?;
+
+    let product: serde_json::Value = serde_json::from_str(&product_str)
+        .map_err(|e| format!("Failed to parse product.json: {e}"))?;
+    let package: serde_json::Value = serde_json::from_str(&package_str)
+        .map_err(|e| format!("Failed to parse package.json: {e}"))?;
+
+    Ok(ProductPackageJson { product, package })
+}
+
 /// List all CSS module paths for the CSS import map.
 ///
 /// Scans the transpiled output directory (`out/`) for `.css` files and returns
