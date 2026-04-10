@@ -91,6 +91,7 @@ pub fn run() {
             commands::get_native_host_info,
             commands::get_window_configuration,
             commands::list_css_modules,
+            commands::get_product_json,
             commands::extensions::list_builtin_extensions,
             commands::ipc_channel::ipc_message,
             commands::ipc_channel::ipc_handshake,
