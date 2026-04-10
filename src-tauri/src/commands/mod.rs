@@ -6,6 +6,7 @@
 //! Tauri commands — the Rust equivalent of VS Code's `ICommonNativeHostService`.
 //! These are exposed to the WebView via `window.__TAURI__.invoke()`.
 
+pub mod extensions;
 pub mod file_watcher;
 pub mod filesystem;
 pub mod ipc_channel;
