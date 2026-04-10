@@ -752,6 +752,85 @@ async function transpile(outDir: string, excludeTests: boolean): Promise<void> {
 	}));
 }
 
+/**
+ * Transpile built-in extensions under extensions/ that have a tsconfig.json.
+ * Each extension is compiled in parallel using esbuild single-file transform,
+ * which is much faster than running tsc for each extension separately.
+ */
+async function transpileExtensions(): Promise<void> {
+	const extensionsDir = path.join(REPO_ROOT, 'extensions');
+	const entries = await fs.promises.readdir(extensionsDir, { withFileTypes: true });
+
+	const extensionDirs: string[] = [];
+	for (const entry of entries) {
+		if (!entry.isDirectory()) {
+			continue;
+		}
+		const tsconfigPath = path.join(extensionsDir, entry.name, 'tsconfig.json');
+		try {
+			await fs.promises.access(tsconfigPath);
+			extensionDirs.push(entry.name);
+		} catch {
+			// No tsconfig.json — skip (e.g. theme-only extensions)
+		}
+	}
+
+	console.log(`[transpile-extensions] Found ${extensionDirs.length} extensions with tsconfig.json`);
+
+	let totalFiles = 0;
+
+	await Promise.all(extensionDirs.map(async (extName) => {
+		const extDir = path.join(extensionsDir, extName);
+		const tsconfigPath = path.join(extDir, 'tsconfig.json');
+
+		// Read tsconfig to determine rootDir and outDir (JSONC — strip comments and trailing commas)
+		const tsconfigRaw = await fs.promises.readFile(tsconfigPath, 'utf-8');
+		const tsconfigClean = tsconfigRaw
+			.replace(/\/\/.*$/gm, '')         // strip line comments
+			.replace(/\/\*[\s\S]*?\*\//g, '') // strip block comments
+			.replace(/,\s*([\]}])/g, '$1');   // strip trailing commas
+		let tsconfig: { compilerOptions?: { rootDir?: string; outDir?: string } };
+		try {
+			tsconfig = JSON.parse(tsconfigClean);
+		} catch {
+			return; // Unparseable tsconfig — skip
+		}
+		const rootDir = tsconfig.compilerOptions?.rootDir ?? './src';
+		const outDir = tsconfig.compilerOptions?.outDir ?? './out';
+
+		const srcDir = path.resolve(extDir, rootDir);
+		const destDir = path.resolve(extDir, outDir);
+
+		// Check if srcDir exists
+		try {
+			await fs.promises.access(srcDir);
+		} catch {
+			return; // No source directory
+		}
+
+		// Find all .ts files in the extension source
+		const files = await globAsync('**/*.ts', {
+			cwd: srcDir,
+			ignore: ['**/*.d.ts'],
+		});
+
+		if (files.length === 0) {
+			return;
+		}
+
+		totalFiles += files.length;
+
+		// Transpile each file using esbuild
+		await Promise.all(files.map(async (file) => {
+			const srcPath = path.join(srcDir, file);
+			const destPath = path.join(destDir, file.replace(/\.ts$/, '.js'));
+			await transpileFile(srcPath, destPath);
+		}));
+	}));
+
+	console.log(`[transpile-extensions] Transpiled ${totalFiles} files across ${extensionDirs.length} extensions`);
+}
+
 // ============================================================================
 // Bundle (Goal 2: JS → bundled JS)
 // ============================================================================
@@ -1156,6 +1235,7 @@ function printUsage(): void {
 
 Commands:
 	transpile          Transpile TypeScript to JavaScript (single-file, fast)
+	transpile-extensions  Transpile built-in extensions under extensions/
 	bundle             Bundle entry points into optimized bundles
 
 Options for 'transpile':
@@ -1209,6 +1289,14 @@ async function main(): Promise<void> {
 					console.log(`[transpile] Done in ${Date.now() - t1}ms`);
 				}
 				break;
+
+			case 'transpile-extensions': {
+				console.log(`[transpile-extensions] Transpiling built-in extensions...`);
+				const t1 = Date.now();
+				await transpileExtensions();
+				console.log(`[transpile-extensions] Done in ${Date.now() - t1}ms`);
+				break;
+			}
 
 			case 'bundle':
 				await bundle(options.out ?? OUT_VSCODE_DIR, options.minify, options.nls, options.manglePrivates, options.target as BuildTarget, options.sourceMapBaseUrl);

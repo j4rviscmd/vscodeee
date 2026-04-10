@@ -50,7 +50,7 @@ import './services/integrity/browser/integrityService.js';
 import './services/search/browser/searchService.js';
 import './services/textfile/browser/browserTextFileService.js';
 import './services/keybinding/browser/keyboardLayoutService.js';
-import './services/extensions/browser/extensionService.js';
+import './services/extensions/tauri-browser/tauriExtensionService.js';
 import './services/extensionManagement/browser/extensionsProfileScannerService.js';
 import './services/extensions/browser/extensionsScannerService.js';
 import './services/extensionManagement/browser/webExtensionsScannerService.js';

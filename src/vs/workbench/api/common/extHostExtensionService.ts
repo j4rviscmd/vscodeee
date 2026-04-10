@@ -211,7 +211,6 @@ export abstract class AbstractExtHostExtensionService extends Disposable impleme
 
 	public async initialize(): Promise<void> {
 		try {
-
 			await this._beforeAlmostReadyToRunExtensions();
 			this._almostReadyToRunExtensions.open();
 
@@ -807,12 +806,19 @@ export abstract class AbstractExtHostExtensionService extends Disposable impleme
 		this._started = true;
 
 		return this._readyToStartExtensionHost.wait()
-			.then(() => this._readyToRunExtensions.open())
+			.then(() => {
+				this._readyToRunExtensions.open();
+			})
 			.then(() => {
 				// wait for all activation events that came in during workbench startup, but at maximum 1s
-				return Promise.race([this._activator.waitForActivatingExtensions(), timeout(1000)]);
+				return Promise.race([
+					this._activator.waitForActivatingExtensions(),
+					timeout(1000)
+				]);
 			})
-			.then(() => this._handleEagerExtensions())
+			.then(() => {
+				return this._handleEagerExtensions();
+			})
 			.then(() => {
 				this._eagerExtensionsActivated.open();
 				this._logService.info(`Eager extensions activated`);

@@ -40,3 +40,5 @@ tauri-plugin-window-state = "2"
 thiserror = "2"
 zip = "2"
 notify-rust = "4"
+tokio-tungstenite = "0.24"
+futures-util = { version = "0.3", default-features = false, features = ["sink"] }
