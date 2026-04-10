@@ -68,6 +68,7 @@ pub fn run() {
         .plugin(logging::build_plugin().build())
         .manage(pty::manager::PtyManager::new())
         .manage(commands::file_watcher::FileWatcherState::new())
+        .manage(commands::spawn_exthost::ExtHostState::new())
         .manage(Arc::clone(&channel_router))
         .manage(Arc::clone(&window_manager))
         .manage(Arc::clone(&pending_closes))
@@ -96,6 +97,7 @@ pub fn run() {
             commands::ipc_channel::ipc_message,
             commands::ipc_channel::ipc_handshake,
             commands::spawn_exthost::spawn_extension_host,
+            commands::spawn_exthost::spawn_exthost_with_relay,
             commands::terminal::create_terminal,
             commands::terminal::write_terminal,
             commands::terminal::resize_terminal,
