@@ -21,7 +21,7 @@ Maintain the current functionality of VSCode while achieving the following:
 
 ## Roadmap
 
-> **Current Phase: Phase 4 — Native Host Services** 📋
+> **Current Phase: Phase 5 — Process Model** 📋
 
 | Phase  | Name                                                             | Goal                                                    |                            Status                             |
 | :----: | ---------------------------------------------------------------- | ------------------------------------------------------- | :-----------------------------------------------------------: |
@@ -33,8 +33,8 @@ Maintain the current functionality of VSCode while achieving the following:
 |  3B    | [Custom Title Bar](#phase-3-window-management)                   | Draggable title bar, traffic lights, window controls    | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/34)  |
 |  3C    | [State Persistence](#phase-3-window-management)                  | Window position/size + workspace session restore        | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/36)  |
 |  3D    | [Lifecycle Close Handshake](#phase-3-window-management)          | Two-phase close for reliable session restore            | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/39)  |
-| **4**  | [**Native Host Services**](#phase-4-native-host-services)        | **Dialogs, clipboard, shell, OS integration (~80 methods)** |                      **📋 Up Next**                           |
-|   5    | [Process Model](#phase-5-process-model)                          | Extension Host, Terminal (PTY), Shared Process          |                          📋 Planned                           |
+| **4**  | [**Native Host Services**](#phase-4-native-host-services)        | **Extension scanner, OS theme, native host modularization** | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/48)  |
+|   5    | [Process Model](#phase-5-process-model)                          | Extension Host, Terminal (PTY), Shared Process          |                      **📋 Up Next**                           |
 |   6    | [Platform Features](#phase-6-platform-features)                  | Auto-update, native menus, system tray                  |                          📋 Planned                           |
 |   7    | [Build & Packaging](#phase-7-build--packaging)                   | Installers, code signing, CI/CD                         |                          📋 Planned                           |
 
@@ -160,9 +160,19 @@ Two-phase close handshake between Rust and TypeScript to ensure IndexedDB writes
 | Storage flush before close    | `storageService.flush(SHUTDOWN)` before `window.destroy()` |   ✅   |
 | Rust confirmed/vetoed cmds    | `lifecycle_close_confirmed` + `lifecycle_close_vetoed`     |   ✅   |
 
-### Phase 4: Native Host Services
+### Phase 4: Native Host Services ✅
 
-Implement all ~80 methods of `ICommonNativeHostService` using Tauri plugins (dialog, clipboard, shell, OS info, notification, etc.).
+Built-in extension scanning and OS theme detection for the Tauri backend. Modularized the native host Rust code from a single file into a clean module structure. See [PR #48](https://github.com/j4rviscmd/vscodeee/pull/48).
+
+| Task                            | Description                                                        | Status |
+| ------------------------------- | ------------------------------------------------------------------ | :----: |
+| Built-in extension scanner      | Rust `list_builtin_extensions` + TS `TauriBuiltinExtensionsScannerService` |   ✅   |
+| OS theme detection              | `TauriHostColorSchemeService` with real-time dark/light switching   |   ✅   |
+| Native host modularization      | Split monolithic `native_host.rs` into 9 sub-modules               |   ✅   |
+| OS info methods                 | `hostname`, `arch`, `platform`, `release` via `tauri-plugin-os`    |   ✅   |
+| Security fixes                  | Escape osascript injection, fix IPC param mismatch, cfg(unix) guard |   ✅   |
+
+> **Note**: 94 built-in extensions are scanned, but extension **execution** requires Extension Host (Phase 5). `file://` resource loading is blocked by WebView CSP — see [#47](https://github.com/j4rviscmd/vscodeee/issues/47).
 
 ### Phase 5: Process Model
 
