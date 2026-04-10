@@ -309,6 +309,8 @@ class FileAccessImpl {
 			(
 				// ...and we run in native environments
 				platform.isNative ||
+				// ...or in Tauri where file:// is blocked by WebView CSP
+				platform.isTauri ||
 				// ...or web worker extensions on desktop
 				(platform.webWorkerOrigin === `${Schemas.vscodeFileResource}://${FileAccessImpl.FALLBACK_AUTHORITY}`)
 			)
