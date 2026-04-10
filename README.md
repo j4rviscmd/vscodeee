@@ -171,8 +171,9 @@ Built-in extension scanning and OS theme detection for the Tauri backend. Modula
 | Native host modularization      | Split monolithic `native_host.rs` into 9 sub-modules               |   ✅   |
 | OS info methods                 | `hostname`, `arch`, `platform`, `release` via `tauri-plugin-os`    |   ✅   |
 | Security fixes                  | Escape osascript injection, fix IPC param mismatch, cfg(unix) guard |   ✅   |
+| ESM build fix                   | Per-extension CJS/ESM format in `transpileExtensions()` ([#57](https://github.com/j4rviscmd/vscodeee/issues/57)) |   ✅   |
 
-> **Note**: 94 built-in extensions are scanned, but extension **execution** requires Extension Host (Phase 5). `file://` resource loading is blocked by WebView CSP — see [#47](https://github.com/j4rviscmd/vscodeee/issues/47).
+> **Note**: 94 built-in extensions are scanned and correctly transpiled (31 CJS, 1 ESM). Extension **execution** requires Extension Host (Phase 5). `file://` resource loading is blocked by WebView CSP — see [#47](https://github.com/j4rviscmd/vscodeee/issues/47). SCM provider registration is tracked in [#61](https://github.com/j4rviscmd/vscodeee/issues/61).
 
 ### Phase 5: Process Model
 
