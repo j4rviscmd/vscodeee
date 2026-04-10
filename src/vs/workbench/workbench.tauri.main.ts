@@ -35,6 +35,7 @@ import './tauri-browser/desktop.tauri.main.js';
 import './services/lifecycle/tauri-browser/lifecycleService.js';
 import './services/host/tauri-browser/hostService.js';
 import './services/title/tauri-browser/titleService.js';
+import './services/extensionManagement/tauri-browser/tauriBuiltinExtensionsScannerService.js';
 
 //#endregion
 
@@ -66,7 +67,7 @@ import '../platform/meteredConnection/browser/meteredConnectionService.js';
 import './services/clipboard/browser/clipboardService.js';
 import './services/localization/browser/localeService.js';
 import './services/path/browser/pathService.js';
-import './services/themes/browser/browserHostColorSchemeService.js';
+import './services/themes/tauri-browser/tauriHostColorSchemeService.js';
 import './services/encryption/browser/encryptionService.js';
 import './services/imageResize/browser/imageResizeService.js';
 import './services/secrets/browser/secretStorageService.js';
