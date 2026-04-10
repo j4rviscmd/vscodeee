@@ -106,12 +106,21 @@ pub fn handle_vscode_file_protocol<R: tauri::Runtime>(
 {
     move |_ctx: UriSchemeContext<'_, R>, request: Request<Vec<u8>>| {
         let raw_uri = request.uri().to_string();
+        let request_origin = request
+            .headers()
+            .get("Origin")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
 
-        match serve_file(&state, &raw_uri) {
+        match serve_file(&state, &raw_uri, request_origin.as_deref()) {
             Ok(response) => response,
             Err(e) => {
                 log::error!(target: "vscodeee::protocol", "{e}");
-                error_response(e.status_code(), e.reason().as_bytes())
+                error_response(
+                    e.status_code(),
+                    e.reason().as_bytes(),
+                    request_origin.as_deref(),
+                )
             }
         }
     }
@@ -123,7 +132,11 @@ pub fn handle_vscode_file_protocol<R: tauri::Runtime>(
 /// validation (step 2) and file read (step 3). A symlink could be swapped in after
 /// validation. Electron's `ProtocolMainService` has the same pattern. For production,
 /// consider using `O_NOFOLLOW` or re-validating the file descriptor after open.
-fn serve_file(state: &ProtocolState, raw_uri: &str) -> Result<Response<Vec<u8>>, ProtocolError> {
+fn serve_file(
+    state: &ProtocolState,
+    raw_uri: &str,
+    request_origin: Option<&str>,
+) -> Result<Response<Vec<u8>>, ProtocolError> {
     // 1. Parse URI → canonical path
     let canonical_path = uri::parse_vscode_file_uri(raw_uri)?;
 
@@ -139,9 +152,9 @@ fn serve_file(state: &ProtocolState, raw_uri: &str) -> Result<Response<Vec<u8>>,
     // TODO(Phase 1): Mitigate TOCTOU — open with O_NOFOLLOW, then read from fd
     let content = std::fs::read(&canonical_path)?;
 
-    // 4. Compute headers
+    // 4. Compute headers (pass request origin for dynamic CORS)
     let mime_type = mime::mime_from_path(&canonical_path);
-    let security_headers = headers::headers_for_path(&canonical_path, state.is_dev);
+    let security_headers = headers::headers_for_path(&canonical_path, state.is_dev, request_origin);
 
     // 5. Build response
     let mut builder = Response::builder()
@@ -149,7 +162,7 @@ fn serve_file(state: &ProtocolState, raw_uri: &str) -> Result<Response<Vec<u8>>,
         .header("Content-Type", mime_type);
 
     for (key, value) in &security_headers {
-        builder = builder.header(*key, *value);
+        builder = builder.header(key.as_str(), value.as_str());
     }
 
     builder
@@ -161,11 +174,20 @@ fn serve_file(state: &ProtocolState, raw_uri: &str) -> Result<Response<Vec<u8>>,
 ///
 /// CORS headers are required even on error responses, otherwise WKWebView's
 /// fetch() will report "Load failed" instead of the actual status code.
-fn error_response(status: u16, body: &[u8]) -> Response<Vec<u8>> {
+fn error_response(status: u16, body: &[u8], request_origin: Option<&str>) -> Response<Vec<u8>> {
+    // Use the same CORS origin resolution as success responses
+    let dummy_path = std::path::PathBuf::from("error");
+    let cors_headers = headers::headers_for_path(&dummy_path, false, request_origin);
+    let cors_origin = cors_headers
+        .iter()
+        .find(|(k, _)| k == "Access-Control-Allow-Origin")
+        .map(|(_, v)| v.as_str())
+        .unwrap_or("tauri://localhost");
+
     Response::builder()
         .status(status)
         .header("Content-Type", "text/plain; charset=utf-8")
-        .header("Access-Control-Allow-Origin", "tauri://localhost")
+        .header("Access-Control-Allow-Origin", cors_origin)
         .body(body.to_vec())
         .unwrap_or_else(|_| {
             Response::builder()
@@ -202,7 +224,7 @@ mod tests {
             file.canonicalize().unwrap().display()
         );
 
-        let result = serve_file(&state, &uri);
+        let result = serve_file(&state, &uri, None);
         assert!(result.is_ok());
 
         let resp = result.unwrap();
@@ -221,7 +243,7 @@ mod tests {
 
         // /usr/bin/env is definitely outside tmp
         let uri = "vscode-file://vscode-app/usr/bin/env";
-        let result = serve_file(&state, uri);
+        let result = serve_file(&state, uri, None);
 
         // Should be either Forbidden (if file exists) or NotFound
         assert!(result.is_err());
@@ -242,7 +264,7 @@ mod tests {
             css_file.canonicalize().unwrap().display()
         );
 
-        let resp = serve_file(&state, &uri).unwrap();
+        let resp = serve_file(&state, &uri, None).unwrap();
         let content_type = resp
             .headers()
             .get("Content-Type")
@@ -256,8 +278,34 @@ mod tests {
     }
 
     #[test]
+    fn serve_file_with_dev_origin_cors() {
+        let tmp = std::env::temp_dir().join("vscodee_proto_cors");
+        let _ = fs::create_dir_all(&tmp);
+        let file = tmp.join("app.js");
+        fs::write(&file, b"export {};").unwrap();
+
+        let state = test_state_with_root(&tmp);
+        let uri = format!(
+            "vscode-file://vscode-app{}",
+            file.canonicalize().unwrap().display()
+        );
+
+        let resp = serve_file(&state, &uri, Some("http://127.0.0.1:1430")).unwrap();
+        let cors = resp
+            .headers()
+            .get("Access-Control-Allow-Origin")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert_eq!(cors, "http://127.0.0.1:1430");
+
+        let _ = fs::remove_file(&file);
+        let _ = fs::remove_dir(&tmp);
+    }
+
+    #[test]
     fn error_response_includes_content_type() {
-        let resp = error_response(404, b"Not Found");
+        let resp = error_response(404, b"Not Found", None);
         assert_eq!(resp.status(), 404);
         let ct = resp
             .headers()
@@ -266,5 +314,17 @@ mod tests {
             .to_str()
             .unwrap();
         assert!(ct.contains("text/plain"));
+    }
+
+    #[test]
+    fn error_response_uses_request_origin_for_cors() {
+        let resp = error_response(403, b"Forbidden", Some("http://127.0.0.1:1430"));
+        let cors = resp
+            .headers()
+            .get("Access-Control-Allow-Origin")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert_eq!(cors, "http://127.0.0.1:1430");
     }
 }
