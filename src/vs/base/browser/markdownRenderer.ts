@@ -14,6 +14,7 @@ import { parse } from '../common/marshalling.js';
 import { FileAccess, Schemas } from '../common/network.js';
 import { cloneAndChange } from '../common/objects.js';
 import { basename as pathBasename } from '../common/path.js';
+import * as platform from '../common/platform.js';
 import { basename, dirname, resolvePath } from '../common/resources.js';
 import { escape } from '../common/strings.js';
 import { URI, UriComponents } from '../common/uri.js';
@@ -233,6 +234,14 @@ export function renderMarkdown(markdown: IMarkdownString, options: MarkdownRende
 	if (markdown.supportThemeIcons) {
 		const elements = renderLabelWithIcons(renderedMarkdown);
 		renderedMarkdown = elements.map(e => typeof e === 'string' ? e : e.outerHTML).join('');
+	}
+
+	// In Tauri/native environments, file:// URLs must be converted to vscode-file://
+	// before DOMPurify creates DOM nodes. Otherwise the browser attempts to load
+	// the blocked file:// resource, causing console errors. The later
+	// rewriteRenderedLinks() call is kept as-is for correctness.
+	if (platform.isNative || platform.isTauri) {
+		renderedMarkdown = preRewriteFileUris(renderedMarkdown);
 	}
 
 	const renderedContent = document.createElement('div');
@@ -510,6 +519,38 @@ function massageHref(markdown: IMarkdownString, href: string, isDomUri: boolean)
 		uri = uri.with({ query: uriMassage(markdown, uri.query) });
 	}
 	return uri.toString();
+}
+
+/**
+ * Pre-rewrite file:// URIs in an HTML string to vscode-file:// URIs.
+ *
+ * In Tauri and native environments, `file://` URLs are blocked by WebView CSP.
+ * When DOMPurify creates DOM nodes from HTML containing `<img src="file://...">`,
+ * the browser immediately attempts to load the resource, producing console errors
+ * even though {@link rewriteRenderedLinks} later converts the URLs correctly.
+ *
+ * This function performs the conversion at the string level *before* DOMPurify
+ * runs, preventing the spurious load attempts. It targets `src` and `href`
+ * attributes and rewrites the scheme from `file://` to `vscode-file://`.
+ * URIs with an empty authority (e.g. `file:///path`) receive the fallback
+ * authority `vscode-app`, while URIs with an explicit host preserve it.
+ *
+ * @param html - The rendered markdown HTML string that may contain file:// URIs
+ * @returns The HTML string with all file:// URIs in src/href attributes
+ *   rewritten to vscode-file:// URIs
+ */
+function preRewriteFileUris(html: string): string {
+	return html.replace(
+		/(?<prefix>(?:src|href)\s*=\s*["'])file:\/\/(?<rest>[^"']+)/gi,
+		(_match, prefix: string, rest: string) => {
+			// file:///path → vscode-file://vscode-app/path (empty authority → FALLBACK_AUTHORITY)
+			if (rest.startsWith('/')) {
+				return `${prefix}${Schemas.vscodeFileResource}://vscode-app${rest}`;
+			}
+			// file://host/path → vscode-file://host/path (preserve authority)
+			return `${prefix}${Schemas.vscodeFileResource}://${rest}`;
+		}
+	);
 }
 
 function postProcessCodeBlockLanguageId(lang: string | undefined): string {
