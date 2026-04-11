@@ -87,9 +87,13 @@ pub fn move_window_top(window: tauri::Window) -> Result<(), NativeHostError> {
 /// Position data received from TypeScript.
 #[derive(Deserialize)]
 pub struct WindowPosition {
+    /// Horizontal position in logical pixels.
     pub x: i32,
+    /// Vertical position in logical pixels.
     pub y: i32,
+    /// Window width in logical pixels.
     pub width: u32,
+    /// Window height in logical pixels.
     pub height: u32,
 }
 
@@ -165,9 +169,13 @@ pub fn set_minimum_size(
 /// Window rectangle (position + size) returned to TypeScript.
 #[derive(Serialize)]
 pub struct WindowRect {
+    /// Horizontal position in logical pixels.
     pub x: i32,
+    /// Vertical position in logical pixels.
     pub y: i32,
+    /// Window width in logical pixels.
     pub width: u32,
+    /// Window height in logical pixels.
     pub height: u32,
 }
 
@@ -191,22 +199,78 @@ pub fn get_active_window_position(window: tauri::Window) -> Result<WindowRect, N
 /// Cursor position and display bounds returned to TypeScript.
 #[derive(Serialize)]
 pub struct CursorScreenInfo {
+    /// Current cursor position in logical screen coordinates.
     pub point: Point,
+    /// Bounding rectangle of the display containing the cursor.
     pub display: DisplayRect,
 }
 
+/// A two-dimensional point in logical screen coordinates.
 #[derive(Serialize)]
 pub struct Point {
+    /// Horizontal coordinate in logical pixels.
     pub x: f64,
+    /// Vertical coordinate in logical pixels.
     pub y: f64,
 }
 
+/// Axis-aligned bounding rectangle of a display monitor in logical screen coordinates.
 #[derive(Serialize)]
 pub struct DisplayRect {
+    /// X origin of the display in logical pixels.
     pub x: f64,
+    /// Y origin of the display in logical pixels.
     pub y: f64,
+    /// Width of the display in logical pixels.
     pub width: f64,
+    /// Height of the display in logical pixels.
     pub height: f64,
+}
+
+// ─── macOS metadata commands ────────────────────────────────────────────
+
+/// Set the represented filename for the window's title bar proxy icon (macOS).
+///
+/// On non-macOS platforms this is a no-op.
+#[tauri::command]
+pub fn set_represented_filename(
+    _window: tauri::Window,
+    _path: String,
+) -> Result<(), NativeHostError> {
+    #[cfg(target_os = "macos")]
+    {
+        // TODO: Use raw-window-handle + objc2 to call
+        // [NSWindow setRepresentedFilename:path]
+        log::debug!(target: "vscodeee", "set_represented_filename: {}", _path);
+    }
+    Ok(())
+}
+
+/// Set whether the window's document has been edited (macOS dot indicator).
+///
+/// On non-macOS platforms this is a no-op.
+#[tauri::command]
+pub fn set_document_edited(_window: tauri::Window, _edited: bool) -> Result<(), NativeHostError> {
+    #[cfg(target_os = "macos")]
+    {
+        // TODO: Use raw-window-handle + objc2 to call
+        // [NSWindow setDocumentEdited:edited]
+        log::debug!(target: "vscodeee", "set_document_edited: {}", _edited);
+    }
+    Ok(())
+}
+
+/// Get the native OS window handle as raw bytes.
+///
+/// Returns the platform-specific window handle (HWND, NSWindow*, X11 Window)
+/// as a byte buffer that TypeScript can pass to native modules.
+#[tauri::command]
+pub fn get_native_window_handle(
+    _window: tauri::Window,
+) -> Result<Option<Vec<u8>>, NativeHostError> {
+    // TODO: Use raw-window-handle crate to extract the native handle
+    // For now, return None (not yet implemented)
+    Ok(None)
 }
 
 /// Get the cursor position and primary display bounds.
