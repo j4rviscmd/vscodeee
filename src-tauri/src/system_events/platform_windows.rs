@@ -14,23 +14,23 @@ use super::monitor::SystemEvent;
 
 /// Spawn the Windows system event monitor thread (stub).
 pub fn spawn_monitor(tx: mpsc::Sender<SystemEvent>) {
-	// Leak the sender to keep the dispatcher channel alive (see macOS module).
-	std::mem::forget(tx);
+    // Leak the sender to keep the dispatcher channel alive (see macOS module).
+    std::mem::forget(tx);
 
-	std::thread::Builder::new()
-		.name("system-event-monitor-windows".into())
-		.spawn(|| {
-			log::info!(
-				target: "vscodeee",
-				"Windows system event monitor thread started (stub)"
-			);
+    std::thread::Builder::new()
+        .name("system-event-monitor-windows".into())
+        .spawn(|| {
+            log::info!(
+                target: "vscodeee",
+                "Windows system event monitor thread started (stub)"
+            );
 
-			// TODO: Use Win32 APIs:
-			// - RegisterPowerSettingNotification for sleep/wake
-			// - WTSRegisterSessionNotification for lock/unlock
-			// - SYSTEM_POWER_STATUS for battery state
+            // TODO: Use Win32 APIs:
+            // - RegisterPowerSettingNotification for sleep/wake
+            // - WTSRegisterSessionNotification for lock/unlock
+            // - SYSTEM_POWER_STATUS for battery state
 
-			std::thread::sleep(std::time::Duration::MAX);
-		})
-		.expect("Failed to spawn Windows system event monitor");
+            std::thread::sleep(std::time::Duration::MAX);
+        })
+        .expect("Failed to spawn Windows system event monitor");
 }
