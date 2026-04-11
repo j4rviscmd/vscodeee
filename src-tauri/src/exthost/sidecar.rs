@@ -25,6 +25,50 @@ use tokio::process::{Child, Command};
 
 use super::ExtHostError;
 
+/// Build an enriched PATH for the Extension Host child process.
+///
+/// macOS app bundles inherit a minimal PATH (`/usr/bin:/bin:/usr/sbin:/sbin`)
+/// because launchd does not source shell profiles. Tools like `git` are
+/// commonly installed in `/opt/homebrew/bin` (Apple Silicon), `/usr/local/bin`
+/// (Intel Homebrew / manual install), or via Xcode CLT at `/usr/bin`.
+///
+/// This function takes the current process's PATH and prepends any
+/// well-known directories that are missing, so that child processes
+/// (in particular the `git` extension calling `which git`) can find them.
+fn build_exthost_path() -> String {
+    let current = std::env::var("PATH").unwrap_or_default();
+    let existing: std::collections::HashSet<&str> = current.split(':').collect();
+
+    // Well-known directories where git and other developer tools live.
+    // Order matters: higher-priority directories come first.
+    let extra_dirs: &[&str] = if cfg!(target_os = "macos") {
+        &[
+            "/opt/homebrew/bin",  // Apple Silicon Homebrew
+            "/opt/homebrew/sbin",
+            "/usr/local/bin",    // Intel Homebrew / manual installs
+            "/usr/local/sbin",
+        ]
+    } else {
+        // Linux: /usr/local/bin is the most common extra location
+        &["/usr/local/bin", "/usr/local/sbin"]
+    };
+
+    let mut parts: Vec<&str> = Vec::new();
+    for dir in extra_dirs {
+        if !existing.contains(dir) {
+            parts.push(dir);
+        }
+    }
+
+    if parts.is_empty() {
+        current
+    } else {
+        // Prepend extra dirs so they take priority
+        parts.push(&current);
+        parts.join(":")
+    }
+}
+
 /// A running Extension Host sidecar process with its named pipe path.
 ///
 /// Owns the child process handle and the socket path. When dropped,
@@ -114,6 +158,15 @@ async fn spawn_and_connect(
     // Mirrors extensionHostConnection.ts:272-288
     let node_bin = "node"; // PoC: use system node
 
+    // Enrich PATH so child processes (e.g., `git` extension calling `which git`)
+    // can find tools installed in non-default locations. This is critical on
+    // macOS where app bundles inherit a minimal PATH from launchd.
+    let enriched_path = build_exthost_path();
+    log::info!(
+        target: "vscodeee::exthost::sidecar",
+        "ExtHost PATH: {enriched_path}"
+    );
+
     let mut child = Command::new(node_bin)
         .arg("--dns-result-order=ipv4first")
         // Node.js 22+ enables require(esm) by default, which uses Atomics.wait()
@@ -124,6 +177,7 @@ async fn spawn_and_connect(
         .arg("out/bootstrap-fork.js")
         .arg("--type=extensionHost")
         .current_dir(app_root)
+        .env("PATH", &enriched_path)
         .env("VSCODE_EXTHOST_IPC_HOOK", pipe_path)
         .env(
             "VSCODE_ESM_ENTRYPOINT",
