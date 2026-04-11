@@ -1,7 +1,8 @@
 # CI pipeline for pull requests targeting main.
-# Runs four parallel jobs:
+# Runs five parallel jobs:
 #   - frontend-lint:    ESLint, Stylelint, and hygiene checks
 #   - frontend-compile: TypeScript compilation and layer validation
+#   - csp-hash-check:   Verify CSP SHA-256 hash matches inline script content
 #   - backend-lint:     Clippy for the Tauri/Rust backend
 #   - backend-format:   rustfmt check for the Tauri/Rust backend
 #
@@ -102,6 +103,70 @@ jobs:
       - name: Valid layers check
         run: npm run valid-layers-check
 
+  csp-hash-check:
+    name: CSP Hash Check
+    needs: changes
+    if: ${{ needs.changes.outputs.frontend == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            src/vs/workbench/contrib/webview/browser/pre/index.html
+
+      - name: Verify CSP SHA-256 hash
+        run: |
+          python3 << 'PYEOF'
+          import hashlib, base64, re, sys
+
+          INDEX_HTML = "src/vs/workbench/contrib/webview/browser/pre/index.html"
+
+          with open(INDEX_HTML, "r") as f:
+              content = f.read()
+
+          # Extract inline script content (between <script async type="module"> and </script>)
+          script_match = re.search(
+              r'<script\s+async\s+type="module">(.*?)</script>',
+              content,
+              re.DOTALL,
+          )
+          if not script_match:
+              print("::error::Could not find inline <script async type=\"module\"> in " + INDEX_HTML)
+              sys.exit(1)
+
+          script_body = script_match.group(1)
+
+          # Compute SHA-256 of the script content
+          computed = base64.b64encode(
+              hashlib.sha256(script_body.encode("utf-8")).digest()
+          ).decode()
+          computed_full = f"sha256-{computed}"
+
+          # Extract the hash declared in the CSP meta tag
+          csp_match = re.search(
+              r"script-src\s+'(sha256-[A-Za-z0-9+/=]+)'",
+              content,
+          )
+          if not csp_match:
+              print("::error::Could not find script-src sha256 hash in CSP meta tag")
+              sys.exit(1)
+
+          declared = csp_match.group(1)
+
+          if computed_full == declared:
+              print(f"CSP hash OK: {declared}")
+          else:
+              print(f"::error::CSP hash mismatch!")
+              print(f"  Declared in CSP: {declared}")
+              print(f"  Computed:        {computed_full}")
+              print()
+              print(f"Update the script-src hash in {INDEX_HTML} to:")
+              print(f"  {computed_full}")
+              sys.exit(1)
+          PYEOF
+
   backend-lint:
     name: Backend Lint
     needs: changes
@@ -160,13 +225,13 @@ jobs:
   ci-gate:
     name: CI Gate
     if: ${{ always() }}
-    needs: [frontend-lint, frontend-compile, backend-lint, backend-format]
+    needs: [frontend-lint, frontend-compile, csp-hash-check, backend-lint, backend-format]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Check job results
         run: |
-          results=("${{ needs.frontend-lint.result }}" "${{ needs.frontend-compile.result }}" "${{ needs.backend-lint.result }}" "${{ needs.backend-format.result }}")
+          results=("${{ needs.frontend-lint.result }}" "${{ needs.frontend-compile.result }}" "${{ needs.csp-hash-check.result }}" "${{ needs.backend-lint.result }}" "${{ needs.backend-format.result }}")
           for result in "${results[@]}"; do
             if [[ "$result" == "failure" || "$result" == "cancelled" ]]; then
               echo "::error::One or more CI jobs failed or were cancelled."
