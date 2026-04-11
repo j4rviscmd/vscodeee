@@ -638,11 +638,11 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 	// #region Development
 
 	async openDevTools(_options?: Partial<OpenDevToolsOptions> & INativeHostOptions): Promise<void> {
-		// Cannot open DevTools in system WebView — no-op
+		return invoke('open_devtools');
 	}
 
 	async toggleDevTools(_options?: INativeHostOptions): Promise<void> {
-		// Cannot toggle DevTools in system WebView — no-op
+		return invoke('toggle_devtools');
 	}
 
 	async openGPUInfoWindow(): Promise<void> { }
