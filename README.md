@@ -180,7 +180,13 @@ Built-in extension scanning and OS theme detection for the Tauri backend. Modula
 
 ### Phase 5: Process Model
 
-Extension Host via Node.js sidecar + named pipe, Terminal via Rust `portable-pty`, Shared Process services.
+Extension Host via Node.js sidecar + named pipe, Terminal via Rust `portable-pty`, Shared Process elimination.
+
+| Sub-task                      | Description                                                                                                                                              |   Status   |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------: |
+| Extension Host (Node sidecar) | Node.js sidecar + WebSocket ↔ Rust relay ↔ Unix Socket full pipeline (PR [#58](https://github.com/j4rviscmd/vscodeee/pull/58))                           |     ✅     |
+| Terminal PTY integration      | Rust `portable-pty` → Tauri IPC → `TauriTerminalBackend` → VS Code Terminal UI ([#87](https://github.com/j4rviscmd/vscodeee/issues/87))                  | 📋 Planned |
+| Shared Process elimination    | Abolish Shared Process sidecar; implement services directly in WebView/Rust ([#88](https://github.com/j4rviscmd/vscodeee/issues/88))                     | 📋 Planned |
 
 ### Phase 6: Platform Features
 
@@ -205,6 +211,7 @@ Tauri build pipeline, code signing (macOS/Windows), installers (.dmg, .msi, .App
 ┌──────────────────────────────────────────┐
 │           Tauri WebView (Renderer)       │
 │  workbench.html + VS Code TypeScript     │
+│  • Extension Gallery / Management        │
 └──────────────┬───────────────────────────┘
                │  invoke / emit (Tauri IPC)
 ┌──────────────▼───────────────────────────┐
@@ -216,11 +223,12 @@ Tauri build pipeline, code signing (macOS/Windows), installers (.dmg, .msi, .App
 └──────────────┬───────────────────────────┘
                │  socket / named pipe
 ┌──────────────▼───────────────────────────┐
-│         Node.js Sidecar Processes        │
+│         Node.js Sidecar Process          │
 │  • Extension Host                        │
-│  • Shared Process                        │
 └──────────────────────────────────────────┘
 ```
+
+> **Note**: Shared Process (upstream VS Code's hidden renderer for gallery, sync, telemetry) is **eliminated** in VSCodeee. Its services are implemented directly in the WebView or Rust backend — see [#88](https://github.com/j4rviscmd/vscodeee/issues/88).
 
 ## MVP Excluded Features
 
