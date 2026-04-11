@@ -36,7 +36,7 @@ Maintain the current functionality of VSCode while achieving the following:
 |   3B   | [Custom Title Bar](#phase-3-window-management)               | Draggable title bar, traffic lights, window controls        | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/34)  |
 |   3C   | [State Persistence](#phase-3-window-management)              | Window position/size + workspace session restore            | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/36)  |
 |   3D   | [Lifecycle Close Handshake](#phase-3-window-management)      | Two-phase close for reliable session restore                | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/39)  |
-| **4**  | [**Native Host Services**](#phase-4-native-host-services)    | **Extension scanner, OS theme, native host modularization** | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/48)  |
+| **4**  | [**Native Host Services**](#phase-4-native-host-services-)   | **Extension scanner, OS theme, native host modularization** | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/48)  |
 |   5    | [Process Model](#phase-5-process-model)                      | Extension Host, Terminal (PTY), Shared Process              |                        **📋 Up Next**                         |
 |   6    | [Platform Features](#phase-6-platform-features)              | Auto-update, native menus, system tray                      |                          📋 Planned                           |
 |   7    | [Build & Packaging](#phase-7-build--packaging)               | Installers, code signing, CI/CD                             |                          📋 Planned                           |
