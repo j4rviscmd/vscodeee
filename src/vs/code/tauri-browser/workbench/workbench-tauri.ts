@@ -157,11 +157,21 @@
 
 	//#region File Root — required by FileAccess (network.ts)
 
-	// frontendDist is "../out" relative to src-tauri/, so Tauri serves `out/`
-	// as the root. Module IDs are like `vs/workbench/...`, and the served path
-	// is `/vs/workbench/...`, so _VSCODE_FILE_ROOT should be the origin root.
+	// _VSCODE_FILE_ROOT must be a file:// path so that FileAccess.asBrowserUri()
+	// can convert resource URIs to vscode-file:// scheme, which is served by
+	// Tauri's custom protocol handler (handle_vscode_file_protocol).
+	//
+	// Using window.location.origin (http://127.0.0.1:1430/) would cause
+	// FileAccess to generate http:// URLs for node_modules resources like
+	// vscode-oniguruma and vscode-textmate. The dev server doesn't serve
+	// node_modules, resulting in 404 errors for TextMate tokenizer resources.
+	//
+	// frontendDist is the absolute path to the `out/` directory where
+	// transpiled VS Code modules live (e.g., out/vs/workbench/...).
+	// Module IDs like `vs/../../node_modules/vscode-oniguruma/release/main.js`
+	// resolve correctly relative to this path.
 	const baseUrl = `${window.location.origin}/`;
-	(globalThis as any)._VSCODE_FILE_ROOT = baseUrl;
+	(globalThis as any)._VSCODE_FILE_ROOT = windowConfig.frontendDist;
 
 	//#endregion
 
