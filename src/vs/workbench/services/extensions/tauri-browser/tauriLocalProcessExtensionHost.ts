@@ -153,29 +153,15 @@ export class TauriLocalProcessExtensionHost extends Disposable implements IExten
 					return;
 				}
 
-				if (isMessageOfType(msg, MessageType.Initialized)) {
-					// Extension Host is initialized — handshake complete
-					this._logService.info('[TauriExtHost] Received Initialized — handshake complete!');
-					clearTimeout(timeout);
-					disposable.dispose();
+			if (isMessageOfType(msg, MessageType.Initialized)) {
+				// Extension Host is initialized — handshake complete
+				this._logService.info('[TauriExtHost] Received Initialized — handshake complete!');
+				clearTimeout(timeout);
+				disposable.dispose();
 
-					// Add post-handshake monitoring on the protocol
-					let postHandshakeMsgCount = 0;
-					let lastMsgTime = Date.now();
-					const monitorDisposable = protocol.onMessage(postMsg => {
-						postHandshakeMsgCount++;
-						const now = Date.now();
-						const gap = now - lastMsgTime;
-						lastMsgTime = now;
-						if (postHandshakeMsgCount <= 50 || postHandshakeMsgCount % 100 === 0) {
-							this._logService.info(`[TauriExtHost] Post-handshake onMessage #${postHandshakeMsgCount}: ${postMsg.byteLength} bytes, gap=${gap}ms, first8=[${Array.from(postMsg.slice(0, Math.min(8, postMsg.byteLength)).buffer).join(',')}]`);
-						}
-					});
-					this._register(monitorDisposable);
-
-					resolve(protocol);
-					return;
-				}
+				resolve(protocol);
+				return;
+			}
 
 				this._logService.warn(`[TauriExtHost] Unexpected message during handshake, length=${msg.byteLength}`);
 			});
