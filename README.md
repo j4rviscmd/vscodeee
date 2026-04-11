@@ -6,6 +6,10 @@
 
 </div>
 
+> [!IMPORTANT]
+> **MVP Release Target: Late April 2026**<br>
+> Want to get notified? Watch this repo (**Watch → Custom → Releases**) to stay updated.
+
 **A project to run VSCode with Tauri 2.0**
 In the process of gradual migration with Opus 4.6 :robot:
 
@@ -23,20 +27,20 @@ Maintain the current functionality of VSCode while achieving the following:
 
 > **Current Phase: Phase 5 — Process Model** 📋
 
-| Phase  | Name                                                             | Goal                                                    |                            Status                             |
-| :----: | ---------------------------------------------------------------- | ------------------------------------------------------- | :-----------------------------------------------------------: |
-|   0    | [Feasibility Spike](#phase-0-feasibility-spike)                  | Validate Tauri can host VS Code                         | [✅ Complete](https://github.com/j4rviscmd/vscodeee/issues/7) |
-|   1    | [Foundation Layer](#phase-1-foundation-layer)                    | Render workbench shell in Tauri WebView                 |  [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/9)  |
-|   2A   | [Functional File Editing](#phase-2a-functional-file-editing)     | Open, edit, and save local files                        | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/17)  |
-| **2B** | [**Editing Polish**](#phase-2b-editing-polish)                   | **File watchers, remaining native methods**             | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/25)  |
-|  3A    | [Window Registry](#phase-3-window-management)                    | Dynamic window IDs, scoped IPC, multi-window registry   | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/31)  |
-|  3B    | [Custom Title Bar](#phase-3-window-management)                   | Draggable title bar, traffic lights, window controls    | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/34)  |
-|  3C    | [State Persistence](#phase-3-window-management)                  | Window position/size + workspace session restore        | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/36)  |
-|  3D    | [Lifecycle Close Handshake](#phase-3-window-management)          | Two-phase close for reliable session restore            | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/39)  |
-| **4**  | [**Native Host Services**](#phase-4-native-host-services)        | **Extension scanner, OS theme, native host modularization** | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/48)  |
-|   5    | [Process Model](#phase-5-process-model)                          | Extension Host, Terminal (PTY), Shared Process          |                      **📋 Up Next**                           |
-|   6    | [Platform Features](#phase-6-platform-features)                  | Auto-update, native menus, system tray                  |                          📋 Planned                           |
-|   7    | [Build & Packaging](#phase-7-build--packaging)                   | Installers, code signing, CI/CD                         |                          📋 Planned                           |
+| Phase  | Name                                                         | Goal                                                        |                            Status                             |
+| :----: | ------------------------------------------------------------ | ----------------------------------------------------------- | :-----------------------------------------------------------: |
+|   0    | [Feasibility Spike](#phase-0-feasibility-spike)              | Validate Tauri can host VS Code                             | [✅ Complete](https://github.com/j4rviscmd/vscodeee/issues/7) |
+|   1    | [Foundation Layer](#phase-1-foundation-layer)                | Render workbench shell in Tauri WebView                     |  [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/9)  |
+|   2A   | [Functional File Editing](#phase-2a-functional-file-editing) | Open, edit, and save local files                            | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/17)  |
+| **2B** | [**Editing Polish**](#phase-2b-editing-polish)               | **File watchers, remaining native methods**                 | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/25)  |
+|   3A   | [Window Registry](#phase-3-window-management)                | Dynamic window IDs, scoped IPC, multi-window registry       | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/31)  |
+|   3B   | [Custom Title Bar](#phase-3-window-management)               | Draggable title bar, traffic lights, window controls        | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/34)  |
+|   3C   | [State Persistence](#phase-3-window-management)              | Window position/size + workspace session restore            | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/36)  |
+|   3D   | [Lifecycle Close Handshake](#phase-3-window-management)      | Two-phase close for reliable session restore                | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/39)  |
+| **4**  | [**Native Host Services**](#phase-4-native-host-services)    | **Extension scanner, OS theme, native host modularization** | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/48)  |
+|   5    | [Process Model](#phase-5-process-model)                      | Extension Host, Terminal (PTY), Shared Process              |                        **📋 Up Next**                         |
+|   6    | [Platform Features](#phase-6-platform-features)              | Auto-update, native menus, system tray                      |                          📋 Planned                           |
+|   7    | [Build & Packaging](#phase-7-build--packaging)               | Installers, code signing, CI/CD                             |                          📋 Planned                           |
 
 ---
 
@@ -99,13 +103,13 @@ Architecture:
 
 **Status**: ✅ Complete — See [PR #25](https://github.com/j4rviscmd/vscodeee/pull/25).
 
-| Sub-task                   | Description                                               | Depends on | Status |
-| -------------------------- | --------------------------------------------------------- | ---------- | :----: |
-| File Watcher               | Rust `notify` crate + `TauriWatcher` TypeScript bridge    | —          |   ✅   |
-| Trash Support              | `trash` crate in `DiskFileSystemProvider`                 | —          |   ✅   |
-| New Window (Cmd+Shift+N)   | `invoke('open_new_window')` via `TauriWorkspaceProvider`  | —          |   ✅   |
-| NativeHost Methods         | `installShellCommand`, `killProcess`, `relaunch`, etc.    | —          |   ✅   |
-| Runtime Bug Fixes          | Import strategy, watcher error handling, compilation fixes| —          |   ✅   |
+| Sub-task                 | Description                                                | Depends on | Status |
+| ------------------------ | ---------------------------------------------------------- | ---------- | :----: |
+| File Watcher             | Rust `notify` crate + `TauriWatcher` TypeScript bridge     | —          |   ✅   |
+| Trash Support            | `trash` crate in `DiskFileSystemProvider`                  | —          |   ✅   |
+| New Window (Cmd+Shift+N) | `invoke('open_new_window')` via `TauriWorkspaceProvider`   | —          |   ✅   |
+| NativeHost Methods       | `installShellCommand`, `killProcess`, `relaunch`, etc.     | —          |   ✅   |
+| Runtime Bug Fixes        | Import strategy, watcher error handling, compilation fixes | —          |   ✅   |
 
 ### Phase 3: Window Management
 
@@ -115,63 +119,63 @@ Replace Electron `BrowserWindow` with Tauri `WebviewWindow`. Multi-window, title
 
 Centralized window management with unique monotonic IDs, `WindowManager` registry, scoped IPC delivery (`emit_to`), and `ITauriWindowService` DI integration. Foundation for all multi-window features.
 
-| Task                          | Description                                                | Status |
-| ----------------------------- | ---------------------------------------------------------- | :----: |
-| Rust `window/` module         | state, manager, events, session modules                    |   ✅   |
-| WindowManager registry        | Atomic ID generation, RwLock-based HashMap, label→ID map   |   ✅   |
-| Scoped IPC                    | `emit_to(label)` instead of global `app.emit()`           |   ✅   |
-| ITauriWindowService           | TS DI service for window lifecycle events                  |   ✅   |
-| NativeHostService wiring      | `getWindows()`, `getWindowCount()`, event listeners        |   ✅   |
-| Dynamic window label          | URL query param resolution for multi-window bootstrap      |   ✅   |
+| Task                     | Description                                              | Status |
+| ------------------------ | -------------------------------------------------------- | :----: |
+| Rust `window/` module    | state, manager, events, session modules                  |   ✅   |
+| WindowManager registry   | Atomic ID generation, RwLock-based HashMap, label→ID map |   ✅   |
+| Scoped IPC               | `emit_to(label)` instead of global `app.emit()`          |   ✅   |
+| ITauriWindowService      | TS DI service for window lifecycle events                |   ✅   |
+| NativeHostService wiring | `getWindows()`, `getWindowCount()`, event listeners      |   ✅   |
+| Dynamic window label     | URL query param resolution for multi-window bootstrap    |   ✅   |
 
 #### Phase 3B: Custom Title Bar ✅
 
 Hide OS decorations, implement CSS-based draggable title bar with platform-appropriate window controls. See [PR #34](https://github.com/j4rviscmd/vscodeee/pull/34).
 
-| Task                          | Description                                                | Status |
-| ----------------------------- | ---------------------------------------------------------- | :----: |
-| macOS decorations             | `decorations(false)` + `TitleBarStyle::Overlay`            |   ✅   |
-| `isTauri` platform flag       | Add to `platform.ts`, gate `getTitleBarStyle()` → CUSTOM   |   ✅   |
-| Drag region                   | `data-tauri-drag-region` on title bar                      |   ✅   |
-| Window controls (Win/Linux)   | CSS minimize/maximize/close buttons                        |   ✅   |
-| Tauri CSS                     | `titlebarpart.tauri.css` for platform-specific styles      |   ✅   |
+| Task                        | Description                                              | Status |
+| --------------------------- | -------------------------------------------------------- | :----: |
+| macOS decorations           | `decorations(false)` + `TitleBarStyle::Overlay`          |   ✅   |
+| `isTauri` platform flag     | Add to `platform.ts`, gate `getTitleBarStyle()` → CUSTOM |   ✅   |
+| Drag region                 | `data-tauri-drag-region` on title bar                    |   ✅   |
+| Window controls (Win/Linux) | CSS minimize/maximize/close buttons                      |   ✅   |
+| Tauri CSS                   | `titlebarpart.tauri.css` for platform-specific styles    |   ✅   |
 
 #### Phase 3C: State Persistence ✅
 
 Persist window position/size and workspace state across restarts using `tauri-plugin-window-state` and a custom `SessionStore`.
 
-| Task                          | Description                                                | Status |
-| ----------------------------- | ---------------------------------------------------------- | :----: |
-| Window state plugin           | `tauri-plugin-window-state` for position/size persistence  |   ✅   |
-| SessionStore                  | `sessions.json` read/write for workspace restoration       |   ✅   |
-| Restore on launch             | Re-open same windows with same workspace on restart        |   ✅   |
-| Settings reader               | JSONC-aware reader for `window.restoreWindows` setting     |   ✅   |
-| 5 restore modes               | Strategy pattern: preserve/all/folders/one/none            |   ✅   |
+| Task                | Description                                               | Status |
+| ------------------- | --------------------------------------------------------- | :----: |
+| Window state plugin | `tauri-plugin-window-state` for position/size persistence |   ✅   |
+| SessionStore        | `sessions.json` read/write for workspace restoration      |   ✅   |
+| Restore on launch   | Re-open same windows with same workspace on restart       |   ✅   |
+| Settings reader     | JSONC-aware reader for `window.restoreWindows` setting    |   ✅   |
+| 5 restore modes     | Strategy pattern: preserve/all/folders/one/none           |   ✅   |
 
 #### Phase 3D: Lifecycle Close Handshake ✅
 
 Two-phase close handshake between Rust and TypeScript to ensure IndexedDB writes complete before window destruction. Fixes editor tabs not being restored after session restore ([#35](https://github.com/j4rviscmd/vscodeee/issues/35)).
 
-| Task                          | Description                                                | Status |
-| ----------------------------- | ---------------------------------------------------------- | :----: |
-| Rust close gate               | `api.prevent_close()` + emit to TS + 30s timeout           |   ✅   |
-| TauriLifecycleService         | Full rewrite extending `AbstractLifecycleService` directly |   ✅   |
-| Async veto support            | `fireBeforeShutdown` with async veto + `finalVeto`         |   ✅   |
-| Storage flush before close    | `storageService.flush(SHUTDOWN)` before `window.destroy()` |   ✅   |
-| Rust confirmed/vetoed cmds    | `lifecycle_close_confirmed` + `lifecycle_close_vetoed`     |   ✅   |
+| Task                       | Description                                                | Status |
+| -------------------------- | ---------------------------------------------------------- | :----: |
+| Rust close gate            | `api.prevent_close()` + emit to TS + 30s timeout           |   ✅   |
+| TauriLifecycleService      | Full rewrite extending `AbstractLifecycleService` directly |   ✅   |
+| Async veto support         | `fireBeforeShutdown` with async veto + `finalVeto`         |   ✅   |
+| Storage flush before close | `storageService.flush(SHUTDOWN)` before `window.destroy()` |   ✅   |
+| Rust confirmed/vetoed cmds | `lifecycle_close_confirmed` + `lifecycle_close_vetoed`     |   ✅   |
 
 ### Phase 4: Native Host Services ✅
 
 Built-in extension scanning and OS theme detection for the Tauri backend. Modularized the native host Rust code from a single file into a clean module structure. See [PR #48](https://github.com/j4rviscmd/vscodeee/pull/48).
 
-| Task                            | Description                                                        | Status |
-| ------------------------------- | ------------------------------------------------------------------ | :----: |
-| Built-in extension scanner      | Rust `list_builtin_extensions` + TS `TauriBuiltinExtensionsScannerService` |   ✅   |
-| OS theme detection              | `TauriHostColorSchemeService` with real-time dark/light switching   |   ✅   |
-| Native host modularization      | Split monolithic `native_host.rs` into 9 sub-modules               |   ✅   |
-| OS info methods                 | `hostname`, `arch`, `platform`, `release` via `tauri-plugin-os`    |   ✅   |
-| Security fixes                  | Escape osascript injection, fix IPC param mismatch, cfg(unix) guard |   ✅   |
-| ESM build fix                   | Per-extension CJS/ESM format in `transpileExtensions()` ([#57](https://github.com/j4rviscmd/vscodeee/issues/57)) |   ✅   |
+| Task                       | Description                                                                                                      | Status |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------- | :----: |
+| Built-in extension scanner | Rust `list_builtin_extensions` + TS `TauriBuiltinExtensionsScannerService`                                       |   ✅   |
+| OS theme detection         | `TauriHostColorSchemeService` with real-time dark/light switching                                                |   ✅   |
+| Native host modularization | Split monolithic `native_host.rs` into 9 sub-modules                                                             |   ✅   |
+| OS info methods            | `hostname`, `arch`, `platform`, `release` via `tauri-plugin-os`                                                  |   ✅   |
+| Security fixes             | Escape osascript injection, fix IPC param mismatch, cfg(unix) guard                                              |   ✅   |
+| ESM build fix              | Per-extension CJS/ESM format in `transpileExtensions()` ([#57](https://github.com/j4rviscmd/vscodeee/issues/57)) |   ✅   |
 
 > **Note**: 94 built-in extensions are scanned and correctly transpiled (31 CJS, 1 ESM). Extension **execution** requires Extension Host (Phase 5). `file://` resource loading is blocked by WebView CSP — see [#47](https://github.com/j4rviscmd/vscodeee/issues/47). SCM provider registration is tracked in [#61](https://github.com/j4rviscmd/vscodeee/issues/61).
 
@@ -187,10 +191,10 @@ Auto-update (`tauri-plugin-updater`), native menus, system tray, drag & drop, pl
 
 Tauri build pipeline, code signing (macOS/Windows), installers (.dmg, .msi, .AppImage, .deb), CI/CD.
 
-| Sub-task                    | Description                                                        | Status |
-| --------------------------- | ------------------------------------------------------------------ | :----: |
-| ThirdPartyNotices.txt       | Remove Electron deps, add Tauri/Rust dependency licenses ([#27](https://github.com/j4rviscmd/vscodeee/issues/27)) | 📋 Planned |
-| LICENSES.chromium.html      | Bundled with Electron — not needed for Tauri                         | 📋 Planned |
+| Sub-task               | Description                                                                                                       |   Status   |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------- | :--------: |
+| ThirdPartyNotices.txt  | Remove Electron deps, add Tauri/Rust dependency licenses ([#27](https://github.com/j4rviscmd/vscodeee/issues/27)) | 📋 Planned |
+| LICENSES.chromium.html | Bundled with Electron — not needed for Tauri                                                                      | 📋 Planned |
 
 </details>
 
@@ -233,6 +237,17 @@ The following features depend on Chrome DevTools Protocol (CDP), which has no pu
 
 > [!NOTE]
 > These features may be revisited if Tauri adds CDP support in the future, or if alternative approaches become viable.
+
+## Known Limitations
+
+Architectural differences between Electron (bundled Chromium) and Tauri (native system WebView) introduce permanent or platform-specific limitations.
+
+| Feature                   | Limitation                                                                     | Platform Details                                                                                                                               |
+| ------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `setBackgroundThrottling` | WebView internal JS timer/animation throttling cannot be controlled externally | All platforms — `NSProcessInfo.beginActivity()` (macOS) can prevent OS-level throttling, but WebView-internal behavior remains uncontrollable. |
+
+> [!NOTE]
+> This list covers inherent platform limitations. Features that are simply not yet implemented are tracked in individual GitHub Issues.
 
 ## Contributing
 
