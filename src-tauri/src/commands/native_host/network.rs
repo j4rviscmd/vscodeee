@@ -3,9 +3,31 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-//! Network commands — port scanning, proxy resolution, certificates.
+//! Network commands — port scanning, proxy resolution, certificates, credential lookup.
+
+use serde::{Deserialize, Serialize};
 
 use super::error::NativeHostError;
+
+// ─── Types ──────────────────────────────────────────────────────────────
+
+/// Authentication challenge information, mirroring VS Code's `AuthInfo`.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AuthInfo {
+    pub is_proxy: bool,
+    pub scheme: String,
+    pub host: String,
+    pub port: u32,
+    pub realm: String,
+    pub attempt: u32,
+}
+
+/// Credentials returned from the OS credential store.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Credentials {
+    pub username: String,
+    pub password: String,
+}
 
 // ─── Existing commands (moved from native_host.rs) ──────────────────────
 
@@ -58,4 +80,57 @@ pub fn resolve_proxy(_url: String) -> Option<String> {
 #[tauri::command]
 pub fn load_certificates() -> Vec<String> {
     Vec::new()
+}
+
+// ─── Credential store commands ──────────────────────────────────────────
+
+/// Look up stored credentials from the OS credential store for a given auth challenge.
+///
+/// Uses the `keyring` crate to access:
+/// - macOS: Keychain Access
+/// - Windows: Credential Manager
+/// - Linux: Secret Service (GNOME Keyring / KDE Wallet)
+///
+/// The credential service name is constructed as:
+/// `vscodeee.auth.{scheme}.{host}:{port}`
+///
+/// Returns `None` if no matching credential is found.
+#[tauri::command]
+pub fn lookup_authorization(auth_info: AuthInfo) -> Result<Option<Credentials>, NativeHostError> {
+    let service = format!(
+        "vscodeee.auth.{}.{}:{}",
+        auth_info.scheme, auth_info.host, auth_info.port
+    );
+
+    log::debug!(
+        target: "vscodeee",
+        "lookup_authorization: service={}, realm={}, attempt={}",
+        service,
+        auth_info.realm,
+        auth_info.attempt
+    );
+
+    match keyring::Entry::new(&service, &auth_info.realm) {
+        Ok(entry) => match entry.get_password() {
+            Ok(password) => {
+                log::debug!(target: "vscodeee", "lookup_authorization: found credential for {service}");
+                Ok(Some(Credentials {
+                    username: auth_info.realm.clone(),
+                    password,
+                }))
+            }
+            Err(keyring::Error::NoEntry) => {
+                log::debug!(target: "vscodeee", "lookup_authorization: no credential for {service}");
+                Ok(None)
+            }
+            Err(e) => {
+                log::warn!(target: "vscodeee", "lookup_authorization: keyring error for {service}: {e}");
+                Ok(None)
+            }
+        },
+        Err(e) => {
+            log::warn!(target: "vscodeee", "lookup_authorization: failed to create keyring entry for {service}: {e}");
+            Ok(None)
+        }
+    }
 }

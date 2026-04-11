@@ -43,9 +43,9 @@ fn build_exthost_path() -> String {
     // Order matters: higher-priority directories come first.
     let extra_dirs: &[&str] = if cfg!(target_os = "macos") {
         &[
-            "/opt/homebrew/bin",  // Apple Silicon Homebrew
+            "/opt/homebrew/bin", // Apple Silicon Homebrew
             "/opt/homebrew/sbin",
-            "/usr/local/bin",    // Intel Homebrew / manual installs
+            "/usr/local/bin", // Intel Homebrew / manual installs
             "/usr/local/sbin",
         ]
     } else {
