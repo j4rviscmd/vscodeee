@@ -234,6 +234,17 @@ The following features depend on Chrome DevTools Protocol (CDP), which has no pu
 > [!NOTE]
 > These features may be revisited if Tauri adds CDP support in the future, or if alternative approaches become viable.
 
+## Known Limitations
+
+Architectural differences between Electron (bundled Chromium) and Tauri (native system WebView) introduce permanent or platform-specific limitations.
+
+| Feature | Limitation | Platform Details |
+| --- | --- | --- |
+| `setBackgroundThrottling` | WebView internal JS timer/animation throttling cannot be controlled externally | All platforms — `NSProcessInfo.beginActivity()` (macOS) can prevent OS-level throttling, but WebView-internal behavior remains uncontrollable. |
+
+> [!NOTE]
+> This list covers inherent platform limitations. Features that are simply not yet implemented are tracked in individual GitHub Issues.
+
 ## Contributing
 
 Issues and PRs are welcome.<br>
