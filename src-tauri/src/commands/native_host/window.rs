@@ -87,9 +87,13 @@ pub fn move_window_top(window: tauri::Window) -> Result<(), NativeHostError> {
 /// Position data received from TypeScript.
 #[derive(Deserialize)]
 pub struct WindowPosition {
+    /// Horizontal position in logical pixels.
     pub x: i32,
+    /// Vertical position in logical pixels.
     pub y: i32,
+    /// Window width in logical pixels.
     pub width: u32,
+    /// Window height in logical pixels.
     pub height: u32,
 }
 
@@ -165,9 +169,13 @@ pub fn set_minimum_size(
 /// Window rectangle (position + size) returned to TypeScript.
 #[derive(Serialize)]
 pub struct WindowRect {
+    /// Horizontal position in logical pixels.
     pub x: i32,
+    /// Vertical position in logical pixels.
     pub y: i32,
+    /// Window width in logical pixels.
     pub width: u32,
+    /// Window height in logical pixels.
     pub height: u32,
 }
 
@@ -191,65 +199,32 @@ pub fn get_active_window_position(window: tauri::Window) -> Result<WindowRect, N
 /// Cursor position and display bounds returned to TypeScript.
 #[derive(Serialize)]
 pub struct CursorScreenInfo {
+    /// Current cursor position in logical screen coordinates.
     pub point: Point,
+    /// Bounding rectangle of the display containing the cursor.
     pub display: DisplayRect,
 }
 
+/// A two-dimensional point in logical screen coordinates.
 #[derive(Serialize)]
 pub struct Point {
+    /// Horizontal coordinate in logical pixels.
     pub x: f64,
+    /// Vertical coordinate in logical pixels.
     pub y: f64,
 }
 
+/// Axis-aligned bounding rectangle of a display monitor in logical screen coordinates.
 #[derive(Serialize)]
 pub struct DisplayRect {
+    /// X origin of the display in logical pixels.
     pub x: f64,
+    /// Y origin of the display in logical pixels.
     pub y: f64,
+    /// Width of the display in logical pixels.
     pub width: f64,
+    /// Height of the display in logical pixels.
     pub height: f64,
-}
-
-// ─── DevTools commands ──────────────────────────────────────────────────
-
-/// Open the WebView developer tools.
-///
-/// Uses `WebviewWindow::open_devtools()` which is only available in
-/// debug builds (gated by `#[cfg(debug_assertions)]` in Tauri).
-#[tauri::command]
-pub fn open_devtools(webview_window: tauri::WebviewWindow) -> Result<(), NativeHostError> {
-    #[cfg(debug_assertions)]
-    {
-        webview_window.open_devtools();
-        Ok(())
-    }
-    #[cfg(not(debug_assertions))]
-    {
-        let _ = webview_window;
-        Err(NativeHostError::Window(
-            "DevTools are only available in debug builds".into(),
-        ))
-    }
-}
-
-/// Toggle the WebView developer tools open/closed.
-#[tauri::command]
-pub fn toggle_devtools(webview_window: tauri::WebviewWindow) -> Result<(), NativeHostError> {
-    #[cfg(debug_assertions)]
-    {
-        if webview_window.is_devtools_open() {
-            webview_window.close_devtools();
-        } else {
-            webview_window.open_devtools();
-        }
-        Ok(())
-    }
-    #[cfg(not(debug_assertions))]
-    {
-        let _ = webview_window;
-        Err(NativeHostError::Window(
-            "DevTools are only available in debug builds".into(),
-        ))
-    }
 }
 
 // ─── macOS metadata commands ────────────────────────────────────────────
@@ -275,10 +250,7 @@ pub fn set_represented_filename(
 ///
 /// On non-macOS platforms this is a no-op.
 #[tauri::command]
-pub fn set_document_edited(
-    _window: tauri::Window,
-    _edited: bool,
-) -> Result<(), NativeHostError> {
+pub fn set_document_edited(_window: tauri::Window, _edited: bool) -> Result<(), NativeHostError> {
     #[cfg(target_os = "macos")]
     {
         // TODO: Use raw-window-handle + objc2 to call

@@ -182,9 +182,6 @@ pub fn run() {
             commands::native_host::clear_toast,
             commands::native_host::clear_toasts,
             commands::native_host::write_elevated,
-            // ── DevTools commands ──
-            commands::native_host::open_devtools,
-            commands::native_host::toggle_devtools,
             // ── macOS metadata commands ──
             commands::native_host::set_represented_filename,
             commands::native_host::set_document_edited,
