@@ -17,7 +17,7 @@ import { getGitCommitDate } from '../lib/date.ts';
 import product from '../../product.json' with { type: 'json' };
 import packageJson from '../../package.json' with { type: 'json' };
 import { useEsbuildTranspile } from '../buildConfig.ts';
-import { isWebExtension, type IScannedBuiltinExtension } from '../lib/extensions.ts';
+import { isWebExtension, type IScannedBuiltinExtension } from '../lib/extensions-shared.ts';
 
 const globAsync = promisify(glob);
 
