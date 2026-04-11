@@ -4,8 +4,25 @@
 <head>
 	<meta charset="UTF-8">
 
+	<!--
+		IMPORTANT: The script-src SHA-256 hash below must be recalculated whenever
+		the inline <script> content is modified. To regenerate:
+
+		python3 -c "
+		import hashlib, base64, re
+		with open('src/vs/workbench/contrib/webview/browser/pre/index.html', 'r') as f:
+		    content = f.read()
+		match = re.search(r'<script async type=\"module\">(.*?)</script>', content, re.DOTALL)
+		if match:
+		    h = base64.b64encode(hashlib.sha256(match.group(1).encode('utf-8')).digest()).decode()
+		    print(f'sha256-{h}')
+		"
+
+		Then replace the hash in the script-src directive below.
+		TODO: Automate this via CI check or build script.
+	-->
 	<meta http-equiv="Content-Security-Policy"
-		content="default-src 'none'; script-src 'sha256-TaWGDzV7c9rUH2q/5ygOyYUHSyHIqBMYfucPh3lnKvU=' 'self'; frame-src 'self'; style-src 'unsafe-inline';">
+		content="default-src 'none'; script-src 'sha256-eKGycMxoLKovPSuT3xgGvVDrvRJog1K2sKym+hWO/yQ=' 'self'; frame-src 'self'; style-src 'unsafe-inline';">
 
 	<!-- Disable pinch zooming -->
 	<meta name="viewport"
@@ -33,7 +50,8 @@
 		const ID = searchParams.get('id');
 		const webviewOrigin = searchParams.get('origin');
 		const onElectron = searchParams.get('platform') === 'electron';
-		const disableServiceWorker = searchParams.has('disableServiceWorker');
+		const onTauri = location.protocol === 'vscode-file:';
+		const disableServiceWorker = searchParams.has('disableServiceWorker') || onTauri;
 		const expectedWorkerVersion = parseInt(searchParams.get('swVersion'));
 
 		/**
@@ -367,6 +385,14 @@
 				};
 
 				const parentOrigin = searchParams.get('parentOrigin');
+
+				// In Tauri, webview content is served via vscode-file:// protocol.
+				// The hostname is always 'vscode-app' (not a SHA-256 hash), and
+				// crypto.subtle may not be available in non-HTTPS contexts.
+				// Skip hostname validation and start directly.
+				if (onTauri) {
+					return start(parentOrigin);
+				}
 
 				const hostname = location.hostname;
 
@@ -916,7 +942,17 @@
 					// Attempt to rewrite CSPs that hardcode old-style resource endpoint
 					const cspContent = csp.getAttribute('content');
 					if (cspContent) {
-						const newCsp = cspContent.replace(/(vscode-webview-resource|vscode-resource):(?=(\s|;|$))/g, data.cspSource);
+						let newCsp = cspContent.replace(/(vscode-webview-resource|vscode-resource):(?=(\s|;|$))/g, data.cspSource);
+
+						// In Tauri, add vscode-file: to all CSP directives that reference
+						// CDN resources, so that locally served resources are allowed.
+						if (onTauri) {
+							newCsp = newCsp.replace(
+								/https:\/\/\*\.vscode-cdn\.net/g,
+								'https://*.vscode-cdn.net vscode-file:'
+							);
+						}
+
 						csp.setAttribute('content', newCsp);
 					}
 				} catch (e) {
@@ -926,7 +962,24 @@
 
 			// set DOCTYPE for newDocument explicitly as DOMParser.parseFromString strips it off
 			// and DOCTYPE is needed in the iframe to ensure that the user agent stylesheet is correctly overridden
-			return '<!DOCTYPE html>\n' + newDocument.documentElement.outerHTML;
+			let html = '<!DOCTYPE html>\n' + newDocument.documentElement.outerHTML;
+
+			// In Tauri, there is no service worker to intercept CDN URLs.
+			// Rewrite resource URLs from CDN format to vscode-file:// protocol
+			// so Tauri's custom protocol handler can serve them directly.
+			//
+			// Pattern: https://file+<authority>.vscode-resource.vscode-cdn.net/<path>
+			//   or:    https://file%2B<authority>.vscode-resource.vscode-cdn.net/<path>
+			// (DOMParser.outerHTML percent-encodes '+' as '%2B' in href/src attributes)
+			// Replace: vscode-file://vscode-app/<path>
+			if (onTauri) {
+				html = html.replace(
+					/https:\/\/file(?:\+|%2[Bb])[^.]*\.vscode-resource\.vscode-cdn\.net\//g,
+					'vscode-file://vscode-app/'
+				);
+			}
+
+			return html;
 		}
 
 		// Also forward events before the contents of the webview have loaded

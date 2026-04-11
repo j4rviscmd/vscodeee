@@ -33,18 +33,9 @@ export class TauriExtHostSocket implements ISocket {
 	 * Only `ArrayBuffer` messages are forwarded; text frames are ignored.
 	 */
 	public onData(listener: (e: VSBuffer) => void): IDisposable {
-		let msgCount = 0;
-		let lastTime = Date.now();
 		const handler = (event: MessageEvent) => {
 			if (event.data instanceof ArrayBuffer) {
-				msgCount++;
 				const bytes = new Uint8Array(event.data);
-				const now = Date.now();
-				const gap = now - lastTime;
-				lastTime = now;
-				if (msgCount <= 50 || msgCount % 100 === 0) {
-					console.log(`[TauriExtHostSocket] onData #${msgCount}: ${bytes.byteLength} bytes, gap=${gap}ms, first4=[${Array.from(bytes.slice(0, 4)).join(',')}]`);
-				}
 				listener(VSBuffer.wrap(bytes));
 			}
 		};
@@ -84,7 +75,6 @@ export class TauriExtHostSocket implements ISocket {
 	 * Send binary data over the WebSocket to the Rust WS relay.
 	 */
 	public write(buffer: VSBuffer): void {
-		console.log(`[TauriExtHostSocket] write: ${buffer.byteLength} bytes, first4=[${Array.from(buffer.slice(0, 4).buffer).join(',')}]`);
 		this._socket.send(buffer.buffer as Uint8Array<ArrayBuffer>);
 	}
 
