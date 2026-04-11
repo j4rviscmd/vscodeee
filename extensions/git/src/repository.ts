@@ -3,7 +3,9 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { cp } from '@vscode/fs-copyfile';
+// Dynamic import: @vscode/fs-copyfile is ESM-only ("type": "module")
+// and cannot be require()'d from CJS-transpiled output.
+// import { cp } from '@vscode/fs-copyfile';
 import TelemetryReporter from '@vscode/extension-telemetry';
 import { uniqueNamesGenerator, adjectives, animals, colors, NumberDictionary } from '@joaomoreno/unique-names-generator';
 import * as fs from 'fs';
@@ -2089,6 +2091,7 @@ export class Repository implements Disposable {
 				return limiter.queue(async () => {
 					const targetFile = path.join(worktreePath, relativePath(this.root, sourceFile));
 					await fsPromises.mkdir(path.dirname(targetFile), { recursive: true });
+						const { cp } = await import('@vscode/fs-copyfile');
 					await cp(sourceFile, targetFile, { force: true, recursive: true, verbatimSymlinks: true });
 				});
 			}));

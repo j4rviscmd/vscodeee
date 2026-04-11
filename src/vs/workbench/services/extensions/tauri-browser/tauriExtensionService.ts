@@ -7,7 +7,7 @@ import { mainWindow } from '../../../../base/browser/window.js';
 import { Schemas } from '../../../../base/common/network.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
-import { IExtensionDescription } from '../../../../platform/extensions/common/extensions.js';
+import { IBuiltinExtensionsScannerService, IExtensionDescription } from '../../../../platform/extensions/common/extensions.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
@@ -70,6 +70,7 @@ export class TauriExtensionService extends AbstractExtensionService implements I
 		@IWorkspaceTrustManagementService private readonly _workspaceTrustManagementService: IWorkspaceTrustManagementService,
 		@IRemoteExplorerService private readonly _remoteExplorerService: IRemoteExplorerService,
 		@IDialogService dialogService: IDialogService,
+		@IBuiltinExtensionsScannerService private readonly _builtinExtensionsScannerService: IBuiltinExtensionsScannerService,
 	) {
 		const extensionsProposedApi = instantiationService.createInstance(ExtensionsProposedApi);
 		const extensionHostFactory = new TauriExtensionHostFactory(
@@ -130,8 +131,14 @@ export class TauriExtensionService extends AbstractExtensionService implements I
 	}
 
 	/**
-	 * Scan all web extensions (system, user, and under-development) and return
+	 * Scan all extensions (system, user, and under-development) and return
 	 * a deduplicated list. Results are cached after the first call.
+	 *
+	 * Unlike the browser version, this uses IBuiltinExtensionsScannerService
+	 * directly for system extensions to ensure Node.js-only extensions
+	 * (those with only a `main` field, no `browser` field) like `vscode.git`
+	 * are included. The WebExtensionsScannerService would filter these out
+	 * because they cannot execute on the web.
 	 */
 	private _scanWebExtensionsPromise: Promise<IExtensionDescription[]> | undefined;
 	private async _scanWebExtensions(): Promise<IExtensionDescription[]> {
@@ -140,7 +147,12 @@ export class TauriExtensionService extends AbstractExtensionService implements I
 				const system: IExtensionDescription[] = [], user: IExtensionDescription[] = [], development: IExtensionDescription[] = [];
 				try {
 					await Promise.all([
-						this._webExtensionsScannerService.scanSystemExtensions().then(extensions => system.push(...extensions.map(e => toExtensionDescription(e)))),
+						// Use IBuiltinExtensionsScannerService directly instead of
+						// _webExtensionsScannerService.scanSystemExtensions() to include
+						// Node.js-only extensions (main-only, no browser field) like git.
+						this._builtinExtensionsScannerService.scanBuiltinExtensions().then(extensions => {
+							system.push(...extensions.map(e => toExtensionDescription(e)));
+						}),
 						this._webExtensionsScannerService.scanUserExtensions(this._userDataProfileService.currentProfile.extensionsResource, { skipInvalidExtensions: true }).then(extensions => user.push(...extensions.map(e => toExtensionDescription(e)))),
 						this._webExtensionsScannerService.scanExtensionsUnderDevelopment().then(extensions => development.push(...extensions.map(e => toExtensionDescription(e, true)))),
 					]);
