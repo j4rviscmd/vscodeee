@@ -103,6 +103,13 @@ function getWorkerBootstrapUrl(label: string, workerScriptUrl: string, workerLoa
 		`globalThis._VSCODE_NLS_MESSAGES = ${JSON.stringify(getNLSMessages())};`,
 		`globalThis._VSCODE_NLS_LANGUAGE = ${JSON.stringify(getNLSLanguage())};`,
 		`globalThis._VSCODE_FILE_ROOT = ${JSON.stringify(globalThis._VSCODE_FILE_ROOT)};`,
+		// Propagate __TAURI_INTERNALS__ marker to the worker so that
+		// platform.isTauri is correctly detected. This enables
+		// FileAccess.uriToBrowserUri() to convert file:// URIs to
+		// vscode-file:// which is required by Tauri's CSP.
+		typeof (globalThis as any).__TAURI_INTERNALS__ !== 'undefined'
+			? `globalThis.__TAURI_INTERNALS__ = globalThis.__TAURI_INTERNALS__ || {};`
+			: '',
 		`const ttPolicy = globalThis.trustedTypes?.createPolicy('defaultWorkerFactory', { createScriptURL: value => value });`,
 		`globalThis.workerttPolicy = ttPolicy;`,
 

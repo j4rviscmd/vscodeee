@@ -30,6 +30,13 @@ import './tauri-browser/desktop.tauri.main.js';
 //#endregion
 
 
+//#region --- workbench actions (Tauri-specific)
+
+import './tauri-browser/actions/developerActions.js';
+
+//#endregion
+
+
 //#region --- workbench services (Tauri-specific overrides)
 
 import './services/lifecycle/tauri-browser/lifecycleService.js';

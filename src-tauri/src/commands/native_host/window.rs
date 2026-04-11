@@ -339,3 +339,43 @@ pub fn get_cursor_screen_point(window: tauri::Window) -> Result<CursorScreenInfo
         },
     })
 }
+
+// ─── DevTools commands ──────────────────────────────────────────────────
+// NOTE: These commands use `tauri::WebviewWindow` instead of `tauri::Window`
+// because `open_devtools()` / `close_devtools()` / `is_devtools_open()` are
+// webview-specific APIs in Tauri 2.0.
+
+/// Open the developer tools for the given webview window.
+///
+/// Only works in debug builds or when the `devtools` feature flag is enabled.
+/// On macOS this uses a private API (WKWebView._inspectElement) and is not
+/// suitable for App Store distribution.
+#[tauri::command]
+pub fn open_devtools(window: tauri::WebviewWindow) -> Result<(), NativeHostError> {
+    window.open_devtools();
+    Ok(())
+}
+
+/// Close the developer tools for the given webview window.
+#[tauri::command]
+pub fn close_devtools(window: tauri::WebviewWindow) -> Result<(), NativeHostError> {
+    window.close_devtools();
+    Ok(())
+}
+
+/// Check whether the developer tools are currently open.
+#[tauri::command]
+pub fn is_devtools_open(window: tauri::WebviewWindow) -> Result<bool, NativeHostError> {
+    Ok(window.is_devtools_open())
+}
+
+/// Toggle the developer tools open/closed state.
+#[tauri::command]
+pub fn toggle_devtools(window: tauri::WebviewWindow) -> Result<(), NativeHostError> {
+    if window.is_devtools_open() {
+        window.close_devtools();
+    } else {
+        window.open_devtools();
+    }
+    Ok(())
+}
