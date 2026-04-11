@@ -10,7 +10,8 @@ import * as cp from 'child_process';
 import { fileURLToPath } from 'url';
 import which from 'which';
 import { EventEmitter } from 'events';
-import { fileTypeFromBuffer } from 'file-type';
+// file-type is an ESM-only package; use dynamic import() for CJS compatibility
+// import { fileTypeFromBuffer } from 'file-type';
 import { assign, groupBy, IDisposable, toDisposable, dispose, mkdirp, readBytes, detectUnicodeEncoding, Encoding, onceEvent, splitInChunks, Limiter, Versions, isWindows, pathEquals, isMacintosh, isDescendant, relativePathWithNoFallback, Mutable } from './util';
 import { CancellationError, CancellationToken, ConfigurationChangeEvent, LogOutputChannel, Progress, Uri, workspace } from 'vscode';
 import type { Commit as ApiCommit, Ref, Branch, Remote, LogOptions, Change, CommitOptions, RefQuery as ApiRefQuery, InitOptions, DiffChange, Worktree as ApiWorktree } from './api/git';
@@ -1691,6 +1692,7 @@ export class Repository {
 		}
 
 		if (!isText) {
+			const { fileTypeFromBuffer } = await import('file-type');
 			const result = await fileTypeFromBuffer(buffer);
 
 			if (!result) {
