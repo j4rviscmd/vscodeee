@@ -118,6 +118,11 @@ pub fn run() {
             commands::native_host::set_minimum_size,
             commands::native_host::get_active_window_position,
             commands::native_host::get_cursor_screen_point,
+            // ── DevTools commands ──
+            commands::native_host::open_devtools,
+            commands::native_host::close_devtools,
+            commands::native_host::is_devtools_open,
+            commands::native_host::toggle_devtools,
             // ── Clipboard commands ──
             commands::native_host::read_clipboard_text,
             commands::native_host::write_clipboard_text,
