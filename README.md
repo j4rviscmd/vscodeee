@@ -4,14 +4,13 @@
 
 <img src="./docs/screenshots/workbench.png" alt="VS Codeee Phase 1" width="600">
 
+## A project to run VSCode with Tauri 2.0
+
 </div>
 
 > [!IMPORTANT]
 > **MVP Release Target: Late April 2026**<br>
 > Want to get notified? Watch this repo (**Watch → Custom → Releases**) to stay updated.
-
-**A project to run VSCode with Tauri 2.0**
-In the process of gradual migration with Opus 4.6 :robot:
 
 ## Purpose
 
