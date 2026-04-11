@@ -322,41 +322,11 @@ const productJson = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '.
 const builtInExtensions: IExtensionDefinition[] = productJson.builtInExtensions || [];
 const webBuiltInExtensions: IExtensionDefinition[] = productJson.webBuiltInExtensions || [];
 
-type ExtensionKind = 'ui' | 'workspace' | 'web';
-interface IExtensionManifest {
-	main?: string;
-	browser?: string;
-	extensionKind?: ExtensionKind | ExtensionKind[];
-	extensionPack?: string[];
-	extensionDependencies?: string[];
-	contributes?: { [id: string]: any };
-}
-/**
- * Loosely based on `getExtensionKind` from `src/vs/workbench/services/extensions/common/extensionManifestPropertiesService.ts`
- */
-export function isWebExtension(manifest: IExtensionManifest): boolean {
-	if (Boolean(manifest.browser)) {
-		return true;
-	}
-	if (Boolean(manifest.main)) {
-		return false;
-	}
-	// neither browser nor main
-	if (typeof manifest.extensionKind !== 'undefined') {
-		const extensionKind = Array.isArray(manifest.extensionKind) ? manifest.extensionKind : [manifest.extensionKind];
-		if (extensionKind.indexOf('web') >= 0) {
-			return true;
-		}
-	}
-	if (typeof manifest.contributes !== 'undefined') {
-		for (const id of ['debuggers', 'terminal', 'typescriptServerPlugins']) {
-			if (manifest.contributes.hasOwnProperty(id)) {
-				return false;
-			}
-		}
-	}
-	return true;
-}
+// Re-export shared types and utilities used by both gulp and esbuild builds
+export { type IExtensionManifest, type IScannedBuiltinExtension } from './extensions-shared.ts';
+// Import for local use within this file
+import { isWebExtension, type IScannedBuiltinExtension } from './extensions-shared.ts';
+export { isWebExtension };
 
 /**
  * Package local extensions that are known to not have native dependencies. Mutually exclusive to {@link packageNativeLocalExtensionsStream}.
@@ -468,14 +438,6 @@ export function packageMarketplaceExtensionsStream(forWeb: boolean): Stream {
 		marketplaceExtensionsStream
 			.pipe(util2.setExecutableBit(['**/*.sh']))
 	);
-}
-
-export interface IScannedBuiltinExtension {
-	readonly extensionPath: string;
-	readonly packageJSON: unknown;
-	readonly packageNLS: unknown | undefined;
-	readonly readmePath: string | undefined;
-	readonly changelogPath: string | undefined;
 }
 
 export function scanBuiltinExtensions(extensionsRoot: string, exclude: string[] = []): IScannedBuiltinExtension[] {
