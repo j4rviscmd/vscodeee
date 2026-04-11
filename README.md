@@ -235,6 +235,19 @@ The following features depend on Chrome DevTools Protocol (CDP), which has no pu
 | Element inspection (`getElementData`)     | CDP-dependent DOM inspection               |
 | Console log capture                       | CDP-dependent programmatic console access  |
 
+The following Native Host Service features are deferred to post-MVP:
+
+| Feature                       | Reason                                                                    |
+| ----------------------------- | ------------------------------------------------------------------------- |
+| System proxy resolution       | Requires platform-specific APIs (CFNetwork, WinHTTP, libproxy). The `resolve_proxy` command returns `None` (direct connection). |
+| System certificate loading    | The `load_certificates` command returns an empty list. Extensions handle their own cert loading. |
+| Kerberos authentication       | `lookupKerberosAuthorization` returns `undefined`. Requires a Kerberos library — rarely needed outside enterprise AD environments. |
+| Window splash persistence     | `saveWindowSplash` is a no-op. Splash data is persisted via `localStorage` through `ISplashStorageService` instead. |
+| macOS Touch Bar               | Not supported by Tauri's WebView. The Touch Bar API methods are no-ops.   |
+| macOS tab management          | Window tab APIs (`newWindowTab`, `mergeAllWindowTabs`, etc.) are no-ops.  |
+| GPU info / content tracing    | `openGPUInfoWindow`, `openContentTracingWindow`, `startTracing`, `stopTracing` are no-ops. |
+| Screenshot capture            | `getScreenshot` returns `undefined`. Requires platform-specific screen capture APIs. |
+
 > [!NOTE]
 > These features may be revisited if Tauri adds CDP support in the future, or if alternative approaches become viable.
 

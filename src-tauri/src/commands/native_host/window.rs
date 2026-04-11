@@ -209,6 +209,98 @@ pub struct DisplayRect {
     pub height: f64,
 }
 
+// ─── DevTools commands ──────────────────────────────────────────────────
+
+/// Open the WebView developer tools.
+///
+/// Uses `WebviewWindow::open_devtools()` which is only available in
+/// debug builds (gated by `#[cfg(debug_assertions)]` in Tauri).
+#[tauri::command]
+pub fn open_devtools(webview_window: tauri::WebviewWindow) -> Result<(), NativeHostError> {
+    #[cfg(debug_assertions)]
+    {
+        webview_window.open_devtools();
+        Ok(())
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = webview_window;
+        Err(NativeHostError::Window(
+            "DevTools are only available in debug builds".into(),
+        ))
+    }
+}
+
+/// Toggle the WebView developer tools open/closed.
+#[tauri::command]
+pub fn toggle_devtools(webview_window: tauri::WebviewWindow) -> Result<(), NativeHostError> {
+    #[cfg(debug_assertions)]
+    {
+        if webview_window.is_devtools_open() {
+            webview_window.close_devtools();
+        } else {
+            webview_window.open_devtools();
+        }
+        Ok(())
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = webview_window;
+        Err(NativeHostError::Window(
+            "DevTools are only available in debug builds".into(),
+        ))
+    }
+}
+
+// ─── macOS metadata commands ────────────────────────────────────────────
+
+/// Set the represented filename for the window's title bar proxy icon (macOS).
+///
+/// On non-macOS platforms this is a no-op.
+#[tauri::command]
+pub fn set_represented_filename(
+    _window: tauri::Window,
+    _path: String,
+) -> Result<(), NativeHostError> {
+    #[cfg(target_os = "macos")]
+    {
+        // TODO: Use raw-window-handle + objc2 to call
+        // [NSWindow setRepresentedFilename:path]
+        log::debug!(target: "vscodeee", "set_represented_filename: {}", _path);
+    }
+    Ok(())
+}
+
+/// Set whether the window's document has been edited (macOS dot indicator).
+///
+/// On non-macOS platforms this is a no-op.
+#[tauri::command]
+pub fn set_document_edited(
+    _window: tauri::Window,
+    _edited: bool,
+) -> Result<(), NativeHostError> {
+    #[cfg(target_os = "macos")]
+    {
+        // TODO: Use raw-window-handle + objc2 to call
+        // [NSWindow setDocumentEdited:edited]
+        log::debug!(target: "vscodeee", "set_document_edited: {}", _edited);
+    }
+    Ok(())
+}
+
+/// Get the native OS window handle as raw bytes.
+///
+/// Returns the platform-specific window handle (HWND, NSWindow*, X11 Window)
+/// as a byte buffer that TypeScript can pass to native modules.
+#[tauri::command]
+pub fn get_native_window_handle(
+    _window: tauri::Window,
+) -> Result<Option<Vec<u8>>, NativeHostError> {
+    // TODO: Use raw-window-handle crate to extract the native handle
+    // For now, return None (not yet implemented)
+    Ok(None)
+}
+
 /// Get the cursor position and primary display bounds.
 ///
 /// Uses Tauri's `Window::cursor_position()` for cursor coords.

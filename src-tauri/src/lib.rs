@@ -22,6 +22,10 @@ mod exthost;
 /// Logging configuration — tauri-plugin-log with AI-agent-readable format.
 mod logging;
 
+/// System event monitoring — OS-level events (suspend, resume, lock, battery)
+/// forwarded to the WebView via Tauri's app.emit() mechanism.
+mod system_events;
+
 /// PTY (pseudo-terminal) management — spawn shells, relay I/O to xterm.js via Tauri events.
 /// Phase 0-4: Uses portable-pty for direct Rust PTY management.
 mod pty;
@@ -152,6 +156,7 @@ pub fn run() {
             commands::native_host::find_free_port,
             commands::native_host::resolve_proxy,
             commands::native_host::load_certificates,
+            commands::native_host::lookup_authorization,
             // ── Shell commands ──
             commands::native_host::open_external,
             commands::native_host::move_item_to_trash,
@@ -172,6 +177,13 @@ pub fn run() {
             commands::native_host::clear_toast,
             commands::native_host::clear_toasts,
             commands::native_host::write_elevated,
+            // ── DevTools commands ──
+            commands::native_host::open_devtools,
+            commands::native_host::toggle_devtools,
+            // ── macOS metadata commands ──
+            commands::native_host::set_represented_filename,
+            commands::native_host::set_document_edited,
+            commands::native_host::get_native_window_handle,
             // ── Filesystem commands ──
             commands::filesystem::fs_stat,
             commands::filesystem::fs_read_dir,
@@ -198,6 +210,10 @@ pub fn run() {
         ])
         .setup(move |app| {
             log::info!(target: "vscodeee", "Tauri app started");
+
+            // ── Initialize system event monitoring ──
+            log::info!(target: "vscodeee", "Setting up system event monitors");
+            system_events::setup(app);
 
             // ── Read user settings and load session ──
             let settings = window::settings::read_window_settings();
