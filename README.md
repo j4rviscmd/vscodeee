@@ -40,6 +40,7 @@ Maintain the current functionality of VSCode while achieving the following:
 |   5A   | [Extension Host](#phase-5-process-model)                     | Node.js sidecar + WebSocket ↔ Rust relay ↔ Unix Socket        | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/58)  |
 | **5B** | [**Terminal PTY**](#phase-5-process-model)                   | **Rust PTY → Tauri IPC → TauriTerminalBackend → Terminal UI** |                        **📋 Up Next**                         |
 |   5C   | [Shared Process Elimination](#phase-5-process-model)         | Abolish Shared Process; services in WebView/Rust              |                          📋 Planned                           |
+|   5D   | [Extension ESM Fix](#phase-5-process-model)                  | Fix ESM module resolution for built-in extensions             |                          📋 Planned                           |
 |   6    | [Platform Features](#phase-6-platform-features)              | Auto-update, native menus, system tray                        |                          📋 Planned                           |
 |   7    | [Build & Packaging](#phase-7-build--packaging)               | Installers, code signing, CI/CD                               |                          📋 Planned                           |
 
@@ -189,6 +190,7 @@ Extension Host via Node.js sidecar + named pipe, Terminal via Rust `portable-pty
 | Extension Host (Node sidecar) | Node.js sidecar + WebSocket ↔ Rust relay ↔ Unix Socket full pipeline (PR [#58](https://github.com/j4rviscmd/vscodeee/pull/58))          |     ✅     |
 | Terminal PTY integration      | Rust `portable-pty` → Tauri IPC → `TauriTerminalBackend` → VS Code Terminal UI ([#87](https://github.com/j4rviscmd/vscodeee/issues/87)) | 📋 Planned |
 | Shared Process elimination    | Abolish Shared Process sidecar; implement services directly in WebView/Rust ([#88](https://github.com/j4rviscmd/vscodeee/issues/88))    | 📋 Planned |
+| Extension ESM fix             | Fix ESM module resolution for built-in extensions in Extension Host ([#93](https://github.com/j4rviscmd/vscodeee/issues/93))            | 📋 Planned |
 
 ### Phase 6: Platform Features
 
