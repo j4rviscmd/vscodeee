@@ -124,4 +124,25 @@ export class TauriWorkbenchEnvironmentService extends BrowserWorkbenchEnvironmen
 	override get stateResource(): URI {
 		return URI.file(`${this.tauriConfig.appDataDir}/User/globalStorage/state.vscdb`);
 	}
+
+	/**
+	 * Webview external endpoint — override to use local `vscode-file://` protocol
+	 * instead of the CDN URL (`vscode-cdn.net`).
+	 *
+	 * In Tauri, webview resources are served locally via the custom protocol handler,
+	 * so we bypass the CDN entirely. The `{{uuid}}` placeholder is preserved for
+	 * `webviewContentEndpoint()` to substitute the encoded webview origin.
+	 *
+	 * The path points to `out/vs/workbench/contrib/webview/browser/pre/` under
+	 * the frontend dist directory (the Tauri resource root).
+	 */
+	@memoize
+	override get webviewExternalEndpoint(): string {
+		// Use vscode-file:// protocol to serve webview pre/ content locally.
+		// frontendDist is the absolute path to the app's out/ directory
+		// (e.g., /path/to/project/out in dev, or .../Resources/dist in prod).
+		// The webview pre/ files are at vs/workbench/contrib/webview/browser/pre/
+		// under this directory.
+		return `vscode-file://vscode-app${this.tauriConfig.frontendDist}/vs/workbench/contrib/webview/browser/pre/`;
+	}
 }

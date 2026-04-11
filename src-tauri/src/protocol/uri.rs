@@ -38,6 +38,13 @@ pub fn parse_vscode_file_uri(raw_uri: &str) -> Result<PathBuf, ProtocolError> {
         .or_else(|| raw_uri.strip_prefix("/"))
         .unwrap_or(raw_uri);
 
+    // Strip query string (e.g. `?id=...&parentId=...`) if present.
+    // Webview iframes append query parameters that are not part of the file path.
+    let encoded_path = encoded_path.split('?').next().unwrap_or(encoded_path);
+
+    // Strip fragment (e.g. `#section`) if present.
+    let encoded_path = encoded_path.split('#').next().unwrap_or(encoded_path);
+
     if encoded_path.is_empty() {
         return Err(ProtocolError::BadUri("empty path".into()));
     }
@@ -166,5 +173,30 @@ mod tests {
         let result = parse_vscode_file_uri(&uri);
         assert!(result.is_ok());
         let _ = std::fs::remove_dir(&tmp);
+    }
+
+    #[test]
+    fn parse_strips_query_string() {
+        // /tmp always exists on macOS/Linux
+        let result =
+            parse_vscode_file_uri("vscode-file://vscode-app/tmp?id=test-id&parentId=parent-id");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_absolute());
+    }
+
+    #[test]
+    fn parse_strips_fragment() {
+        // /tmp always exists on macOS/Linux
+        let result = parse_vscode_file_uri("vscode-file://vscode-app/tmp#section");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_absolute());
+    }
+
+    #[test]
+    fn parse_strips_query_and_fragment() {
+        // /tmp always exists on macOS/Linux
+        let result = parse_vscode_file_uri("vscode-file://vscode-app/tmp?id=test-id#section");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_absolute());
     }
 }
