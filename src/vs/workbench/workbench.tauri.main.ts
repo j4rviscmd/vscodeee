@@ -179,6 +179,7 @@ import './contrib/extensions/browser/extensions.web.contribution.js';
 import './contrib/terminal/browser/terminal.web.contribution.js';
 import './contrib/externalTerminal/browser/externalTerminal.contribution.js';
 import './contrib/terminal/browser/terminalInstanceService.js';
+import './contrib/terminal/tauri-browser/tauriTerminalBackend.js';
 
 // Tasks
 import './contrib/tasks/browser/taskService.js';
