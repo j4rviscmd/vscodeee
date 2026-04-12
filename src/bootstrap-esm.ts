@@ -9,6 +9,7 @@ import { product, pkg } from './bootstrap-meta.js';
 import './bootstrap-node.js';
 import * as performance from './vs/base/common/performance.js';
 import { INLSConfiguration } from './vs/nls.js';
+import { registerExtensionResolver } from './bootstrap-esm-resolve.js';
 
 // Install a hook to module resolution to map 'fs' to 'original-fs'
 if (process.env['ELECTRON_RUN_AS_NODE'] || process.versions['electron']) {
@@ -109,4 +110,10 @@ export async function bootstrapESM(): Promise<void> {
 
 	// NLS
 	await setupNLS();
+
+	// ESM resolve hook for built-in extensions
+	// Adds .js extensions to relative specifiers when resolving from /extensions/ directories.
+	// Required because esbuild code-splitting preserves import() with bare specifiers
+	// that Node.js ESM resolution cannot resolve without explicit extensions.
+	registerExtensionResolver();
 }
