@@ -24,6 +24,7 @@ import { assertType } from '../../../base/common/types.js';
 import { generateUuid } from '../../../base/common/uuid.js';
 import { BidirectionalMap } from '../../../base/common/map.js';
 import { DisposableStore, toDisposable } from '../../../base/common/lifecycle.js';
+import { ExtHostChildProcessInterceptor } from './extHostChildProcessInterceptor.js';
 
 const require = nodeModule.createRequire(import.meta.url);
 
@@ -223,6 +224,14 @@ export class ExtHostExtensionService extends AbstractExtHostExtensionService {
 		// ESM loading tricks
 		await this._store.add(this._instaService.createInstance(NodeModuleESMInterceptor, extensionApiFactory, { mine: this._myRegistry, all: this._globalRegistry }))
 			.install();
+
+		// Child process interceptor — ensures all child processes forked by
+		// extensions inherit --no-experimental-require-module and their stderr is captured.
+		// This fixes Language Server crashes in the Tauri migration where cp.fork() children
+		// lose the Node.js flag because vscode-languageclient sets execArgv: [].
+		// TODO(Phase 5-D): Remove once all extensions use stdio transport or Tauri is stable.
+		const childProcessInterceptor = this._store.add(this._instaService.createInstance(ExtHostChildProcessInterceptor));
+		childProcessInterceptor.install();
 
 		performance.mark('code/extHost/didInitAPI');
 
