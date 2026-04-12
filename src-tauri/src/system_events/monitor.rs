@@ -40,7 +40,7 @@ pub fn setup(app: &tauri::App) {
     std::thread::Builder::new()
         .name("system-event-dispatcher".into())
         .spawn(move || {
-            log::info!(
+            log::debug!(
                 target: "vscodeee",
                 "System event dispatcher started, registered events: [{}]",
                 [
