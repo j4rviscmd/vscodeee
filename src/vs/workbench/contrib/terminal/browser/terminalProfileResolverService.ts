@@ -371,15 +371,16 @@ export class BrowserTerminalProfileResolverService extends BaseTerminalProfileRe
 			{
 				getDefaultSystemShell: async (remoteAuthority, os) => {
 					const backend = await terminalInstanceService.getBackend(remoteAuthority);
-					if (!remoteAuthority || !backend) {
-						// Just return basic values, this is only for serverless web and wouldn't be used
+					if (!backend) {
+						// No backend available — return basic fallback values
+						// (serverless web scenario)
 						return os === OperatingSystem.Windows ? 'pwsh' : 'bash';
 					}
 					return backend.getDefaultSystemShell(os);
 				},
 				getEnvironment: async (remoteAuthority) => {
 					const backend = await terminalInstanceService.getBackend(remoteAuthority);
-					if (!remoteAuthority || !backend) {
+					if (!backend) {
 						return env;
 					}
 					return backend.getEnvironment();
