@@ -106,6 +106,8 @@ pub fn run() {
             commands::terminal::write_terminal,
             commands::terminal::resize_terminal,
             commands::terminal::close_terminal,
+            commands::terminal::get_default_shell,
+            commands::terminal::get_environment,
             // ── Window commands ──
             commands::native_host::is_fullscreen,
             commands::native_host::toggle_fullscreen,

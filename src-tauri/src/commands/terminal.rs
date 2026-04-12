@@ -84,3 +84,35 @@ pub fn resize_terminal(
 pub fn close_terminal(id: u32, pty_manager: State<'_, PtyManager>) -> Result<(), String> {
     pty_manager.close(id)
 }
+
+/// Get the user's default shell.
+///
+/// Reads the `SHELL` environment variable on Unix-like systems.
+/// Falls back to platform-specific defaults if the variable is not set.
+///
+/// # Returns
+/// The path to the default shell (e.g., `/bin/zsh`, `/bin/bash`).
+#[tauri::command]
+pub fn get_default_shell() -> String {
+    std::env::var("SHELL").unwrap_or_else(|_| {
+        if cfg!(target_os = "macos") {
+            "/bin/zsh".to_string()
+        } else if cfg!(target_os = "windows") {
+            "powershell.exe".to_string()
+        } else {
+            "/bin/bash".to_string()
+        }
+    })
+}
+
+/// Get the current process environment variables.
+///
+/// Returns all environment variables as a key-value map. Used by the
+/// terminal backend to pass the environment to the VS Code terminal UI.
+///
+/// # Returns
+/// A map of environment variable names to their values.
+#[tauri::command]
+pub fn get_environment() -> std::collections::HashMap<String, String> {
+    std::env::vars().collect()
+}
