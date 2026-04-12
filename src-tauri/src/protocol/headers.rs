@@ -75,9 +75,11 @@ pub fn headers_for_path(
 
     let is_workbench_html = filename == "workbench.html"
         || filename == "workbench-dev.html"
+        || filename == "workbench-tauri.html"
         || filename == "index.html";
 
-    // COOP + COEP for workbench HTML (enables SharedArrayBuffer)
+    // Workbench HTML headers: COOP + COEP (enables SharedArrayBuffer)
+    // and Document-Policy (JS callstack collection for crash reports)
     if is_workbench_html {
         headers.push((
             "Cross-Origin-Opener-Policy".to_string(),
@@ -87,10 +89,6 @@ pub fn headers_for_path(
             "Cross-Origin-Embedder-Policy".to_string(),
             "require-corp".to_string(),
         ));
-    }
-
-    // Document-Policy for workbench HTML (JS callstack collection)
-    if is_workbench_html {
         headers.push((
             "Document-Policy".to_string(),
             "include-js-call-stacks-in-crash-reports".to_string(),

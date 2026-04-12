@@ -32,6 +32,16 @@ import { ICommandService } from '../../../../platform/commands/common/commands.j
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
 import { getKeyboardLayoutId, IKeyboardLayoutInfo, IKeyboardLayoutService, IKeyboardMapping, IMacLinuxKeyboardMapping, IWindowsKeyboardMapping } from '../../../../platform/keyboardLayout/common/keyboardLayout.js';
 
+/**
+ * Base class for browser-based keyboard mapper factories.
+ *
+ * Manages a registry of known keyboard layouts, tracks the currently active
+ * layout via an MRU (most-recently-used) list, and creates the appropriate
+ * `IKeyboardMapper` for the detected platform (Windows, macOS, or Linux).
+ *
+ * Listens for `navigator.keyboard.layoutchange` events and configuration
+ * changes to automatically re-evaluate the active keyboard mapping.
+ */
 export class BrowserKeyboardMapperFactoryBase extends Disposable {
 	// keyboard mapper
 	protected _initialized: boolean;
@@ -45,14 +55,17 @@ export class BrowserKeyboardMapperFactoryBase extends Disposable {
 	private _activeKeymapInfo: KeymapInfo | null;
 	private keyboardLayoutMapAllowed: boolean = (navigator as INavigatorWithKeyboard).keyboard !== undefined;
 
+	/** The currently active keymap, or `null` if no layout has been detected yet. */
 	get activeKeymap(): KeymapInfo | null {
 		return this._activeKeymapInfo;
 	}
 
+	/** All registered keymap info entries. */
 	get keymapInfos(): KeymapInfo[] {
 		return this._keymapInfos;
 	}
 
+	/** The layout metadata for the currently active keyboard layout, or `null` if not initialized. */
 	get activeKeyboardLayout(): IKeyboardLayoutInfo | null {
 		if (!this._initialized) {
 			return null;
@@ -61,6 +74,7 @@ export class BrowserKeyboardMapperFactoryBase extends Disposable {
 		return this._activeKeymapInfo?.layout ?? null;
 	}
 
+	/** The raw key mapping of the currently active keyboard layout, or `null` if not initialized. */
 	get activeKeyMapping(): IKeyboardMapping | null {
 		if (!this._initialized) {
 			return null;
@@ -69,6 +83,7 @@ export class BrowserKeyboardMapperFactoryBase extends Disposable {
 		return this._activeKeymapInfo?.mapping ?? null;
 	}
 
+	/** Layout metadata for all registered keymap infos. */
 	get keyboardLayouts(): IKeyboardLayoutInfo[] {
 		return this._keymapInfos.map(keymapInfo => keymapInfo.layout);
 	}
@@ -107,11 +122,25 @@ export class BrowserKeyboardMapperFactoryBase extends Disposable {
 		}));
 	}
 
+	/**
+	 * Register a new keyboard layout.
+	 *
+	 * The layout is appended to the keymap registry and the MRU list
+	 * is reset to include all registered layouts.
+	 *
+	 * @param layout - The keymap info to register.
+	 */
 	registerKeyboardLayout(layout: KeymapInfo) {
 		this._keymapInfos.push(layout);
 		this._mru = this._keymapInfos;
 	}
 
+	/**
+	 * Remove a previously registered keyboard layout from both the
+	 * MRU list and the keymap registry.
+	 *
+	 * @param layout - The keymap info to remove.
+	 */
 	removeKeyboardLayout(layout: KeymapInfo): void {
 		let index = this._mru.indexOf(layout);
 		this._mru.splice(index, 1);
@@ -119,6 +148,17 @@ export class BrowserKeyboardMapperFactoryBase extends Disposable {
 		this._keymapInfos.splice(index, 1);
 	}
 
+	/**
+	 * Find the best-matching keymap for the given key mapping.
+	 *
+	 * Uses the US Standard layout as a baseline. Each registered layout
+	 * is scored against the provided mapping; a score of `0` indicates an
+	 * exact match. If no US Standard layout exists, falls back to a
+	 * fuzzy equality check against the MRU list.
+	 *
+	 * @param keyMapping - The raw key mapping to match, or `null`.
+	 * @returns The best match with its score, or `null` if no match is found.
+	 */
 	getMatchedKeymapInfo(keyMapping: IKeyboardMapping | null): { result: KeymapInfo; score: number } | null {
 		if (!keyMapping) {
 			return null;
@@ -169,6 +209,11 @@ export class BrowserKeyboardMapperFactoryBase extends Disposable {
 		return null;
 	}
 
+	/**
+	 * Return the US Standard keyboard layout from the MRU list, if one is registered.
+	 *
+	 * @returns The first US Standard layout, or `null` if none exists.
+	 */
 	getUSStandardLayout() {
 		const usStandardLayouts = this._mru.filter(layout => layout.layout.isUSStandard);
 
@@ -179,14 +224,31 @@ export class BrowserKeyboardMapperFactoryBase extends Disposable {
 		return null;
 	}
 
+	/**
+	 * Check whether the given key mapping is currently the active mapping.
+	 *
+	 * @param keymap - The key mapping to check, or `null`.
+	 * @returns `true` if the active keymap fuzzily equals the given mapping.
+	 */
 	isKeyMappingActive(keymap: IKeyboardMapping | null) {
 		return this._activeKeymapInfo && keymap && this._activeKeymapInfo.fuzzyEqual(keymap);
 	}
 
+	/** Set the active keyboard layout to the US Standard layout. */
 	setUSKeyboardLayout() {
 		this._activeKeymapInfo = this.getUSStandardLayout();
 	}
 
+	/**
+	 * Determine and set the active keyboard layout based on a raw key mapping.
+	 *
+	 * Scores the provided mapping against all registered layouts and selects
+	 * the best match. Falls back to the US Standard layout if no match is found.
+	 * The matched layout is moved to the front of the MRU list and the keyboard
+	 * mapper is rebuilt.
+	 *
+	 * @param keymap - The raw key mapping detected from the browser, or `null`.
+	 */
 	setActiveKeyMapping(keymap: IKeyboardMapping | null) {
 		let keymapUpdated = false;
 		const matchedKeyboardLayout = this.getMatchedKeymapInfo(keymap);
@@ -248,6 +310,14 @@ export class BrowserKeyboardMapperFactoryBase extends Disposable {
 		this._setKeyboardData(this._activeKeymapInfo);
 	}
 
+	/**
+	 * Set the active keyboard layout directly from a `KeymapInfo` instance.
+	 *
+	 * Moves the given keymap to the front of the MRU list and rebuilds
+	 * the keyboard mapper. No-op if the keymap is already at position 0.
+	 *
+	 * @param keymapInfo - The keymap to activate.
+	 */
 	setActiveKeymapInfo(keymapInfo: KeymapInfo) {
 		this._activeKeymapInfo = keymapInfo;
 
@@ -263,10 +333,24 @@ export class BrowserKeyboardMapperFactoryBase extends Disposable {
 		this._setKeyboardData(this._activeKeymapInfo);
 	}
 
+	/**
+	 * Trigger an asynchronous keyboard layout update using the Browser Keyboard API.
+	 *
+	 * Reads the current layout map from `navigator.keyboard.getLayoutMap()` and
+	 * updates the active mapping if it has changed. No-op if the factory is not
+	 * yet initialized.
+	 */
 	public setLayoutFromBrowserAPI(): void {
 		this._updateKeyboardLayoutAsync(this._initialized);
 	}
 
+	/**
+	 * Asynchronously query the Browser Keyboard API for the current layout
+	 * and update the active mapping if it has changed.
+	 *
+	 * @param initialized - Whether the factory has been initialized.
+	 * @param keyboardEvent - Optional keyboard event used as a fallback layout probe.
+	 */
 	private _updateKeyboardLayoutAsync(initialized: boolean, keyboardEvent?: IKeyboardEvent) {
 		if (!initialized) {
 			return;
@@ -281,6 +365,19 @@ export class BrowserKeyboardMapperFactoryBase extends Disposable {
 		});
 	}
 
+	/**
+	 * Get the keyboard mapper for translating `KeyboardEvent`s to keybindings.
+	 *
+	 * Returns a `FallbackKeyboardMapper` (keyCode-based) if:
+	 * - The dispatch config is set to `KeyCode`, or
+	 * - The factory is not yet initialized, or
+	 * - No active keymap is available.
+	 *
+	 * Otherwise returns a `CachedKeyboardMapper` wrapping the platform-specific
+	 * mapper (`WindowsKeyboardMapper` or `MacLinuxKeyboardMapper`).
+	 *
+	 * @returns The appropriate keyboard mapper instance.
+	 */
 	public getKeyboardMapper(): IKeyboardMapper {
 		const config = readKeyboardConfig(this._configurationService);
 		if (config.dispatch === DispatchConfig.KeyCode || !this._initialized || !this._activeKeymapInfo) {
@@ -293,6 +390,15 @@ export class BrowserKeyboardMapperFactoryBase extends Disposable {
 		return this._keyboardMapper;
 	}
 
+	/**
+	 * Validate that the current keyboard mapping still matches the physical keyboard.
+	 *
+	 * Compares the received key event against the expected value from the active
+	 * keymap. If validation fails, triggers an asynchronous layout update.
+	 * Skips validation for dead keys, composing events, and when not initialized.
+	 *
+	 * @param keyboardEvent - The keyboard event to validate against the active mapping.
+	 */
 	public validateCurrentKeyboardMapping(keyboardEvent: IKeyboardEvent): void {
 		if (!this._initialized) {
 			return;
@@ -307,6 +413,14 @@ export class BrowserKeyboardMapperFactoryBase extends Disposable {
 		this._updateKeyboardLayoutAsync(true, keyboardEvent);
 	}
 
+	/**
+	 * Set the active keyboard layout by layout name.
+	 *
+	 * Searches registered keymaps for one whose layout ID matches the
+	 * given name and activates it if found.
+	 *
+	 * @param layoutName - The keyboard layout identifier to activate.
+	 */
 	public setKeyboardLayout(layoutName: string) {
 		const matchedLayouts: KeymapInfo[] = this.keymapInfos.filter(keymapInfo => getKeyboardLayoutId(keymapInfo.layout) === layoutName);
 
@@ -315,6 +429,12 @@ export class BrowserKeyboardMapperFactoryBase extends Disposable {
 		}
 	}
 
+	/**
+	 * Mark the factory as initialized, invalidate the cached keyboard mapper,
+	 * and notify listeners that the keyboard mapper has changed.
+	 *
+	 * @param keymapInfo - The keymap that is now active.
+	 */
 	private _setKeyboardData(keymapInfo: KeymapInfo): void {
 		this._initialized = true;
 
@@ -322,6 +442,18 @@ export class BrowserKeyboardMapperFactoryBase extends Disposable {
 		this._onDidChangeKeyboardMapper.fire();
 	}
 
+	/**
+	 * Create a platform-specific keyboard mapper for the given keymap.
+	 *
+	 * On Windows, returns a `WindowsKeyboardMapper`. On macOS/Linux, returns
+	 * a `MacLinuxKeyboardMapper` unless the raw mapping is empty (which
+	 * typically indicates a failed read for Japanese/Chinese layouts on Mac),
+	 * in which case a `FallbackKeyboardMapper` is returned.
+	 *
+	 * @param keymapInfo - The keymap to create a mapper for.
+	 * @param mapAltGrToCtrlAlt - Whether to map AltGr to Ctrl+Alt.
+	 * @returns A platform-specific `IKeyboardMapper` instance.
+	 */
 	private static _createKeyboardMapper(keymapInfo: KeymapInfo, mapAltGrToCtrlAlt: boolean): IKeyboardMapper {
 		const rawMapping = keymapInfo.mapping;
 		const isUSStandard = !!keymapInfo.layout.isUSStandard;
@@ -337,6 +469,17 @@ export class BrowserKeyboardMapperFactoryBase extends Disposable {
 	}
 
 	//#region Browser API
+	/**
+	 * Validate a single keyboard event against the current active keymap.
+	 *
+	 * Returns `true` if the event is consistent with the active layout, or if
+	 * the event should be skipped (dead keys, composing, non-printable modifiers).
+	 * Returns `false` when a mismatch is detected, signaling that the keyboard
+	 * layout may have changed.
+	 *
+	 * @param keyboardEvent - The keyboard event to validate.
+	 * @returns `true` if the event is valid or should be ignored, `false` if a layout mismatch is detected.
+	 */
 	private _validateCurrentKeyboardMapping(keyboardEvent: IKeyboardEvent): boolean {
 		if (!this._initialized) {
 			return true;
@@ -395,6 +538,17 @@ export class BrowserKeyboardMapperFactoryBase extends Disposable {
 		return true;
 	}
 
+	/**
+	 * Retrieve the current keyboard mapping from the Browser Keyboard API.
+	 *
+	 * Primary strategy: calls `navigator.keyboard.getLayoutMap()` to obtain
+	 * the full layout map. If the API is unavailable (e.g. nested browsing context),
+	 * falls back to probing a single key from the provided `keyboardEvent`.
+	 *
+	 * @param keyboardEvent - Optional keyboard event used as a fallback probe when
+	 *   the full layout map API is not available.
+	 * @returns The raw keyboard mapping, or `null` if neither strategy succeeds.
+	 */
 	private async _getBrowserKeyMapping(keyboardEvent?: IKeyboardEvent): Promise<IRawMixedKeyboardMapping | null> {
 		if (this.keyboardLayoutMapAllowed) {
 			try {
@@ -424,7 +578,7 @@ export class BrowserKeyboardMapperFactoryBase extends Disposable {
 				this.keyboardLayoutMapAllowed = false;
 			}
 		}
-		if (keyboardEvent && !keyboardEvent.shiftKey && !keyboardEvent.altKey && !keyboardEvent.metaKey && !keyboardEvent.metaKey) {
+		if (keyboardEvent && !keyboardEvent.shiftKey && !keyboardEvent.altKey && !keyboardEvent.metaKey && !keyboardEvent.ctrlKey) {
 			const ret: IKeyboardMapping = {};
 			const standardKeyboardEvent = keyboardEvent as StandardKeyboardEvent;
 			ret[standardKeyboardEvent.browserEvent.code] = {
@@ -449,14 +603,35 @@ export class BrowserKeyboardMapperFactoryBase extends Disposable {
 	//#endregion
 }
 
+/**
+ * Platform-aware keyboard mapper factory that dynamically loads keyboard layout
+ * contributions for the current OS (Windows, macOS, or Linux).
+ *
+ * On construction, asynchronously imports the platform-specific layout contribution
+ * file, registers all contributed keymaps, and immediately queries the Browser
+ * Keyboard API to detect the active layout.
+ */
 export class BrowserKeyboardMapperFactory extends BrowserKeyboardMapperFactoryBase {
+	/**
+	 * @param configurationService - The workspace configuration service.
+	 * @param notificationService - The notification service (reserved for future use).
+	 * @param storageService - The storage service (reserved for future use).
+	 * @param commandService - The command service (reserved for future use).
+	 */
 	constructor(configurationService: IConfigurationService, notificationService: INotificationService, storageService: IStorageService, commandService: ICommandService) {
 		// super(notificationService, storageService, commandService);
 		super(configurationService);
 
-		const platform = isWindows ? 'win' : isMacintosh ? 'darwin' : 'linux';
+		let platform: string;
+		if (isWindows) {
+			platform = 'win';
+		} else if (isMacintosh) {
+			platform = 'darwin';
+		} else {
+			platform = 'linux';
+		}
 
-		import(/* webpackIgnore: true */FileAccess.asBrowserUri(`vs/workbench/services/keybinding/browser/keyboardLayouts/layout.contribution.${platform}.js` satisfies AppResourcePath).path).then((m) => {
+		import(/* webpackIgnore: true */FileAccess.asBrowserUri(`vs/workbench/services/keybinding/browser/keyboardLayouts/layout.contribution.${platform}.js` satisfies AppResourcePath).toString(true)).then((m) => {
 			const keymapInfos: IKeymapInfo[] = m.KeyboardLayoutContribution.INSTANCE.layoutInfos;
 			this._keymapInfos.push(...keymapInfos.map(info => (new KeymapInfo(info.layout, info.secondaryLayouts, info.mapping, info.isUserKeyboardLayout))));
 			this._mru = this._keymapInfos;
@@ -466,13 +641,22 @@ export class BrowserKeyboardMapperFactory extends BrowserKeyboardMapperFactoryBa
 	}
 }
 
+/**
+ * Watches a user-defined keyboard layout file and parses it into a `KeymapInfo`.
+ *
+ * The layout file is expected to contain a JSON object with `layout` and `rawMapping`
+ * properties. Changes to the file are detected via `IFileService.onDidFilesChange`
+ * and debounced with a 50ms scheduler.
+ */
 class UserKeyboardLayout extends Disposable {
 
 	private readonly reloadConfigurationScheduler: RunOnceScheduler;
 	protected readonly _onDidChange: Emitter<void> = this._register(new Emitter<void>());
+	/** Fires when the parsed keyboard layout changes (or is cleared). */
 	readonly onDidChange: Event<void> = this._onDidChange.event;
 
 	private _keyboardLayout: KeymapInfo | null;
+	/** The most recently parsed keyboard layout, or `null` if parsing failed or no file exists. */
 	get keyboardLayout(): KeymapInfo | null { return this._keyboardLayout; }
 
 	constructor(
@@ -492,10 +676,17 @@ class UserKeyboardLayout extends Disposable {
 		this._register(Event.filter(this.fileService.onDidFilesChange, e => e.contains(this.keyboardLayoutResource))(() => this.reloadConfigurationScheduler.schedule()));
 	}
 
+	/** Perform the initial load of the keyboard layout file. */
 	async initialize(): Promise<void> {
 		await this.reload();
 	}
 
+	/**
+	 * Reload and re-parse the keyboard layout file.
+	 *
+	 * @returns `true` if the parsed layout changed from the previous value (or
+	 *   if this is the first successful parse), `false` otherwise.
+	 */
 	private async reload(): Promise<boolean> {
 		const existing = this._keyboardLayout;
 		try {
@@ -517,6 +708,14 @@ class UserKeyboardLayout extends Disposable {
 
 }
 
+/**
+ * Browser implementation of `IKeyboardLayoutService`.
+ *
+ * Delegates keyboard mapping to a `BrowserKeyboardMapperFactory` and integrates
+ * user-defined keyboard layouts from a file watched by `UserKeyboardLayout`.
+ * Supports both automatic layout detection via the Browser Keyboard API and
+ * manual layout selection via the `keyboard.layout` configuration setting.
+ */
 export class BrowserKeyboardLayoutService extends Disposable implements IKeyboardLayoutService {
 	public _serviceBrand: undefined;
 
@@ -593,6 +792,13 @@ export class BrowserKeyboardLayoutService extends Disposable implements IKeyboar
 		}));
 	}
 
+	/**
+	 * Activate the user-defined keyboard layout if it matches the configured layout name.
+	 *
+	 * Compares the user keyboard layout's ID against the `keyboard.layout` setting.
+	 * If they match and the user layout differs from the currently active keymap,
+	 * the user layout is promoted to active.
+	 */
 	setUserKeyboardLayoutIfMatched() {
 		const keyboardConfig = this.configurationService.getValue<{ layout: string }>('keyboard');
 		const layout = keyboardConfig.layout;
@@ -607,22 +813,27 @@ export class BrowserKeyboardLayoutService extends Disposable implements IKeyboar
 		}
 	}
 
+	/** @inheritdoc */
 	getKeyboardMapper(): IKeyboardMapper {
 		return this._factory.getKeyboardMapper();
 	}
 
+	/** @inheritdoc */
 	public getCurrentKeyboardLayout(): IKeyboardLayoutInfo | null {
 		return this._factory.activeKeyboardLayout;
 	}
 
+	/** @inheritdoc */
 	public getAllKeyboardLayouts(): IKeyboardLayoutInfo[] {
 		return this._factory.keyboardLayouts;
 	}
 
+	/** @inheritdoc */
 	public getRawKeyboardMapping(): IKeyboardMapping | null {
 		return this._factory.activeKeyMapping;
 	}
 
+	/** @inheritdoc */
 	public validateCurrentKeyboardMapping(keyboardEvent: IKeyboardEvent): void {
 		if (this._keyboardLayoutMode !== 'autodetect') {
 			return;
