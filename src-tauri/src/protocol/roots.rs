@@ -40,6 +40,7 @@ impl ValidRoots {
             roots: RwLock::new(Vec::new()),
             allowed_extensions: [
                 ".svg", ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".mp4", ".otf", ".ttf",
+                ".woff", ".woff2",
             ]
             .into_iter()
             .collect(),

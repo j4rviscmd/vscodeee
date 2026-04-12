@@ -35,27 +35,59 @@ import { ExtensionHostExitCode, IExtensionHostInitData, MessageType, UIKind, cre
 import { LocalWebWorkerRunningLocation } from '../common/extensionRunningLocation.js';
 import { ExtensionHostExtensions, ExtensionHostStartup, IExtensionHost } from '../common/extensions.js';
 
+/**
+ * Initialization data specific to the web worker extension host.
+ *
+ * Contains the set of extensions that should be loaded into the
+ * web worker-based extension host process.
+ */
 export interface IWebWorkerExtensionHostInitData {
 	readonly extensions: ExtensionHostExtensions;
 }
 
+/**
+ * Provides initialization data for the web worker extension host.
+ *
+ * Implementations are responsible for asynchronously resolving the
+ * set of extensions and other configuration needed before the
+ * extension host can start.
+ */
 export interface IWebWorkerExtensionHostDataProvider {
 	getInitData(): Promise<IWebWorkerExtensionHostInitData>;
 }
 
+/**
+ * Extension host implementation that runs extensions inside a Web Worker
+ * loaded within a sandboxed iframe.
+ *
+ * The extension host communicates with the main workbench via a `MessagePort`
+ * transferred through `postMessage`. A three-way handshake (Ready -> Init -> Initialized)
+ * is performed before the extension host becomes operational.
+ *
+ * On Tauri, `parentOrigin` is explicitly passed to the iframe because the main
+ * window (`tauri://localhost`) and the iframe (`vscode-file://vscode-app`) have
+ * different origins, requiring cross-origin message validation.
+ */
 export class WebWorkerExtensionHost extends Disposable implements IExtensionHost {
 
+	/** Always `null` — web worker extension hosts do not have an OS-level process ID. */
 	public readonly pid = null;
+
+	/** Always `null` — web worker extension hosts are local, not remote. */
 	public readonly remoteAuthority = null;
+
+	/** The resolved set of extensions loaded into this extension host, or `null` before initialization. */
 	public extensions: ExtensionHostExtensions | null = null;
 
 	private readonly _onDidExit = this._register(new Emitter<[number, string | null]>());
+	/** Fires when the extension host exits unexpectedly, providing the exit code and optional error message. */
 	public readonly onExit: Event<[number, string | null]> = this._onDidExit.event;
 
 	private _isTerminating: boolean;
 	private _protocolPromise: Promise<IMessagePassingProtocol> | null;
 	private _protocol: IMessagePassingProtocol | null;
 
+	/** File system URI where extension host log files are written. */
 	private readonly _extensionHostLogsLocation: URI;
 
 	constructor(
@@ -82,12 +114,31 @@ export class WebWorkerExtensionHost extends Disposable implements IExtensionHost
 		this._extensionHostLogsLocation = joinPath(this._environmentService.extHostLogsPath, 'webWorker');
 	}
 
+	/**
+	 * Build the source URL for the extension host iframe.
+	 *
+	 * Handles several concerns:
+	 * - Sets `debugged` query param when both extension host and renderer debugging are enabled.
+	 * - Appends Cross-Origin Isolation (COI) search params.
+	 * - On Tauri, passes `parentOrigin` explicitly to enable cross-origin message validation.
+	 * - On web, computes a stable origin UUID (persisted in workspace storage) and builds
+	 *   a `parentOriginHash` subdomain URL for iframe origin isolation.
+	 *
+	 * @returns The fully qualified iframe source URL with all required query parameters.
+	 */
 	private async _getWebWorkerExtensionHostIframeSrc(): Promise<string> {
 		const suffixSearchParams = new URLSearchParams();
 		if (this._environmentService.debugExtensionHost && this._environmentService.debugRenderer) {
 			suffixSearchParams.set('debugged', '1');
 		}
 		COI.addSearchParam(suffixSearchParams, true, true);
+
+		// TODO(Phase 1): In Tauri, the main window (tauri://localhost) and the iframe
+		// (vscode-file://vscode-app) have different origins. The iframe's origin check
+		// rejects parent messages unless parentOrigin is passed explicitly.
+		if (platform.isTauri) {
+			suffixSearchParams.set('parentOrigin', mainWindow.origin);
+		}
 
 		const suffix = `?${suffixSearchParams.toString()}`;
 
@@ -130,6 +181,17 @@ export class WebWorkerExtensionHost extends Disposable implements IExtensionHost
 		return `${relativeExtensionHostIframeSrc}${suffix}`;
 	}
 
+	/**
+	 * Start the web worker extension host.
+	 *
+	 * Creates the extension host iframe, waits for the `MessagePort` handshake,
+	 * and performs the three-way protocol initialization. The resulting
+	 * `IMessagePassingProtocol` is cached so subsequent calls return the same
+	 * instance.
+	 *
+	 * @returns A promise that resolves with the message-passing protocol once
+	 *   the extension host is fully initialized and ready to receive messages.
+	 */
 	public async start(): Promise<IMessagePassingProtocol> {
 		if (!this._protocolPromise) {
 			this._protocolPromise = this._startInsideIframe();
@@ -138,6 +200,20 @@ export class WebWorkerExtensionHost extends Disposable implements IExtensionHost
 		return this._protocolPromise;
 	}
 
+	/**
+	 * Create the sandboxed iframe, set up message listeners for the extension host
+	 * bootstrap handshake, and establish the `MessagePort` communication channel.
+	 *
+	 * The flow is:
+	 * 1. Create an iframe pointing to `webWorkerExtensionHostIframe.html`.
+	 * 2. Listen for the `vscode.bootstrap.nls` message from the iframe, then reply
+	 *    with the worker URL, file root, and NLS data.
+	 * 3. Receive a `MessagePort` from the iframe and use it for direct communication.
+	 * 4. Forward `vscode.init` message ports (extension API channels) to the iframe.
+	 *
+	 * @returns A promise resolving to the `IMessagePassingProtocol` backed by the `MessagePort`.
+	 * @throws If the iframe fails to start within 60 seconds or sends an error message.
+	 */
 	private async _startInsideIframe(): Promise<IMessagePassingProtocol> {
 		const webWorkerExtensionHostIframeSrc = await this._getWebWorkerExtensionHostIframeSrc();
 		const emitter = this._register(new Emitter<VSBuffer>());
@@ -251,6 +327,20 @@ export class WebWorkerExtensionHost extends Disposable implements IExtensionHost
 		return this._performHandshake(protocol);
 	}
 
+	/**
+	 * Perform the three-way handshake with the extension host worker.
+	 *
+	 * Protocol sequence:
+	 * 1. Wait for `MessageType.Ready` from the extension host.
+	 * 2. Send the serialized `IExtensionHostInitData`.
+	 * 3. Wait for `MessageType.Initialized` confirmation.
+	 *
+	 * If the host is terminating at any checkpoint, the handshake is aborted
+	 * with a `canceled()` error.
+	 *
+	 * @param protocol - The message-passing protocol connected to the extension host.
+	 * @returns The same protocol instance, now fully initialized.
+	 */
 	private async _performHandshake(protocol: IMessagePassingProtocol): Promise<IMessagePassingProtocol> {
 		// extension host handshake happens below
 		// (1) <== wait for: Ready
@@ -273,6 +363,12 @@ export class WebWorkerExtensionHost extends Disposable implements IExtensionHost
 		return protocol;
 	}
 
+	/**
+	 * Dispose the extension host by sending a `Terminate` message and
+	 * cleaning up the iframe and all associated event listeners.
+	 *
+	 * If the host is already terminating, this is a no-op.
+	 */
 	public override dispose(): void {
 		if (this._isTerminating) {
 			return;
@@ -282,14 +378,33 @@ export class WebWorkerExtensionHost extends Disposable implements IExtensionHost
 		super.dispose();
 	}
 
+	/**
+	 * Web worker extension hosts do not support the debug inspector protocol.
+	 *
+	 * @returns Always `undefined`.
+	 */
 	getInspectPort(): undefined {
 		return undefined;
 	}
 
+	/**
+	 * Web worker extension hosts do not support enabling a debug inspector port.
+	 *
+	 * @returns A promise resolving to `false`, indicating the inspect port was not enabled.
+	 */
 	enableInspectPort(): Promise<boolean> {
 		return Promise.resolve(false);
 	}
 
+	/**
+	 * Build the `IExtensionHostInitData` payload sent to the extension host during handshake.
+	 *
+	 * Aggregates product metadata, workspace configuration, NLS base URL,
+	 * telemetry identifiers, logger registrations, and extension snapshots
+	 * into a single initialization object.
+	 *
+	 * @returns A fully populated `IExtensionHostInitData` for the extension host.
+	 */
 	private async _createExtHostInitData(): Promise<IExtensionHostInitData> {
 		const initData = await this._initDataProvider.getInitData();
 		this.extensions = initData.extensions;
@@ -357,6 +472,13 @@ export class WebWorkerExtensionHost extends Disposable implements IExtensionHost
 	}
 }
 
+/**
+ * Descriptor for the main extension host worker script.
+ *
+ * Provides both browser and bundler-resolved URLs for the worker entry point
+ * (`extensionHostWorkerMain.js` / `.ts`). Used by the iframe to create the
+ * Web Worker via a `Blob` URL that injects NLS data before importing the module.
+ */
 const extensionHostWorkerMainDescriptor = new WebWorkerDescriptor({
 	label: 'extensionHostWorkerMain',
 	esmModuleLocation: () => FileAccess.asBrowserUri('vs/workbench/api/worker/extensionHostWorkerMain.js'),
