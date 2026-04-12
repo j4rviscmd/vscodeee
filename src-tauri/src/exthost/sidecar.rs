@@ -162,7 +162,7 @@ async fn spawn_and_connect(
     // can find tools installed in non-default locations. This is critical on
     // macOS where app bundles inherit a minimal PATH from launchd.
     let enriched_path = build_exthost_path();
-    log::info!(
+    log::debug!(
         target: "vscodeee::exthost::sidecar",
         "ExtHost PATH: {enriched_path}"
     );

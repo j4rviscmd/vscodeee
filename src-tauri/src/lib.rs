@@ -214,7 +214,7 @@ pub fn run() {
             log::info!(target: "vscodeee", "Tauri app started");
 
             // ── Initialize system event monitoring ──
-            log::info!(target: "vscodeee", "Setting up system event monitors");
+            log::debug!(target: "vscodeee", "Setting up system event monitors");
             system_events::setup(app);
 
             // ── Read user settings and load session ──

@@ -104,7 +104,7 @@ pub fn fs_watch_start(
     let (watch_path, watch_mode) = if !path.exists() {
         if let Some(parent) = path.parent() {
             if parent.exists() {
-                log::info!(
+                log::debug!(
                     target: "vscodeee::file_watcher",
                     "Path {} does not exist, watching parent {} instead",
                     request.path,
@@ -150,10 +150,8 @@ pub fn fs_watch_start(
     )
     .map_err(|e| format!("Failed to create watcher: {e}"))?;
 
-    let mode = watch_mode;
-
     watcher
-        .watch(&watch_path, mode)
+        .watch(&watch_path, watch_mode)
         .map_err(|e| format!("Failed to watch path {}: {e}", watch_path.display()))?;
 
     // Spawn a thread that batches events every 100ms
@@ -213,7 +211,7 @@ pub fn fs_watch_start(
         },
     );
 
-    log::info!(
+    log::debug!(
         target: "vscodeee::file_watcher",
         "Started watching {} (id={}, recursive={}, excludes={})",
         request.path,

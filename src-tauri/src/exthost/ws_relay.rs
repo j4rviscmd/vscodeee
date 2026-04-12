@@ -104,7 +104,7 @@ async fn relay_loop(
                 Ok(tokio_tungstenite::tungstenite::Message::Binary(data)) => {
                     count += 1;
                     if count <= 20 || count % 100 == 0 {
-                        log::info!(
+                        log::debug!(
                             target: "vscodeee::exthost::ws_relay",
                             "WS→pipe #{count}: {len} bytes, first4={first4:?}",
                             len = data.len(),
@@ -143,7 +143,7 @@ async fn relay_loop(
                 Ok(n) => {
                     count += 1;
                     if count <= 20 || count % 100 == 0 {
-                        log::info!(
+                        log::debug!(
                             target: "vscodeee::exthost::ws_relay",
                             "pipe→WS #{count}: {n} bytes, first4={first4:?}",
                             first4 = &buf[..std::cmp::min(4, n)]

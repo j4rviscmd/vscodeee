@@ -27,7 +27,7 @@ use tauri_plugin_log::{Target, TargetKind};
 /// - **TARGET**: Rust module path (`vscodeee::pty::manager`) or
 ///   webview caller location (`webview:index.html:221:13`)
 pub fn build_plugin() -> tauri_plugin_log::Builder {
-    tauri_plugin_log::Builder::new()
+    let mut builder = tauri_plugin_log::Builder::new()
         .targets([
             // All logs go to backend terminal (AI-agent readable)
             Target::new(TargetKind::Stdout),
@@ -35,10 +35,23 @@ pub fn build_plugin() -> tauri_plugin_log::Builder {
         .format(log_format)
         // Default level: Info and above
         .level(log::LevelFilter::Info)
-        // Allow Debug for our own modules when RUST_LOG is set
-        .level_for("vscodeee", log::LevelFilter::Debug)
+        // Our own modules: Info by default
+        .level_for("vscodeee", log::LevelFilter::Info)
         // WebView console logs at Trace level (capture everything)
-        .level_for("webview", log::LevelFilter::Trace)
+        .level_for("webview", log::LevelFilter::Trace);
+
+    // Allow RUST_LOG env var to override vscodeee log level at runtime.
+    // Example: RUST_LOG=vscodeee=debug cargo tauri dev
+    // Check trace before debug to avoid incorrect demotion (e.g. vscodeee=trace contains both).
+    if let Ok(rust_log) = std::env::var("RUST_LOG") {
+        if rust_log.contains("vscodeee") && rust_log.contains("trace") {
+            builder = builder.level_for("vscodeee", log::LevelFilter::Trace);
+        } else if rust_log.contains("vscodeee") && rust_log.contains("debug") {
+            builder = builder.level_for("vscodeee", log::LevelFilter::Debug);
+        }
+    }
+
+    builder
 }
 
 /// Custom log format optimized for AI-agent readability.

@@ -26,7 +26,7 @@ pub fn spawn_monitor(tx: mpsc::Sender<SystemEvent>) {
     std::thread::Builder::new()
         .name("system-event-monitor-macos".into())
         .spawn(|| {
-            log::info!(
+            log::debug!(
                 target: "vscodeee",
                 "macOS system event monitor thread started (stub)"
             );
