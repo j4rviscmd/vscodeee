@@ -72,14 +72,30 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 	readonly onDidBlurMainOrAuxiliaryWindow = this._onDidBlurMainOrAuxiliaryWindow.event;
 
 	readonly onDidChangeDisplay = Event.None;
-	readonly onDidSuspendOS = Event.None;
-	readonly onDidResumeOS = Event.None;
-	readonly onDidChangeOnBatteryPower = Event.None;
-	readonly onDidChangeThermalState = Event.None;
-	readonly onDidChangeSpeedLimit = Event.None;
-	readonly onWillShutdownOS = Event.None;
-	readonly onDidLockScreen = Event.None;
-	readonly onDidUnlockScreen = Event.None;
+
+	private readonly _onDidSuspendOS = this._register(new Emitter<void>());
+	readonly onDidSuspendOS = this._onDidSuspendOS.event;
+
+	private readonly _onDidResumeOS = this._register(new Emitter<void>());
+	readonly onDidResumeOS = this._onDidResumeOS.event;
+
+	private readonly _onDidChangeOnBatteryPower = this._register(new Emitter<boolean>());
+	readonly onDidChangeOnBatteryPower = this._onDidChangeOnBatteryPower.event;
+
+	private readonly _onDidChangeThermalState = this._register(new Emitter<ThermalState>());
+	readonly onDidChangeThermalState = this._onDidChangeThermalState.event;
+
+	private readonly _onDidChangeSpeedLimit = this._register(new Emitter<number>());
+	readonly onDidChangeSpeedLimit = this._onDidChangeSpeedLimit.event;
+
+	private readonly _onWillShutdownOS = this._register(new Emitter<void>());
+	readonly onWillShutdownOS = this._onWillShutdownOS.event;
+
+	private readonly _onDidLockScreen = this._register(new Emitter<void>());
+	readonly onDidLockScreen = this._onDidLockScreen.event;
+
+	private readonly _onDidUnlockScreen = this._register(new Emitter<void>());
+	readonly onDidUnlockScreen = this._onDidUnlockScreen.event;
 
 	private readonly _onDidChangeColorScheme = this._register(new Emitter<IColorScheme>());
 	readonly onDidChangeColorScheme = this._onDidChangeColorScheme.event;
@@ -104,6 +120,8 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 
 		// Wire Tauri window events to VS Code emitters
 		this._wireWindowEvents();
+		// Wire OS system events (suspend, resume, lock, battery, thermal)
+		this._wireSystemEvents();
 		// Wire OS color scheme changes via matchMedia
 		this._wireColorSchemeEvents();
 	}
@@ -146,6 +164,29 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		registerListener<{ window_id: number; fullscreen: boolean }>('vscodeee:window:fullscreen', payload => {
 			this._onDidChangeWindowFullScreen.fire({ windowId: payload.window_id, fullscreen: payload.fullscreen });
 		});
+	}
+
+	/**
+	 * Subscribe to OS system events from the Rust `system_events` module.
+	 *
+	 * Listens for suspend, resume, lock, unlock, shutdown, battery,
+	 * thermal state, and speed limit events and fires the corresponding
+	 * `INativeHostService` events.
+	 */
+	private _wireSystemEvents(): void {
+		const registerListener = <T>(eventName: string, handler: (payload: T) => void) => {
+			listen<T>(eventName, e => handler(e.payload))
+				.then(unlisten => this._register({ dispose: unlisten }));
+		};
+
+		registerListener<void>('vscodeee:system:suspend', () => this._onDidSuspendOS.fire());
+		registerListener<void>('vscodeee:system:resume', () => this._onDidResumeOS.fire());
+		registerListener<void>('vscodeee:system:lock-screen', () => this._onDidLockScreen.fire());
+		registerListener<void>('vscodeee:system:unlock-screen', () => this._onDidUnlockScreen.fire());
+		registerListener<void>('vscodeee:system:will-shutdown', () => this._onWillShutdownOS.fire());
+		registerListener<boolean>('vscodeee:system:battery-power-changed', onBattery => this._onDidChangeOnBatteryPower.fire(onBattery));
+		registerListener<ThermalState>('vscodeee:system:thermal-state-changed', state => this._onDidChangeThermalState.fire(state));
+		registerListener<number>('vscodeee:system:speed-limit-changed', limit => this._onDidChangeSpeedLimit.fire(limit));
 	}
 
 	/**
@@ -215,8 +256,16 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		}
 	}
 
-	/** Returns the native OS window handle. Not implemented in Phase 1. */
+	/** Returns the native OS window handle via the Rust backend. */
 	async getNativeWindowHandle(_windowId: number): Promise<VSBuffer | undefined> {
+		try {
+			const bytes = await invoke<number[] | null>('get_native_window_handle');
+			if (bytes && bytes.length > 0) {
+				return VSBuffer.wrap(new Uint8Array(bytes));
+			}
+		} catch {
+			// Not yet implemented — return undefined
+		}
 		return undefined;
 	}
 
@@ -425,12 +474,14 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		await invoke('fs_show_item_in_folder', { path });
 	}
 
-	async setRepresentedFilename(_path: string, _options?: INativeHostOptions): Promise<void> {
-		// No-op: macOS-specific feature
+	/** Sets the represented filename in the macOS title bar proxy icon via the Rust backend. */
+	async setRepresentedFilename(path: string, _options?: INativeHostOptions): Promise<void> {
+		await invoke('set_represented_filename', { path });
 	}
 
-	async setDocumentEdited(_edited: boolean, _options?: INativeHostOptions): Promise<void> {
-		// No-op: macOS-specific feature
+	/** Sets the macOS document-edited indicator (dot in close button) via the Rust backend. */
+	async setDocumentEdited(edited: boolean, _options?: INativeHostOptions): Promise<void> {
+		await invoke('set_document_edited', { edited });
 	}
 
 	/** Opens the given URL in the system's default browser. */
@@ -638,11 +689,19 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 	// #region Development
 
 	async openDevTools(_options?: Partial<OpenDevToolsOptions> & INativeHostOptions): Promise<void> {
-		return invoke('open_devtools');
+		try {
+			await invoke('open_devtools');
+		} catch {
+			// DevTools unavailable in release builds — silently ignore
+		}
 	}
 
 	async toggleDevTools(_options?: INativeHostOptions): Promise<void> {
-		return invoke('toggle_devtools');
+		try {
+			await invoke('toggle_devtools');
+		} catch {
+			// DevTools unavailable in release builds — silently ignore
+		}
 	}
 
 	async openGPUInfoWindow(): Promise<void> { }
@@ -670,8 +729,23 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 		return result ?? undefined;
 	}
 
-	async lookupAuthorization(_authInfo: AuthInfo): Promise<Credentials | undefined> {
-		return undefined;
+	/** Looks up stored credentials from the OS credential store via the Rust backend (keyring crate). */
+	async lookupAuthorization(authInfo: AuthInfo): Promise<Credentials | undefined> {
+		try {
+			const result = await invoke<{ username: string; password: string } | null>('lookup_authorization', {
+				authInfo: {
+					isProxy: authInfo.isProxy,
+					scheme: authInfo.scheme,
+					host: authInfo.host,
+					port: authInfo.port,
+					realm: authInfo.realm,
+					attempt: authInfo.attempt,
+				}
+			});
+			return result ?? undefined;
+		} catch {
+			return undefined;
+		}
 	}
 
 	async lookupKerberosAuthorization(_url: string): Promise<string | undefined> {

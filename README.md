@@ -26,20 +26,23 @@ Maintain the current functionality of VSCode while achieving the following:
 
 > **Current Phase: Phase 5 — Process Model** 📋
 
-| Phase  | Name                                                         | Goal                                                        |                            Status                             |
-| :----: | ------------------------------------------------------------ | ----------------------------------------------------------- | :-----------------------------------------------------------: |
-|   0    | [Feasibility Spike](#phase-0-feasibility-spike)              | Validate Tauri can host VS Code                             | [✅ Complete](https://github.com/j4rviscmd/vscodeee/issues/7) |
-|   1    | [Foundation Layer](#phase-1-foundation-layer)                | Render workbench shell in Tauri WebView                     |  [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/9)  |
-|   2A   | [Functional File Editing](#phase-2a-functional-file-editing) | Open, edit, and save local files                            | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/17)  |
-| **2B** | [**Editing Polish**](#phase-2b-editing-polish)               | **File watchers, remaining native methods**                 | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/25)  |
-|   3A   | [Window Registry](#phase-3-window-management)                | Dynamic window IDs, scoped IPC, multi-window registry       | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/31)  |
-|   3B   | [Custom Title Bar](#phase-3-window-management)               | Draggable title bar, traffic lights, window controls        | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/34)  |
-|   3C   | [State Persistence](#phase-3-window-management)              | Window position/size + workspace session restore            | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/36)  |
-|   3D   | [Lifecycle Close Handshake](#phase-3-window-management)      | Two-phase close for reliable session restore                | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/39)  |
-| **4**  | [**Native Host Services**](#phase-4-native-host-services-)   | **Extension scanner, OS theme, native host modularization** | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/48)  |
-|   5    | [Process Model](#phase-5-process-model)                      | Extension Host, Terminal (PTY), Shared Process              |                        **📋 Up Next**                         |
-|   6    | [Platform Features](#phase-6-platform-features)              | Auto-update, native menus, system tray                      |                          📋 Planned                           |
-|   7    | [Build & Packaging](#phase-7-build--packaging)               | Installers, code signing, CI/CD                             |                          📋 Planned                           |
+| Phase  | Name                                                         | Goal                                                          |                            Status                             |
+| :----: | ------------------------------------------------------------ | ------------------------------------------------------------- | :-----------------------------------------------------------: |
+|   0    | [Feasibility Spike](#phase-0-feasibility-spike)              | Validate Tauri can host VS Code                               | [✅ Complete](https://github.com/j4rviscmd/vscodeee/issues/7) |
+|   1    | [Foundation Layer](#phase-1-foundation-layer)                | Render workbench shell in Tauri WebView                       |  [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/9)  |
+|   2A   | [Functional File Editing](#phase-2a-functional-file-editing) | Open, edit, and save local files                              | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/17)  |
+| **2B** | [**Editing Polish**](#phase-2b-editing-polish)               | **File watchers, remaining native methods**                   | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/25)  |
+|   3A   | [Window Registry](#phase-3-window-management)                | Dynamic window IDs, scoped IPC, multi-window registry         | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/31)  |
+|   3B   | [Custom Title Bar](#phase-3-window-management)               | Draggable title bar, traffic lights, window controls          | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/34)  |
+|   3C   | [State Persistence](#phase-3-window-management)              | Window position/size + workspace session restore              | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/36)  |
+|   3D   | [Lifecycle Close Handshake](#phase-3-window-management)      | Two-phase close for reliable session restore                  | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/39)  |
+| **4**  | [**Native Host Services**](#phase-4-native-host-services-)   | **Extension scanner, OS theme, native host modularization**   | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/48)  |
+|   5A   | [Extension Host](#phase-5-process-model)                     | Node.js sidecar + WebSocket ↔ Rust relay ↔ Unix Socket        | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/58)  |
+| **5B** | [**Terminal PTY**](#phase-5-process-model)                   | **Rust PTY → Tauri IPC → TauriTerminalBackend → Terminal UI** |                        **📋 Up Next**                         |
+|   5C   | [Shared Process Elimination](#phase-5-process-model)         | Abolish Shared Process; services in WebView/Rust              |                          📋 Planned                           |
+|   5D   | [Extension ESM Fix](#phase-5-process-model)                  | Fix ESM module resolution for built-in extensions             |                          📋 Planned                           |
+|   6    | [Platform Features](#phase-6-platform-features)              | Auto-update, native menus, system tray                        |                          📋 Planned                           |
+|   7    | [Build & Packaging](#phase-7-build--packaging)               | Installers, code signing, CI/CD                               |                          📋 Planned                           |
 
 ---
 
@@ -180,7 +183,14 @@ Built-in extension scanning and OS theme detection for the Tauri backend. Modula
 
 ### Phase 5: Process Model
 
-Extension Host via Node.js sidecar + named pipe, Terminal via Rust `portable-pty`, Shared Process services.
+Extension Host via Node.js sidecar + named pipe, Terminal via Rust `portable-pty`, Shared Process elimination.
+
+| Sub-task                      | Description                                                                                                                             |   Status   |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | :--------: |
+| Extension Host (Node sidecar) | Node.js sidecar + WebSocket ↔ Rust relay ↔ Unix Socket full pipeline (PR [#58](https://github.com/j4rviscmd/vscodeee/pull/58))          |     ✅     |
+| Terminal PTY integration      | Rust `portable-pty` → Tauri IPC → `TauriTerminalBackend` → VS Code Terminal UI ([#87](https://github.com/j4rviscmd/vscodeee/issues/87)) | 📋 Planned |
+| Shared Process elimination    | Abolish Shared Process sidecar; implement services directly in WebView/Rust ([#88](https://github.com/j4rviscmd/vscodeee/issues/88))    | 📋 Planned |
+| Extension ESM fix             | Fix ESM module resolution for built-in extensions in Extension Host ([#93](https://github.com/j4rviscmd/vscodeee/issues/93))            | 📋 Planned |
 
 ### Phase 6: Platform Features
 
@@ -205,6 +215,7 @@ Tauri build pipeline, code signing (macOS/Windows), installers (.dmg, .msi, .App
 ┌──────────────────────────────────────────┐
 │           Tauri WebView (Renderer)       │
 │  workbench.html + VS Code TypeScript     │
+│  • Extension Gallery / Management        │
 └──────────────┬───────────────────────────┘
                │  invoke / emit (Tauri IPC)
 ┌──────────────▼───────────────────────────┐
@@ -216,11 +227,12 @@ Tauri build pipeline, code signing (macOS/Windows), installers (.dmg, .msi, .App
 └──────────────┬───────────────────────────┘
                │  socket / named pipe
 ┌──────────────▼───────────────────────────┐
-│         Node.js Sidecar Processes        │
+│         Node.js Sidecar Process          │
 │  • Extension Host                        │
-│  • Shared Process                        │
 └──────────────────────────────────────────┘
 ```
+
+> **Note**: Shared Process (upstream VS Code's hidden renderer for gallery, sync, telemetry) is **eliminated** in VSCodeee. Its services are implemented directly in the WebView or Rust backend — see [#88](https://github.com/j4rviscmd/vscodeee/issues/88).
 
 ## MVP Excluded Features
 
@@ -233,6 +245,19 @@ The following features depend on Chrome DevTools Protocol (CDP), which has no pu
 | Playwright integration                    | CDP-dependent browser automation           |
 | Element inspection (`getElementData`)     | CDP-dependent DOM inspection               |
 | Console log capture                       | CDP-dependent programmatic console access  |
+
+The following Native Host Service features are deferred to post-MVP:
+
+| Feature                    | Reason                                                                                                                             |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| System proxy resolution    | Requires platform-specific APIs (CFNetwork, WinHTTP, libproxy). The `resolve_proxy` command returns `None` (direct connection).    |
+| System certificate loading | The `load_certificates` command returns an empty list. Extensions handle their own cert loading.                                   |
+| Kerberos authentication    | `lookupKerberosAuthorization` returns `undefined`. Requires a Kerberos library — rarely needed outside enterprise AD environments. |
+| Window splash persistence  | `saveWindowSplash` is a no-op. Splash data is persisted via `localStorage` through `ISplashStorageService` instead.                |
+| macOS Touch Bar            | Not supported by Tauri's WebView. The Touch Bar API methods are no-ops.                                                            |
+| macOS tab management       | Window tab APIs (`newWindowTab`, `mergeAllWindowTabs`, etc.) are no-ops.                                                           |
+| GPU info / content tracing | `openGPUInfoWindow`, `openContentTracingWindow`, `startTracing`, `stopTracing` are no-ops.                                         |
+| Screenshot capture         | `getScreenshot` returns `undefined`. Requires platform-specific screen capture APIs.                                               |
 
 > [!NOTE]
 > These features may be revisited if Tauri adds CDP support in the future, or if alternative approaches become viable.
