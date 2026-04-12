@@ -1,10 +1,26 @@
 <!DOCTYPE html>
+<!--
+	Web Worker Extension Host IFrame
+
+	This iframe serves as the bridge between the VS Code workbench and the
+	Web Worker-based extension host. It performs parent-origin validation
+	(via SHA-256 hostname subdomain check), bootstraps NLS configuration
+	from the parent window, and creates a dedicated Web Worker for running
+	extension host code.
+
+	Query parameters:
+	- vscodeWebWorkerExtHostId — Unique ID for correlating messages with the parent.
+	- debugged — If present, names the worker "DebugExtensionHostWorker" (used by js-debug).
+	- parentOrigin — Origin of the parent window for cross-origin message validation.
+	- salt — Random UUID used in the parent-origin hash computation.
+	- vscode-coi — Cross-Origin Isolation indicator appended by the parent.
+-->
 <html>
 	<head>
 		<meta http-equiv="Content-Security-Policy" content="
 			default-src 'none';
 			child-src 'self' data: blob:;
-			script-src 'self' 'unsafe-eval' 'sha256-cl8ijlOzEe+0GRCQNJQu2k6nUQ0fAYNYIuuKEm72JDs=' https: http://localhost:* blob:;
+			script-src 'self' 'unsafe-eval' 'sha256-cl8ijlOzEe+0GRCQNJQu2k6nUQ0fAYNYIuuKEm72JDs=' https: http://localhost:* blob: vscode-file:;
 			connect-src 'self' https: wss: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* vscode-file:;"/>
 	</head>
 	<body>
@@ -56,6 +72,11 @@
 		return sendError(new Error(`Expected '${requiredSubdomain}' as subdomain!`));
 	})();
 
+	/**
+	 * Send an error message back to the parent window.
+	 *
+	 * @param {Error} error - The error to report. If falsy, empty strings are sent.
+	 */
 	function sendError(error) {
 		window.parent.postMessage({
 			vscodeWebWorkerExtHostId,
@@ -67,6 +88,13 @@
 		}, '*');
 	}
 
+	/**
+	 * Begin the extension host worker bootstrap process.
+	 *
+	 * Sets up a one-time `onmessage` listener to receive NLS configuration
+	 * and the worker URL from the parent window, then requests that data
+	 * by posting a `vscode.bootstrap.nls` message upward.
+	 */
 	function start() {
 
 		// Before we can load the worker, we need to get the current set of NLS
@@ -89,6 +117,21 @@
 		}, '*');
 	}
 
+	/**
+	 * Create the Web Worker that runs the extension host.
+	 *
+	 * Builds a `Blob` script that injects NLS messages, NLS language, and the
+	 * file root into the worker's global scope before dynamically importing
+	 * the extension host main module. The worker communicates with this iframe
+	 * via `postMessage`, and this iframe relays messages to/from the parent window.
+	 *
+	 * Also handles nested worker lifecycle (`_newWorker`, `_terminateWorker` messages).
+	 *
+	 * @param {string} workerUrl - URL of the extension host worker main module.
+	 * @param {string} fileRoot - The base file root path for `vscode-file://` resolution.
+	 * @param {object} nlsMessages - Localized message bundles keyed by message key.
+	 * @param {string} nlsLanguage - The current UI language identifier (e.g. "en", "ja").
+	 */
 	function createWorker(workerUrl, fileRoot, nlsMessages, nlsLanguage) {
 		try {
 			if (globalThis.crossOriginIsolated) {
