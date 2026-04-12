@@ -76,7 +76,7 @@ impl ChannelRouter {
         // the channel name, then route to the registered handler.
         // For Phase 2, incoming IPC messages are silently dropped
         // since all services use direct invoke() calls instead.
-        log::info!(
+        log::debug!(
             target: "vscodeee::ipc::channel",
             "Received {} bytes from window {} (no channel routing yet, dropping)",
             raw.len(),
