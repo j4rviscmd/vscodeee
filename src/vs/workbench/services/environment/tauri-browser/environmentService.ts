@@ -53,9 +53,9 @@ export class TauriWorkbenchEnvironmentService extends BrowserWorkbenchEnvironmen
 		workspaceId: string,
 		logsHome: URI,
 		options: IWorkbenchConstructionOptions,
-		productService: IProductService
+		private readonly tauriProductService: IProductService
 	) {
-		super(workspaceId, logsHome, options, productService);
+		super(workspaceId, logsHome, options, tauriProductService);
 	}
 
 	/**
@@ -77,7 +77,7 @@ export class TauriWorkbenchEnvironmentService extends BrowserWorkbenchEnvironmen
 	 * User's home directory (from Rust `dirs::home_dir()`).
 	 */
 	@memoize
-	override get userHome(): URI {
+	get userHome(): URI {
 		if (this.tauriConfig.homeDir) {
 			return URI.file(this.tauriConfig.homeDir);
 		}
@@ -144,5 +144,18 @@ export class TauriWorkbenchEnvironmentService extends BrowserWorkbenchEnvironmen
 		// The webview pre/ files are at vs/workbench/contrib/webview/browser/pre/
 		// under this directory.
 		return `vscode-file://vscode-app${this.tauriConfig.frontendDist}/vs/workbench/contrib/webview/browser/pre/`;
+	}
+
+	/**
+	 * Path to the user extensions directory.
+	 *
+	 * In desktop VS Code this comes from `AbstractNativeEnvironmentService`.
+	 * For Tauri we derive it from `homeDir` using the product's data folder
+	 * name (e.g., `~/.vscode-oss/extensions/`).
+	 */
+	@memoize
+	get extensionsPath(): string {
+		const dataFolderName = this.tauriProductService.dataFolderName ?? 'vscodeee';
+		return URI.joinPath(this.userHome, dataFolderName, 'extensions').fsPath;
 	}
 }

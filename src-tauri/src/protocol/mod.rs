@@ -76,6 +76,16 @@ pub fn init_protocol_state(app: &tauri::App) -> Arc<ProtocolState> {
         }
     }
 
+    // Register user extensions directory as a valid root.
+    // This mirrors Electron's ProtocolMainService which registers `extensionsPath`.
+    // Must match product.json's `dataFolderName` (currently `.vscodeee`).
+    if let Some(home) = dirs::home_dir() {
+        let extensions_dir = home.join(".vscodeee").join("extensions");
+        // Ensure the directory exists so canonicalize succeeds on first run.
+        let _ = std::fs::create_dir_all(&extensions_dir);
+        roots.add_root(&extensions_dir);
+    }
+
     // Detect dev build: if Tauri was invoked via `cargo tauri dev`, the
     // TAURI_DEV environment variable is set.
     let is_dev = cfg!(debug_assertions);

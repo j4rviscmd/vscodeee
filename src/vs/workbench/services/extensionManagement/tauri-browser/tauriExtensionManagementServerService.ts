@@ -11,9 +11,9 @@ import { IChannel } from '../../../../base/parts/ipc/common/ipc.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { ILabelService } from '../../../../platform/label/common/label.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
-import { WebExtensionManagementService } from '../common/webExtensionManagementService.js';
 import { IExtension } from '../../../../platform/extensions/common/extensions.js';
 import { RemoteExtensionManagementService } from '../common/remoteExtensionManagementService.js';
+import { TauriExtensionManagementService } from './tauriExtensionManagementService.js';
 
 /**
  * Extension management server service for the Tauri desktop environment.
@@ -66,13 +66,11 @@ export class TauriExtensionManagementServerService implements IExtensionManageme
 			};
 		}
 
-		// In Tauri, we use WebExtensionManagementService as the backing service
-		// for the local server, since extensions are scanned via Rust and loaded
-		// through the web extension scanner pipeline. The key difference from
-		// the browser version is that we assign this to localExtensionManagementServer
-		// (not webExtensionManagementServer), which prevents workspace-type
-		// extensions from being disabled by the enablement service.
-		const extensionManagementService = instantiationService.createInstance(WebExtensionManagementService);
+		// In Tauri, we use TauriExtensionManagementService which overrides
+		// getTargetPlatform() to return the native platform (e.g., darwin-arm64)
+		// instead of TargetPlatform.WEB. This allows installing ALL extensions
+		// from the gallery, not just web-compatible ones.
+		const extensionManagementService = instantiationService.createInstance(TauriExtensionManagementService);
 		this.localExtensionManagementServer = {
 			id: 'local',
 			extensionManagementService,
