@@ -573,6 +573,38 @@ async function copyCodiconFont(outDir: string): Promise<void> {
 }
 
 /**
+ * Build the console-interceptor mini-package that forwards all console.*
+ * calls to the Rust backend via tauri-plugin-log.
+ *
+ * The source lives in src/vs/code/tauri-browser/workbench/console-interceptor/
+ * and the HTML references console-interceptor/dist/console-interceptor.js.
+ * We use esbuild (already available as a dependency) to bundle the TypeScript
+ * source into a single IIFE script in the output directory.
+ */
+async function buildConsoleInterceptor(outDir: string): Promise<void> {
+	const entryPath = path.join(REPO_ROOT, SRC_DIR, 'vs/code/tauri-browser/workbench/console-interceptor/src/index.ts');
+	const outPath = path.join(REPO_ROOT, outDir, 'vs/code/tauri-browser/workbench/console-interceptor/dist/console-interceptor.js');
+
+	if (!fs.existsSync(entryPath)) {
+		console.log('[console-interceptor] Source not found, skipping');
+		return;
+	}
+
+	await esbuild.build({
+		entryPoints: [entryPath],
+		outfile: outPath,
+		bundle: true,
+		format: 'iife',
+		target: ['es2020'],
+		minify: false,
+		sourcemap: 'inline',
+		logLevel: 'warning',
+	});
+
+	console.log('[console-interceptor] Built dist/console-interceptor.js');
+}
+
+/**
  * Copy curated resource files for production bundles.
  * Uses specific per-target patterns matching the old build's vscodeResourceIncludes,
  * serverResourceIncludes, etc. Only called by bundle() - transpile uses copyAllNonTsFiles().
@@ -1184,6 +1216,9 @@ ${tslib}`,
 	// Copy resources (curated per-target patterns for production)
 	await copyResources(outDir, target);
 
+	// Build console-interceptor (Tauri-specific, forwards console.* to Rust backend)
+	await buildConsoleInterceptor(outDir);
+
 	// Compile standalone TypeScript files (like Electron preload scripts) that cannot be bundled
 	await compileStandaloneFiles(outDir, doMinify, target);
 
@@ -1217,6 +1252,7 @@ async function watch(): Promise<void> {
 		await transpile(outDir, false);
 		await copyAllNonTsFiles(outDir, false);
 		await copyCodiconFont(outDir);
+		await buildConsoleInterceptor(outDir);
 		console.log(`Finished transpilation with 0 errors after ${Date.now() - t1} ms`);
 	} catch (err) {
 		console.error('[watch] Initial build failed:', err);
@@ -1244,6 +1280,11 @@ async function watch(): Promise<void> {
 					const destPath = path.join(REPO_ROOT, outDir, relativePath.replace(/\.ts$/, '.js'));
 					return transpileFile(srcPath, destPath);
 				}));
+			}
+
+			// Rebuild console-interceptor if its source changed
+			if (tsFiles.some(f => f.includes('console-interceptor'))) {
+				await buildConsoleInterceptor(outDir);
 			}
 
 			// Copy changed resource files in parallel
@@ -1356,6 +1397,7 @@ async function main(): Promise<void> {
 					await transpile(outDir, options.excludeTests);
 					await copyAllNonTsFiles(outDir, options.excludeTests);
 					await copyCodiconFont(outDir);
+					await buildConsoleInterceptor(outDir);
 					console.log(`[transpile] Done in ${Date.now() - t1}ms`);
 				}
 				break;
