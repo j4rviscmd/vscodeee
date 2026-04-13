@@ -69,6 +69,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(logging::build_plugin().build())
         .manage(pty::manager::PtyManager::new())
         .manage(commands::file_watcher::FileWatcherState::new())
@@ -260,6 +261,27 @@ pub fn run() {
             // Initialize protocol state with app root directories.
             let state = protocol::init_protocol_state(app);
             let _ = protocol_state.set(state);
+
+            // ── Deep-link handler ──
+            // Forward deep-link URLs (vscodeee://*) to the WebView so the
+            // TypeScript URI handler can process OAuth callbacks.
+            {
+                use tauri::{Emitter, Listener};
+                let handle = app.handle().clone();
+                app.listen("deep-link://new-url", move |event| {
+                    // The event payload is a JSON-serialized Vec<String> of URLs.
+                    if let Ok(urls) = serde_json::from_str::<Vec<String>>(event.payload()) {
+                        for url in &urls {
+                            log::info!(
+                                target: "vscodeee::deep_link",
+                                "Received deep-link URL: {url}"
+                            );
+                            // Emit to all WebView windows so the URI handler can pick it up.
+                            let _ = handle.emit("deep-link-open", url.as_str());
+                        }
+                    }
+                });
+            }
 
             // Initialize IPC event bus with app handle.
             let app_handle = app.handle().clone();

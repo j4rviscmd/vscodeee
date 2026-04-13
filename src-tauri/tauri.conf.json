@@ -30,6 +30,13 @@
       "csp": "default-src 'self'; img-src 'self' data: blob: https: vscode-file:; script-src 'self' 'unsafe-eval' 'unsafe-inline' blob: vscode-file:; style-src 'self' 'unsafe-inline' vscode-file:; connect-src 'self' https: ws: wss: tauri: ipc: vscode-file:; font-src 'self' https: vscode-file:; frame-src 'self'"
     }
   },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["vscodeee"]
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
