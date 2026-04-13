@@ -69,6 +69,7 @@ import { IWorkbenchConstructionOptions, IWorkspace, IWorkspaceProvider } from '.
 import { isFolderToOpen, isWorkspaceToOpen } from '../../platform/window/common/window.js';
 import { invoke, listen } from '../../platform/tauri/common/tauriApi.js';
 import { ITauriWindowService, TauriWindowService } from '../../platform/window/tauri-browser/windowService.js';
+import { TauriURLCallbackProvider } from './urlCallbackProvider.js';
 
 export class TauriDesktopMain extends Disposable {
 
@@ -155,8 +156,17 @@ export class TauriDesktopMain extends Disposable {
 		// Workspace provider handles Open Folder / Open Workspace by reloading
 		// the page with ?folder= or ?workspace= query params (same pattern as VS Code web).
 		const workspaceProvider = new TauriWorkspaceProvider(this.workspace);
+
+		// URL callback provider — bridges Tauri deep-link events to VS Code's IURLService.
+		// This enables OAuth callback flows (GitHub authentication, etc.).
+		const urlCallbackProvider = new TauriURLCallbackProvider(product.urlProtocol, listen);
+		const deepLinkDisposable = await urlCallbackProvider.startListening();
+		this._register(deepLinkDisposable);
+		this._register(urlCallbackProvider);
+
 		const workbenchOptions: IWorkbenchConstructionOptions = {
 			workspaceProvider,
+			urlCallbackProvider,
 		};
 
 		const environmentService = new TauriWorkbenchEnvironmentService(

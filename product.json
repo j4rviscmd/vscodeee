@@ -31,7 +31,7 @@
 	"licenseFileName": "LICENSE.txt",
 	"reportIssueUrl": "https://github.com/j4rviscmd/vscodeee/issues/new",
 	"nodejsRepository": "https://nodejs.org",
-	"urlProtocol": "code-oss",
+	"urlProtocol": "vscodeee",
 	"extensionsGallery": {
 		"serviceUrl": "https://open-vsx.org/vscode/gallery",
 		"itemUrl": "https://open-vsx.org/vscode/item",
