@@ -1897,7 +1897,9 @@ function getQuickPickEntries(themes: IWorkbenchTheme[], currentTheme: IWorkbench
 	}
 	if (showCurrentTheme) {
 		picks.push({ type: 'separator', label: localize('current', "current") });
-		picks.push({ label: currentTheme.label, id: currentTheme.id });
+		// Fallback to settingsId when label is empty (unloaded placeholder theme)
+		const currentLabel = currentTheme.label || currentTheme.settingsId || currentTheme.id;
+		picks.push({ label: currentLabel, id: currentTheme.id });
 	}
 	return picks;
 }
@@ -1915,6 +1917,7 @@ export class SetColorThemeAction extends ExtensionAction {
 		@IWorkbenchThemeService private readonly workbenchThemeService: IWorkbenchThemeService,
 		@IQuickInputService private readonly quickInputService: IQuickInputService,
 		@IWorkbenchExtensionEnablementService private readonly extensionEnablementService: IWorkbenchExtensionEnablementService,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
 	) {
 		super(SetColorThemeAction.ID, SetColorThemeAction.TITLE.value, SetColorThemeAction.DisabledClass, false);
 		this._register(Event.any<any>(extensionService.onDidChangeExtensions, workbenchThemeService.onDidColorThemeChange)(() => this.update(), this));
@@ -1938,7 +1941,19 @@ export class SetColorThemeAction extends ExtensionAction {
 		if (!this.computeEnablement(colorThemes)) {
 			return;
 		}
-		const currentTheme = this.workbenchThemeService.getColorTheme();
+		// When the current theme is an unloaded placeholder (e.g. theme data not yet
+		// persisted to storage in Tauri), its label is empty. Fall back to the
+		// matching entry from the registry which always carries the correct label.
+		let currentTheme: IWorkbenchColorTheme = this.workbenchThemeService.getColorTheme();
+		if (!currentTheme.label) {
+			// The placeholder's settingsId (e.g. '__vs-dark') does not match the registry.
+			// Use the actual user setting ('workbench.colorTheme') to find the correct theme.
+			const configuredThemeId = this.configurationService.getValue<string>('workbench.colorTheme');
+			const resolved = colorThemes.find(t => t.settingsId === configuredThemeId)
+				?? colorThemes.find(t => t.settingsId === currentTheme.settingsId)
+				?? currentTheme;
+			currentTheme = resolved;
+		}
 
 		const delayer = new Delayer<any>(100);
 		const picks = getQuickPickEntries(colorThemes, currentTheme, this.extension, showCurrentTheme);
