@@ -65,15 +65,19 @@
 	<script src="console-interceptor/dist/console-interceptor.js"></script>
 	<script>
 		// Wait for Tauri API to be available, then install the interceptor.
-	// __TAURI__ is injected by the webview runtime, but may not be ready at parse time.
-	(function tryInstall() {
+		// __TAURI__ is injected by the webview runtime, but may not be ready at parse time.
+		// Guard against console-interceptor.js failing to load (e.g. missing dist build).
+		(function tryInstall() {
+			if (typeof installConsoleInterceptor !== 'function') {
+				return; // Script not loaded — skip silently
+			}
 			if (window.__TAURI__?.core?.invoke) {
 				installConsoleInterceptor(window.__TAURI__.core.invoke, { passthrough: true });
 				return;
 			}
 			setTimeout(tryInstall, 50);
 		})();
-		</script>
+	</script>
 	</head>
 <body aria-label="">
 </body>
