@@ -63,7 +63,8 @@
 		<script src="console-interceptor/dist/console-interceptor.js"></script>
 		<script>
 			// Install immediately — MUST run before any other code that uses console.*
-			if (window.__TAURI__) {
+			// Guard against console-interceptor.js failing to load (e.g. missing dist build).
+			if (typeof installConsoleInterceptor === 'function' && window.__TAURI__) {
 				installConsoleInterceptor(window.__TAURI__.core.invoke, { passthrough: true });
 			}
 		</script>
