@@ -212,6 +212,13 @@ pub fn run() {
             commands::file_watcher::fs_watch_start,
             commands::file_watcher::fs_watch_stop,
             commands::file_watcher::fs_watch_stop_all,
+            // ── Extension management commands ──
+            commands::extension_management::ext_extract_vsix,
+            commands::extension_management::ext_read_vsix_manifest,
+            commands::extension_management::ext_delete_extension,
+            commands::extension_management::ext_scan_installed,
+            commands::extension_management::ext_get_target_platform,
+            commands::extension_management::ext_compute_extension_size,
         ])
         .setup(move |app| {
             log::info!(target: "vscodeee", "Tauri app started");
