@@ -185,12 +185,13 @@ Built-in extension scanning and OS theme detection for the Tauri backend. Modula
 
 Extension Host via Node.js sidecar + named pipe, Terminal via Rust `portable-pty`, Shared Process elimination.
 
-| Sub-task                      | Description                                                                                                                                |   Status   |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | :--------: |
-| Extension Host (Node sidecar) | Node.js sidecar + WebSocket ↔ Rust relay ↔ Unix Socket full pipeline (PR [#58](https://github.com/j4rviscmd/vscodeee/pull/58))             |     ✅     |
-| Terminal PTY integration      | Rust `portable-pty` → Tauri IPC → `TauriTerminalBackend` → VS Code Terminal UI (PR [#105](https://github.com/j4rviscmd/vscodeee/pull/105)) |     ✅     |
-| Shared Process elimination    | Abolish Shared Process sidecar; implement services directly in WebView/Rust ([#88](https://github.com/j4rviscmd/vscodeee/issues/88))       | 📋 Planned |
-| Extension ESM fix             | Fix ESM module resolution for built-in extensions in Extension Host (PR [#103](https://github.com/j4rviscmd/vscodeee/pull/103))            |     ✅     |
+| Sub-task                      | Description                                                                                                                                                 |   Status   |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------: |
+| Extension Host (Node sidecar) | Node.js sidecar + WebSocket ↔ Rust relay ↔ Unix Socket full pipeline (PR [#58](https://github.com/j4rviscmd/vscodeee/pull/58))                              |     ✅     |
+| Terminal PTY integration      | Rust `portable-pty` → Tauri IPC → `TauriTerminalBackend` → VS Code Terminal UI (PR [#105](https://github.com/j4rviscmd/vscodeee/pull/105))                  |     ✅     |
+| Shared Process elimination    | Abolish Shared Process sidecar; implement services directly in WebView/Rust ([#88](https://github.com/j4rviscmd/vscodeee/issues/88))                        | 📋 Planned |
+| Extension ESM fix             | Fix ESM module resolution for built-in extensions in Extension Host (PR [#103](https://github.com/j4rviscmd/vscodeee/pull/103))                             |     ✅     |
+| OAuth authentication          | `tauri-plugin-deep-link` + `TauriURLCallbackProvider` for GitHub OAuth callback flow (PR [#112](https://github.com/j4rviscmd/vscodeee/pull/112))             |     ✅     |
 
 ### Phase 6: Platform Features
 
@@ -222,6 +223,7 @@ Tauri build pipeline, code signing (macOS/Windows), installers (.dmg, .msi, .App
 │           Tauri Rust Backend             │
 │  • Custom Protocol (vscode-file://)      │
 │  • PTY Manager (portable-pty)            │
+│  • Deep-Link (vscodeee:// OAuth)         │
 │  • Window Management                     │
 │  • Native Host Services                  │
 └──────────────┬───────────────────────────┘
@@ -250,7 +252,7 @@ The following Native Host Service features are deferred to post-MVP:
 
 | Feature                    | Reason                                                                                                                                                                                      |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Microsoft Account login    | MVP supports GitHub authentication only. Microsoft authentication depends on `@azure/msal-node` and will be implemented post-MVP ([#101](https://github.com/j4rviscmd/vscodeee/issues/101)) |
+| Microsoft Account login    | MVP supports GitHub authentication only. Microsoft authentication depends on `@azure/msal-node` and will be implemented post-MVP.                                                           |
 | System proxy resolution    | Requires platform-specific APIs (CFNetwork, WinHTTP, libproxy). The `resolve_proxy` command returns `None` (direct connection).                                                             |
 | System certificate loading | The `load_certificates` command returns an empty list. Extensions handle their own cert loading.                                                                                            |
 | Kerberos authentication    | `lookupKerberosAuthorization` returns `undefined`. Requires a Kerberos library — rarely needed outside enterprise AD environments.                                                          |
