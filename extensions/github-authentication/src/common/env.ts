@@ -17,6 +17,8 @@ const VALID_DESKTOP_CALLBACK_SCHEMES = [
 	// list until we can figure out a way to fix this behavior in browsers.
 	// 'code-oss',
 	'vscode-wsl',
+	// VS Codeee (Tauri) — uses tauri-plugin-deep-link for OAuth callbacks
+	'vscodeee',
 ];
 
 export function isSupportedClient(uri: Uri): boolean {
