@@ -767,29 +767,47 @@ async function transpileExtensions(): Promise<void> {
 	const extensionsDir = path.join(REPO_ROOT, 'extensions');
 	const entries = await fs.promises.readdir(extensionsDir, { withFileTypes: true });
 
-	const extensionDirs: string[] = [];
+	// Each transpile target is { baseDir, tsconfigPath, label } where:
+	// - baseDir: directory containing tsconfig.json (used to resolve rootDir/outDir)
+	// - tsconfigPath: absolute path to tsconfig.json
+	// - label: human-readable name for logging (e.g. "json-language-features/client")
+	interface TranspileTarget {
+		baseDir: string;
+		tsconfigPath: string;
+		label: string;
+	}
+
+	const targets: TranspileTarget[] = [];
 	for (const entry of entries) {
 		if (!entry.isDirectory()) {
 			continue;
 		}
-		const tsconfigPath = path.join(extensionsDir, entry.name, 'tsconfig.json');
+		const extDir = path.join(extensionsDir, entry.name);
+		const rootTsconfig = path.join(extDir, 'tsconfig.json');
 		try {
-			await fs.promises.access(tsconfigPath);
-			extensionDirs.push(entry.name);
+			await fs.promises.access(rootTsconfig);
+			targets.push({ baseDir: extDir, tsconfigPath: rootTsconfig, label: entry.name });
 		} catch {
-			// No tsconfig.json — skip (e.g. theme-only extensions)
+			// No root tsconfig.json — check for client/server sub-projects
+			// (e.g. json-language-features, css-language-features, html-language-features)
+			for (const subDir of ['client', 'server']) {
+				const subTsconfig = path.join(extDir, subDir, 'tsconfig.json');
+				try {
+					await fs.promises.access(subTsconfig);
+					targets.push({ baseDir: path.join(extDir, subDir), tsconfigPath: subTsconfig, label: `${entry.name}/${subDir}` });
+				} catch {
+					// No tsconfig in sub-directory either — skip
+				}
+			}
 		}
 	}
 
-	console.log(`[transpile-extensions] Found ${extensionDirs.length} extensions with tsconfig.json`);
+	console.log(`[transpile-extensions] Found ${targets.length} transpile targets`);
 
 	let totalFiles = 0;
 	let esmCount = 0;
 
-	await Promise.all(extensionDirs.map(async (extName) => {
-		const extDir = path.join(extensionsDir, extName);
-		const tsconfigPath = path.join(extDir, 'tsconfig.json');
-
+	await Promise.all(targets.map(async ({ baseDir, tsconfigPath, label: _label }) => {
 		// Read tsconfig to determine rootDir and outDir (JSONC — strip comments and trailing commas)
 		const tsconfigRaw = await fs.promises.readFile(tsconfigPath, 'utf-8');
 		const tsconfigClean = tsconfigRaw
@@ -805,8 +823,8 @@ async function transpileExtensions(): Promise<void> {
 		const rootDir = tsconfig.compilerOptions?.rootDir ?? './src';
 		const outDir = tsconfig.compilerOptions?.outDir ?? './out';
 
-		const srcDir = path.resolve(extDir, rootDir);
-		const destDir = path.resolve(extDir, outDir);
+		const srcDir = path.resolve(baseDir, rootDir);
+		const destDir = path.resolve(baseDir, outDir);
 
 		// Check if srcDir exists
 		try {
@@ -817,13 +835,18 @@ async function transpileExtensions(): Promise<void> {
 
 		// Determine output format from package.json "type" field.
 		// Extensions with "type": "module" use ESM; all others use CJS.
+		// Look for package.json in the base directory first, then fall back to the
+		// extension root (parent of client/server).
 		let isESM = false;
-		const packageJsonPath = path.join(extDir, 'package.json');
-		try {
-			const packageJson = JSON.parse(await fs.promises.readFile(packageJsonPath, 'utf-8'));
-			isESM = packageJson.type === 'module';
-		} catch {
-			// No package.json or parse error — default to CJS
+		for (const pkgDir of [baseDir, path.dirname(baseDir)]) {
+			const packageJsonPath = path.join(pkgDir, 'package.json');
+			try {
+				const packageJson = JSON.parse(await fs.promises.readFile(packageJsonPath, 'utf-8'));
+				isESM = packageJson.type === 'module';
+				break;
+			} catch {
+				// No package.json or parse error — try next
+			}
 		}
 
 		if (isESM) {
@@ -875,7 +898,7 @@ async function transpileExtensions(): Promise<void> {
 		}));
 	}));
 
-	console.log(`[transpile-extensions] Transpiled ${totalFiles} files across ${extensionDirs.length} extensions (${esmCount} ESM, ${extensionDirs.length - esmCount} CJS)`);
+	console.log(`[transpile-extensions] Transpiled ${totalFiles} files across ${targets.length} targets (${esmCount} ESM, ${targets.length - esmCount} CJS)`);
 }
 
 // ============================================================================
