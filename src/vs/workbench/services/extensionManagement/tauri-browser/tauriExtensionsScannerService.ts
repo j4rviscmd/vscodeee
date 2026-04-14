@@ -19,7 +19,7 @@ import { URI } from '../../../../base/common/uri.js';
 import { areSameExtensions, getGalleryExtensionId } from '../../../../platform/extensionManagement/common/extensionManagementUtil.js';
 import { Metadata, IGalleryExtension } from '../../../../platform/extensionManagement/common/extensionManagement.js';
 import { ExtensionType, IRelaxedExtensionManifest } from '../../../../platform/extensions/common/extensions.js';
-import { IScannedExtension, IWebExtensionsScannerService } from '../common/extensionManagement.js';
+import { IScannedExtension, IWebExtensionsScannerService, ScanOptions } from '../common/extensionManagement.js';
 import { WebExtensionsScannerService } from '../browser/webExtensionsScannerService.js';
 import { IBrowserWorkbenchEnvironmentService } from '../../environment/browser/environmentService.js';
 import { IBuiltinExtensionsScannerService } from '../../../../platform/extensions/common/extensions.js';
@@ -38,12 +38,15 @@ import { InstantiationType, registerSingleton } from '../../../../platform/insta
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { TargetPlatform } from '../../../../platform/extensions/common/extensions.js';
 import { UriComponents } from '../../../../base/common/uri.js';
+import { joinPath } from '../../../../base/common/resources.js';
+import { localizeManifest } from '../../../../platform/extensionManagement/common/extensionNls.js';
 
 interface IStoredWebExtension {
 	readonly identifier: { id: string; uuid?: string };
 	readonly version: string;
 	readonly location: UriComponents;
 	readonly manifest?: IRelaxedExtensionManifest;
+	readonly fallbackPackageNLSUri?: UriComponents;
 	readonly metadata?: Metadata;
 }
 
@@ -53,7 +56,7 @@ export class TauriExtensionsScannerService extends WebExtensionsScannerService {
 		@IBrowserWorkbenchEnvironmentService environmentService: IBrowserWorkbenchEnvironmentService,
 		@IBuiltinExtensionsScannerService builtinExtensionsScannerService: IBuiltinExtensionsScannerService,
 		@IFileService private readonly tauriFileService: IFileService,
-		@ILogService logService: ILogService,
+		@ILogService private readonly tauriLogService: ILogService,
 		@IExtensionGalleryService galleryService: IExtensionGalleryService,
 		@IExtensionManifestPropertiesService extensionManifestPropertiesService: IExtensionManifestPropertiesService,
 		@IExtensionResourceLoaderService extensionResourceLoaderService: IExtensionResourceLoaderService,
@@ -65,11 +68,93 @@ export class TauriExtensionsScannerService extends WebExtensionsScannerService {
 		@ILifecycleService lifecycleService: ILifecycleService,
 	) {
 		super(
-			environmentService, builtinExtensionsScannerService, tauriFileService, logService,
+			environmentService, builtinExtensionsScannerService, tauriFileService, tauriLogService,
 			galleryService, extensionManifestPropertiesService, extensionResourceLoaderService,
 			extensionStorageService, storageService, productService, userDataProfilesService,
 			uriIdentityService, lifecycleService,
 		);
+	}
+
+	/**
+	 * Override to repair NLS placeholders in already-installed extensions.
+	 *
+	 * Older installations may have been persisted without a `fallbackPackageNLSUri`,
+	 * so `toScannedExtension()` could not translate their manifests. This override
+	 * detects surviving `%…%` placeholders and resolves them from the on-disk
+	 * `package.nls.json`, then patches `extensions.json` so the fix is persistent.
+	 */
+	override async scanUserExtensions(profileLocation: URI, scanOptions?: ScanOptions): Promise<IScannedExtension[]> {
+		const extensions = await super.scanUserExtensions(profileLocation, scanOptions);
+
+		for (const ext of extensions) {
+			if (!this.manifestHasNlsPlaceholders(ext.manifest)) {
+				continue;
+			}
+
+			// Try to resolve NLS from the on-disk package.nls.json
+			try {
+				const nlsUri = joinPath(ext.location, 'package.nls.json');
+				const nlsContent = await this.tauriFileService.readFile(nlsUri);
+				const translations = JSON.parse(nlsContent.value.toString());
+				const translatedManifest = localizeManifest(this.tauriLogService, ext.manifest, translations);
+
+				// Mutate the scanned extension in-place
+				(ext as { manifest: IRelaxedExtensionManifest }).manifest = translatedManifest;
+
+				// Persist the fix: update extensions.json with translated manifest and fallbackPackageNLSUri
+				await this.repairStoredExtension(ext, nlsUri, profileLocation);
+				this.tauriLogService.info(`[TauriExtScanner] Repaired NLS placeholders for ${ext.identifier.id}`);
+			} catch {
+				// No package.nls.json on disk — cannot repair, leave as-is
+			}
+		}
+
+		return extensions;
+	}
+
+	/**
+	 * Check if a manifest still contains unresolved NLS `%…%` placeholders.
+	 */
+	private manifestHasNlsPlaceholders(manifest: IRelaxedExtensionManifest): boolean {
+		const commands = manifest.contributes?.commands;
+		if (!Array.isArray(commands)) {
+			return false;
+		}
+		return commands.some(cmd => {
+			const title = typeof cmd.title === 'string' ? cmd.title : cmd.title?.value;
+			return typeof title === 'string' && title.startsWith('%') && title.endsWith('%');
+		});
+	}
+
+	/**
+	 * Patch an existing entry in extensions.json with the translated manifest
+	 * and the fallbackPackageNLSUri so future scans don't need this repair.
+	 */
+	private async repairStoredExtension(ext: IScannedExtension, fallbackNlsUri: URI, profileLocation: URI): Promise<void> {
+		let stored: IStoredWebExtension[] = [];
+		try {
+			const content = await this.tauriFileService.readFile(profileLocation);
+			stored = JSON.parse(content.value.toString());
+		} catch {
+			return; // Cannot read — skip repair
+		}
+
+		let updated = false;
+		for (const entry of stored) {
+			if (areSameExtensions(entry.identifier, ext.identifier)) {
+				// Patch in-place (readonly fields — use Object.assign)
+				Object.assign(entry, {
+					manifest: ext.manifest,
+					fallbackPackageNLSUri: fallbackNlsUri.toJSON(),
+				});
+				updated = true;
+				break;
+			}
+		}
+
+		if (updated) {
+			await this.tauriFileService.writeFile(profileLocation, VSBuffer.fromString(JSON.stringify(stored, null, '\t')));
+		}
 	}
 
 	/**
@@ -89,17 +174,39 @@ export class TauriExtensionsScannerService extends WebExtensionsScannerService {
 		}
 
 		// Fallback for non-web extensions: persist directly to extensions.json
-		const manifest = await this.scanExtensionManifest(location);
+		let manifest = await this.scanExtensionManifest(location);
 		if (!manifest || !manifest.name || !manifest.version) {
 			throw new Error(`Cannot read manifest from ${location.toString()}`);
 		}
 
+		// Resolve NLS placeholders (e.g. %github.copilot.command.xxx%) from package.nls.json
+		try {
+			const nlsUri = joinPath(location, 'package.nls.json');
+			const nlsContent = await this.tauriFileService.readFile(nlsUri);
+			const translations = JSON.parse(nlsContent.value.toString());
+			manifest = localizeManifest(this.tauriLogService, manifest, translations);
+		} catch {
+			// No package.nls.json or failed to read — use manifest as-is
+		}
+
 		const identifier = { id: getGalleryExtensionId(manifest.publisher, manifest.name), uuid: metadata?.id };
+
+		// Determine the fallback NLS URI for future scans
+		let fallbackPackageNLSUri: URI | undefined;
+		try {
+			const nlsUri = joinPath(location, 'package.nls.json');
+			await this.tauriFileService.readFile(nlsUri);
+			fallbackPackageNLSUri = nlsUri;
+		} catch {
+			// No package.nls.json available
+		}
+
 		const webExtension = {
 			identifier,
 			version: manifest.version,
 			location,
 			manifest,
+			fallbackPackageNLSUri,
 			metadata,
 		};
 
@@ -149,7 +256,7 @@ export class TauriExtensionsScannerService extends WebExtensionsScannerService {
 	 * Directly write an extension entry to the installed extensions JSON file.
 	 */
 	private async writeInstalledExtension(
-		webExtension: { identifier: { id: string; uuid?: string }; version: string; location: URI; manifest?: IRelaxedExtensionManifest; metadata?: Metadata },
+		webExtension: { identifier: { id: string; uuid?: string }; version: string; location: URI; manifest?: IRelaxedExtensionManifest; fallbackPackageNLSUri?: URI; metadata?: Metadata },
 		profileLocation: URI,
 	): Promise<void> {
 		let stored: IStoredWebExtension[] = [];
@@ -168,6 +275,7 @@ export class TauriExtensionsScannerService extends WebExtensionsScannerService {
 			version: webExtension.version,
 			location: webExtension.location.toJSON(),
 			manifest: webExtension.manifest,
+			fallbackPackageNLSUri: webExtension.fallbackPackageNLSUri?.toJSON(),
 			metadata: webExtension.metadata,
 		});
 

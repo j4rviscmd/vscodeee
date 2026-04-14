@@ -68,7 +68,9 @@ export class ExtensionsProposedApi {
 		// warn about invalid proposal and remove them from the list
 		if (isNonEmptyArray(extension.enabledApiProposals)) {
 			extension.enabledApiProposals = extension.enabledApiProposals.filter(name => {
-				const result = Boolean(allApiProposals[<ApiProposalName>name]);
+				// Strip @version suffix (e.g. 'chatDebug@4' -> 'chatDebug') before lookup
+				const proposalName = name.split('@')[0];
+				const result = Boolean(allApiProposals[<ApiProposalName>proposalName]);
 				if (!result) {
 					this._logService.error(`Extension '${key}' wants API proposal '${name}' but that proposal DOES NOT EXIST. Likely, the proposal has been finalized (check 'vscode.d.ts') or was abandoned.`);
 				}
@@ -86,7 +88,8 @@ export class ExtensionsProposedApi {
 
 			// check for difference between product.json-declaration and package.json-declaration
 			const productSet = new Set(productEnabledProposals);
-			const extensionSet = new Set(extension.enabledApiProposals);
+			// Strip @version suffix from extension proposals for comparison
+			const extensionSet = new Set((extension.enabledApiProposals ?? []).map(p => p.split('@')[0]));
 			const diff = new Set([...extensionSet].filter(a => !productSet.has(a)));
 			if (diff.size > 0) {
 				this._logService.error(`Extension '${key}' appears in product.json but enables LESS API proposals than the extension wants.\npackage.json (LOSES): ${[...extensionSet].join('\n')}\nproduct.json (WINS): ${[...productSet].join('\n')}\nDELTA: ${[...diff].join('\n')}`);
