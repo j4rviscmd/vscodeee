@@ -272,6 +272,7 @@ Architectural differences between Electron (bundled Chromium) and Tauri (native 
 | Feature                   | Limitation                                                                     | Platform Details                                                                                                                               |
 | ------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `setBackgroundThrottling` | WebView internal JS timer/animation throttling cannot be controlled externally | All platforms — `NSProcessInfo.beginActivity()` (macOS) can prevent OS-level throttling, but WebView-internal behavior remains uncontrollable. |
+| Settings Sync             | Built-in Settings Sync is unavailable. The upstream sync service is licensed exclusively for official VS Code builds. | All platforms — use third-party extensions (e.g., [Settings Sync](https://marketplace.visualstudio.com/items?itemName=Shan.code-settings-sync)) that sync via GitHub Gist as an alternative. |
 
 > [!NOTE]
 > This list covers inherent platform limitations. Features that are simply not yet implemented are tracked in individual GitHub Issues.
