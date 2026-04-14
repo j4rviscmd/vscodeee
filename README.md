@@ -12,6 +12,18 @@
 > **MVP Release Target: Late April 2026**<br>
 > Want to get notified? Watch this repo (**Watch → Custom → Releases**) to stay updated.
 
+## Installation
+
+> [!NOTE]
+> Installers will be available after the first release. Watch this repo (**Watch → Custom → Releases**) to get notified.
+
+| Platform | Installer |
+|----------|-----------|
+| macOS (Apple Silicon) | [`.dmg`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_macOS_arm64.dmg) |
+| macOS (Intel) | [`.dmg`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_macOS_x64.dmg) |
+| Linux | [`.AppImage`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_Linux_x64.AppImage) / [`.deb`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_Linux_x64.deb) |
+| Windows | [`.exe`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_Windows_x64-setup.exe) |
+
 ## Purpose
 
 Maintain the current functionality of VSCode while achieving the following:
@@ -253,6 +265,7 @@ The following Native Host Service features are deferred to post-MVP:
 | Feature                    | Reason                                                                                                                             |
 | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Microsoft Account login    | MVP supports GitHub authentication only. Microsoft authentication depends on `@azure/msal-node` and will be implemented post-MVP.  |
+| Client credentials auth    | MVP supports authorization code flow only. Client credentials flow (`client_id` + `client_secret`) is deferred to post-MVP.            |
 | System proxy resolution    | Requires platform-specific APIs (CFNetwork, WinHTTP, libproxy). The `resolve_proxy` command returns `None` (direct connection).    |
 | System certificate loading | The `load_certificates` command returns an empty list. Extensions handle their own cert loading.                                   |
 | Kerberos authentication    | `lookupKerberosAuthorization` returns `undefined`. Requires a Kerberos library — rarely needed outside enterprise AD environments. |

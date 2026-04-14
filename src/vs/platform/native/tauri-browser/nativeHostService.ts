@@ -545,6 +545,12 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 	// #region Screenshots
 
 	async getScreenshot(_rect?: IRectangle): Promise<VSBuffer | undefined> {
+		const result = await invoke<Uint8Array | null>('capture_screenshot', {
+			rect: _rect ? { x: _rect.x, y: _rect.y, width: _rect.width, height: _rect.height } : null,
+		});
+		if (result) {
+			return VSBuffer.wrap(result);
+		}
 		return undefined;
 	}
 

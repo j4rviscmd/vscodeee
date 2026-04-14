@@ -27,7 +27,6 @@ const tls: typeof tlsType = require('tls');
 const net = require('net');
 
 const systemCertificatesV2Default = false;
-const useElectronFetchDefault = false;
 
 export function connectProxyResolver(
 	extHostWorkspace: IExtHostWorkspaceProvider,
@@ -131,19 +130,7 @@ export function connectProxyResolver(
 	return configureModuleLoading(extensionService, lookup);
 }
 
-const unsafeHeaders = [
-	'content-length',
-	'host',
-	'trailer',
-	'te',
-	'upgrade',
-	'cookie2',
-	'keep-alive',
-	'transfer-encoding',
-	'set-cookie',
-];
-
-function patchGlobalFetch(params: ProxyAgentParams, configProvider: ExtHostConfigProvider, mainThreadTelemetry: MainThreadTelemetryShape, initData: IExtensionHostInitData, resolveProxyURL: (url: string) => Promise<string | undefined>, disposables: DisposableStore) {
+function patchGlobalFetch(params: ProxyAgentParams, _configProvider: ExtHostConfigProvider, mainThreadTelemetry: MainThreadTelemetryShape, _initData: IExtensionHostInitData, resolveProxyURL: (url: string) => Promise<string | undefined>, _disposables: DisposableStore) {
 	// eslint-disable-next-line local/code-no-any-casts
 	if (!(globalThis as any).__vscodeOriginalFetch) {
 		const originalFetch = globalThis.fetch;
@@ -152,22 +139,14 @@ function patchGlobalFetch(params: ProxyAgentParams, configProvider: ExtHostConfi
 		const patchedFetch = proxyAgent.createFetchPatch(params, originalFetch, resolveProxyURL);
 		// eslint-disable-next-line local/code-no-any-casts
 		(globalThis as any).__vscodePatchedFetch = patchedFetch;
-		let useElectronFetch = false;
-		if (!initData.remote.isRemote) {
-			useElectronFetch = configProvider.getConfiguration('http').get<boolean>('electronFetch', useElectronFetchDefault);
-			disposables.add(configProvider.onDidChangeConfiguration(e => {
-				if (e.affectsConfiguration('http.electronFetch')) {
-					useElectronFetch = configProvider.getConfiguration('http').get<boolean>('electronFetch', useElectronFetchDefault);
-				}
-			}));
-		}
+		// Electron fetch path removed for Tauri migration.
+		// All fetches now go through proxy-agent's patched fetch which handles
+		// proxy resolution via the Tauri resolve_proxy command.
 		// https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API
 		globalThis.fetch = async function fetch(input: string | URL | Request, init?: RequestInit) {
 			function getRequestProperty(name: keyof Request & keyof RequestInit) {
 				return init && name in init ? init[name] : typeof input === 'object' && 'cache' in input ? input[name] : undefined;
 			}
-			// Limitations: https://github.com/electron/electron/pull/36733#issuecomment-1405615494
-			// net.fetch fails on manual redirect: https://github.com/electron/electron/issues/43715
 			const urlString = typeof input === 'string' ? input : 'cache' in input ? input.url : input.toString();
 			const isDataUrl = urlString.startsWith('data:');
 			if (isDataUrl) {
@@ -185,23 +164,7 @@ function patchGlobalFetch(params: ProxyAgentParams, configProvider: ExtHostConfi
 			if (integrity) {
 				recordFetchFeatureUse(mainThreadTelemetry, 'integrity');
 			}
-			if (!useElectronFetch || isDataUrl || isBlobUrl || isManualRedirect || integrity) {
-				const response = await patchedFetch(input, init);
-				monitorResponseProperties(mainThreadTelemetry, response, urlString);
-				return response;
-			}
-			// Unsupported headers: https://source.chromium.org/chromium/chromium/src/+/main:services/network/public/cpp/header_util.cc;l=32;drc=ee7299f8961a1b05a3554efcc496b6daa0d7f6e1
-			if (init?.headers) {
-				const headers = new Headers(init.headers);
-				for (const header of unsafeHeaders) {
-					headers.delete(header);
-				}
-				init = { ...init, headers };
-			}
-			// Support for URL: https://github.com/electron/electron/issues/43712
-			const electronInput = input instanceof URL ? input.toString() : input;
-			const electron = require('electron');
-			const response = await electron.net.fetch(electronInput, init);
+			const response = await patchedFetch(input, init);
 			monitorResponseProperties(mainThreadTelemetry, response, urlString);
 			return response;
 		};
