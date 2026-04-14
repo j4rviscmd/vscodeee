@@ -1,0 +1,266 @@
+# https://github.com/tauri-apps/tauri-action
+#
+# Release workflow — builds platform-native installers and publishes to GitHub Releases.
+# Triggered on every push to main; the preflight job skips the run if a release
+# for the current version (read from src-tauri/tauri.conf.json) already exists.
+#
+# Jobs:
+#   1. preflight           — deduplication gate
+#   2. generate-notes      — auto-generate release notes via GitHub API
+#   3. publish-tauri       — cross-platform build matrix (macOS arm64/x64, Linux, Windows)
+#   4. upload-stable-assets — upload fixed-name copies for stable README download links
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Preflight — check if release already exists
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for existing tag/release v__VERSION__
+        id: check
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const cfgPath = path.join(process.cwd(), 'src-tauri', 'tauri.conf.json');
+            let version = '';
+            try {
+              const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+              version = cfg.version || '';
+            } catch (e) {
+              core.info(`Failed reading ${cfgPath}: ${e.message}`);
+            }
+            if (!version) {
+              core.setFailed('Unable to determine version from src-tauri/tauri.conf.json');
+              return;
+            }
+            const tagName = `v${version}`;
+            core.info(`Checking if tag or release exists for ${tagName} ...`);
+
+            try {
+              await github.rest.git.getRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `tags/${tagName}`,
+              });
+              core.info(`Tag ${tagName} already exists. Skipping release.`);
+              core.setOutput('skip', 'true');
+              return;
+            } catch (e) {
+              if (e.status !== 404) throw e;
+            }
+
+            const releases = await github.rest.repos.listReleases({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+            const found = releases.data.find(r => r.tag_name === tagName);
+            if (found) {
+              core.info(`Release with tag ${tagName} already exists. Skipping release.`);
+              core.setOutput('skip', 'true');
+              return;
+            }
+            core.info(`OK: ${tagName} does not exist. Proceeding with release.`);
+            core.setOutput('skip', 'false');
+
+  generate-notes:
+    name: Generate release notes
+    needs: preflight
+    if: needs.preflight.outputs.skip != 'true'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    outputs:
+      notes: ${{ steps.notes.outputs.notes }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate release notes via GitHub API
+        id: notes
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const cfg = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+            const version = cfg.version;
+            const tag = `v${version}`;
+
+            const params = {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tag,
+              target_commitish: 'main',
+            };
+
+            // Use previous release as baseline if available
+            try {
+              const { data: latest } = await github.rest.repos.getLatestRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+              });
+              params.previous_tag_name = latest.tag_name;
+            } catch (e) {
+              core.info('No previous release found, generating full notes');
+            }
+
+            const { data } = await github.rest.repos.generateReleaseNotes(params);
+            core.setOutput('notes', data.body);
+
+  publish-tauri:
+    needs: [preflight, generate-notes]
+    if: needs.preflight.outputs.skip != 'true'
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            args: '--target aarch64-apple-darwin'
+          - platform: 'macos-latest'
+            args: '--target x86_64-apple-darwin'
+          - platform: 'ubuntu-22.04'
+            args: ''
+          - platform: 'windows-latest'
+            args: '--bundles nsis'
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install system dependencies (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxkbfile-dev pkg-config libkrb5-dev libxss1
+
+      - name: Install frontend dependencies
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+        run: npm ci --ignore-scripts
+
+      - name: Build and publish with Tauri
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: v__VERSION__
+          releaseName: 'v__VERSION__'
+          releaseBody: ${{ needs.generate-notes.outputs.notes }}
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
+          args: ${{ matrix.args }}
+
+  upload-stable-assets:
+    name: Upload fixed-name assets for README links
+    needs: publish-tauri
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Upload fixed-name copies
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const cfg = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+            const version = cfg.version;
+            const tag = `v${version}`;
+
+            const { data: release } = await github.rest.repos.getReleaseByTag({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag,
+            });
+
+            // Mapping: versioned asset name pattern → fixed name
+            const renames = [
+              { match: `_${version}_aarch64.dmg`, fixedName: 'VSCodeee_macOS_arm64.dmg' },
+              { match: `_${version}_x64.dmg`, fixedName: 'VSCodeee_macOS_x64.dmg' },
+              { match: `_${version}_amd64.AppImage`, fixedName: 'VSCodeee_Linux_x64.AppImage' },
+              { match: `_${version}_amd64.deb`, fixedName: 'VSCodeee_Linux_x64.deb' },
+              { match: `_${version}_x64-setup.exe`, fixedName: 'VSCodeee_Windows_x64-setup.exe' },
+            ];
+
+            // Remove old fixed-name assets if they exist from a previous run
+            for (const { fixedName } of renames) {
+              const existing = release.assets.find(a => a.name === fixedName);
+              if (existing) {
+                await github.rest.repos.deleteReleaseAsset({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  asset_id: existing.id,
+                });
+                core.info(`Deleted old asset: ${fixedName}`);
+              }
+            }
+
+            for (const { match, fixedName } of renames) {
+              const asset = release.assets.find(a => a.name.endsWith(match));
+              if (!asset) {
+                core.warning(`Asset matching *${match} not found, skipping ${fixedName}`);
+                continue;
+              }
+              // Download the versioned asset
+              const download = await github.rest.repos.getReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                asset_id: asset.id,
+                headers: { accept: 'application/octet-stream' },
+              });
+              // Upload with fixed name
+              await github.rest.repos.uploadReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.id,
+                name: fixedName,
+                data: Buffer.from(download.data),
+              });
+              core.info(`Uploaded ${fixedName} (from ${asset.name})`);
+            }
