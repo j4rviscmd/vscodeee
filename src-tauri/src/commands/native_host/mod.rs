@@ -15,6 +15,7 @@ pub mod misc;
 pub mod network;
 pub mod os;
 pub mod power;
+pub mod screenshot;
 pub mod shell;
 pub mod window;
 
@@ -24,5 +25,6 @@ pub use misc::*;
 pub use network::*;
 pub use os::*;
 pub use power::*;
+pub use screenshot::*;
 pub use shell::*;
 pub use window::*;

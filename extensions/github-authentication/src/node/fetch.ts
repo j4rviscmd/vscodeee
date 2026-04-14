@@ -5,7 +5,6 @@
 
 import * as http from 'http';
 import * as https from 'https';
-import { workspace } from 'vscode';
 import { Log } from '../common/logger';
 import { Readable } from 'stream';
 
@@ -39,26 +38,13 @@ interface Fetcher {
 	fetch: Fetch;
 }
 
+// Electron fetch removed — Tauri WebView uses standard fetch with proxy support
 const _fetchers: Fetcher[] = [];
-try {
-	_fetchers.push({
-		name: 'Electron fetch',
-		fetch: require('electron').net.fetch
-	});
-} catch {
-	// ignore
-}
 
-const nodeFetch = {
+_fetchers.push({
 	name: 'Node fetch',
 	fetch,
-};
-const useElectronFetch = workspace.getConfiguration('github-authentication').get<boolean>('useElectronFetch', true);
-if (useElectronFetch) {
-	_fetchers.push(nodeFetch);
-} else {
-	_fetchers.unshift(nodeFetch);
-}
+});
 
 _fetchers.push({
 	name: 'Node http/s',
