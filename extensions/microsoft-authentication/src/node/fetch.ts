@@ -3,10 +3,5 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-let _fetch: typeof fetch;
-try {
-	_fetch = require('electron').net.fetch;
-} catch {
-	_fetch = fetch;
-}
-export default _fetch;
+// Electron net.fetch removed — Tauri WebView uses standard fetch
+export default fetch;
