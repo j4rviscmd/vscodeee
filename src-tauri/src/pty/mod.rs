@@ -5,11 +5,19 @@
 
 //! PTY (pseudo-terminal) management for the Tauri backend.
 //!
-//! # Phase 0-4 PoC Architecture
+//! # Architecture
 //!
 //! Uses `portable-pty` to spawn shell processes directly from Rust,
 //! bypassing the need for a Node.js sidecar (`node-pty`). This achieves
 //! lower memory usage and eliminates an extra process.
+//!
+//! ## Modules
+//!
+//! - `instance` — Individual PTY process wrapping portable-pty
+//! - `manager` — Multi-instance registry and lifecycle
+//! - `profiles` — Shell detection and profile management
+//! - `state` — File-based terminal state persistence
+//! - `autoreply` — Output pattern matching and auto-reply injection
 //!
 //! ## Data Flow
 //!
@@ -18,13 +26,9 @@
 //!   ──invoke('write_terminal')──► PtyManager.write() ──► MasterPty.write()
 //!   ◄──event('pty-output-{id}')── reader thread ◄────── MasterPty.read()
 //! ```
-//!
-//! # TODO: Production (Phase 1+)
-//!
-//! - Shell integration injection (matching VS Code's `terminalEnvironment.ts`)
-//! - Proper environment variable handling
-//! - Process title tracking
-//! - Reconnection / persistence support
 
+pub mod autoreply;
 pub mod instance;
 pub mod manager;
+pub mod profiles;
+pub mod state;

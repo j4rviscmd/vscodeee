@@ -5,7 +5,7 @@
 
 //! Tauri commands for terminal (PTY) management.
 //!
-//! These commands are the WebView-facing API for Phase 0-4 PTY Host PoC.
+//! These commands are the WebView-facing API for terminal operations.
 //! They delegate to [`PtyManager`] which is registered as Tauri managed state.
 //!
 //! # Commands
@@ -16,25 +16,25 @@
 //! | `write_terminal` | Send input data to a PTY |
 //! | `resize_terminal` | Resize a PTY's dimensions |
 //! | `close_terminal` | Close and clean up a PTY |
+//! | `send_terminal_signal` | Send a signal to a PTY's child process |
+//! | `list_terminals` | List all running PTY processes |
+//! | `detect_shells` | Detect available shells on the system |
+//! | `get_default_shell` | Get the user's default shell |
+//! | `get_environment` | Get the process environment |
+//! | `persist_terminal_state` | Save terminal buffer state |
+//! | `load_terminal_state` | Load terminal buffer state |
+//! | `persist_terminal_layout` | Save terminal layout info |
+//! | `load_terminal_layout` | Load terminal layout info |
+//! | `install_auto_reply` | Install an auto-reply pattern |
+//! | `uninstall_all_auto_replies` | Remove all auto-reply patterns |
 
 use tauri::State;
 
+use crate::pty::instance::ProcessSummary;
 use crate::pty::manager::PtyManager;
+use crate::pty::profiles::DetectedShell;
 
 /// Spawn a new terminal (PTY) instance.
-///
-/// Creates a pseudo-terminal running the specified shell, and starts
-/// a background reader thread that emits `pty-output-{id}` events
-/// with the shell's output data.
-///
-/// # Arguments
-/// * `shell` — Shell executable path (e.g., `/bin/zsh`, `/bin/bash`)
-/// * `cwd` — Working directory for the shell
-/// * `cols` — Initial terminal width in columns
-/// * `rows` — Initial terminal height in rows
-///
-/// # Returns
-/// The unique ID of the created terminal instance.
 #[tauri::command]
 pub fn create_terminal(
     shell: String,
@@ -48,10 +48,6 @@ pub fn create_terminal(
 }
 
 /// Write data to a terminal's stdin.
-///
-/// Sends the given string as bytes to the PTY, which forwards it
-/// to the shell process's stdin. This handles keyboard input,
-/// control sequences, and pasted text.
 #[tauri::command]
 pub fn write_terminal(
     id: u32,
@@ -62,9 +58,6 @@ pub fn write_terminal(
 }
 
 /// Resize a terminal to new dimensions.
-///
-/// Updates the PTY's window size, which sends a `SIGWINCH` signal
-/// to the shell process so it can adjust its layout.
 #[tauri::command]
 pub fn resize_terminal(
     id: u32,
@@ -76,22 +69,42 @@ pub fn resize_terminal(
 }
 
 /// Close a terminal instance.
-///
-/// Drops the PTY writer (sending EOF to the shell), which causes
-/// the shell to exit. The background reader thread will detect
-/// EOF and emit a `pty-exit-{id}` event.
 #[tauri::command]
 pub fn close_terminal(id: u32, pty_manager: State<'_, PtyManager>) -> Result<(), String> {
     pty_manager.close(id)
 }
 
+/// Send a signal to a terminal's child process.
+///
+/// Supported signals: `SIGINT`, `SIGTERM`, `SIGKILL`, `SIGHUP`, `SIGQUIT`.
+#[tauri::command]
+pub fn send_terminal_signal(
+    id: u32,
+    signal: String,
+    pty_manager: State<'_, PtyManager>,
+) -> Result<(), String> {
+    pty_manager.send_signal(id, &signal)
+}
+
+/// List all running terminal processes.
+///
+/// Returns a summary for each active PTY instance including
+/// the OS PID, shell path, and running status.
+#[tauri::command]
+pub fn list_terminals(pty_manager: State<'_, PtyManager>) -> Vec<ProcessSummary> {
+    pty_manager.list_processes()
+}
+
+/// Detect available shells on the system.
+///
+/// Scans known shell paths and checks executability.
+/// Returns shells sorted with the default shell first.
+#[tauri::command]
+pub fn detect_shells() -> Vec<DetectedShell> {
+    PtyManager::detect_shells()
+}
+
 /// Get the user's default shell.
-///
-/// Reads the `SHELL` environment variable on Unix-like systems.
-/// Falls back to platform-specific defaults if the variable is not set.
-///
-/// # Returns
-/// The path to the default shell (e.g., `/bin/zsh`, `/bin/bash`).
 #[tauri::command]
 pub fn get_default_shell() -> String {
     std::env::var("SHELL").unwrap_or_else(|_| {
@@ -106,13 +119,65 @@ pub fn get_default_shell() -> String {
 }
 
 /// Get the current process environment variables.
-///
-/// Returns all environment variables as a key-value map. Used by the
-/// terminal backend to pass the environment to the VS Code terminal UI.
-///
-/// # Returns
-/// A map of environment variable names to their values.
 #[tauri::command]
 pub fn get_environment() -> std::collections::HashMap<String, String> {
     std::env::vars().collect()
+}
+
+/// Save terminal buffer state for a workspace.
+///
+/// The data should be a JSON string in `ICrossVersionSerializedTerminalState` format.
+#[tauri::command]
+pub fn persist_terminal_state(
+    workspace_id: String,
+    data: String,
+    pty_manager: State<'_, PtyManager>,
+) -> Result<(), String> {
+    pty_manager.save_buffer_state(&workspace_id, &data)
+}
+
+/// Load terminal buffer state for a workspace.
+///
+/// Returns the JSON string in `ICrossVersionSerializedTerminalState` format,
+/// or `null` if no state exists.
+#[tauri::command]
+pub fn load_terminal_state(
+    workspace_id: String,
+    pty_manager: State<'_, PtyManager>,
+) -> Result<Option<String>, String> {
+    pty_manager.load_buffer_state(&workspace_id)
+}
+
+/// Save terminal layout info for a workspace.
+#[tauri::command]
+pub fn persist_terminal_layout(
+    workspace_id: String,
+    data: String,
+    pty_manager: State<'_, PtyManager>,
+) -> Result<(), String> {
+    pty_manager.save_layout_info(&workspace_id, &data)
+}
+
+/// Load terminal layout info for a workspace.
+#[tauri::command]
+pub fn load_terminal_layout(
+    workspace_id: String,
+    pty_manager: State<'_, PtyManager>,
+) -> Result<Option<String>, String> {
+    pty_manager.load_layout_info(&workspace_id)
+}
+
+/// Install an auto-reply pattern.
+///
+/// When terminal output contains `match_str`, `reply` will be sent
+/// back to the terminal automatically.
+#[tauri::command]
+pub fn install_auto_reply(match_str: String, reply: String, pty_manager: State<'_, PtyManager>) {
+    pty_manager.install_auto_reply(match_str, reply);
+}
+
+/// Remove all auto-reply patterns.
+#[tauri::command]
+pub fn uninstall_all_auto_replies(pty_manager: State<'_, PtyManager>) {
+    pty_manager.uninstall_all_auto_replies();
 }
