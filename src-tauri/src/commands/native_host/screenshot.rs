@@ -46,10 +46,10 @@ use super::error::NativeHostError;
 /// ```
 #[derive(Debug, Deserialize)]
 pub struct CaptureRect {
-	pub x: i32,
-	pub y: i32,
-	pub width: i32,
-	pub height: i32,
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
 }
 
 /// Captures a screenshot of the current WebView contents.
@@ -114,8 +114,10 @@ pub struct CaptureRect {
 /// **Phase 6**: Implement using `tauri::WebviewWindow` capture API or equivalent
 /// platform-specific screen capture methods.
 #[tauri::command]
-pub async fn capture_screenshot(_rect: Option<CaptureRect>) -> Result<Option<Vec<u8>>, NativeHostError> {
-	// Stub: screenshot capture not yet implemented.
-	// Returning None signals to the TypeScript layer that no image is available.
-	Ok(None)
+pub async fn capture_screenshot(
+    _rect: Option<CaptureRect>,
+) -> Result<Option<Vec<u8>>, NativeHostError> {
+    // Stub: screenshot capture not yet implemented.
+    // Returning None signals to the TypeScript layer that no image is available.
+    Ok(None)
 }
