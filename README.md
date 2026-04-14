@@ -253,6 +253,7 @@ The following Native Host Service features are deferred to post-MVP:
 | Feature                    | Reason                                                                                                                             |
 | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Microsoft Account login    | MVP supports GitHub authentication only. Microsoft authentication depends on `@azure/msal-node` and will be implemented post-MVP.  |
+| Client credentials auth    | MVP supports authorization code flow only. Client credentials flow (`client_id` + `client_secret`) is deferred to post-MVP.            |
 | System proxy resolution    | Requires platform-specific APIs (CFNetwork, WinHTTP, libproxy). The `resolve_proxy` command returns `None` (direct connection).    |
 | System certificate loading | The `load_certificates` command returns an empty list. Extensions handle their own cert loading.                                   |
 | Kerberos authentication    | `lookupKerberosAuthorization` returns `undefined`. Requires a Kerberos library — rarely needed outside enterprise AD environments. |
