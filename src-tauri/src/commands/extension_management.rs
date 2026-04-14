@@ -14,6 +14,9 @@ use std::io::Read;
 use std::path::Path;
 use zip::ZipArchive;
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 // ---------------------------------------------------------------------------
 // Error types
 // ---------------------------------------------------------------------------
@@ -35,6 +38,12 @@ pub enum ExtensionError {
     Security(String),
 }
 
+/// Allows converting an [`ExtensionError`] into a plain `String`.
+///
+/// This blanket conversion is required because Tauri commands return
+/// `Result<_, String>` — the error variant must be a `String`, so any
+/// [`ExtensionError`] produced in the command layer is automatically
+/// coerced via this impl.
 impl From<ExtensionError> for String {
     fn from(err: ExtensionError) -> String {
         err.to_string()
@@ -104,6 +113,15 @@ fn get_target_platform() -> String {
 }
 
 /// Validate that a path is within the expected base directory (path traversal protection).
+///
+/// Both `base` and `target` are resolved to their canonical (absolute, symlink-free)
+/// forms before comparison. This prevents directory-traversal attacks where a caller
+/// could pass `../../etc` to escape the intended directory.
+///
+/// # Errors
+///
+/// * [`ExtensionError::Security`] — if either path cannot be canonicalized,
+///   or if the resolved `target` is not a descendant of the resolved `base`.
 fn validate_path_within(base: &Path, target: &Path) -> Result<(), ExtensionError> {
     let canonical_base = base
         .canonicalize()
@@ -121,6 +139,9 @@ fn validate_path_within(base: &Path, target: &Path) -> Result<(), ExtensionError
 }
 
 /// Extract the extension identifier from a manifest's `publisher` and `name` fields.
+///
+/// Returns `Some("publisher.name")` when both fields exist and are strings,
+/// or `None` if either field is missing or not a string value.
 fn extension_id_from_manifest(manifest: &serde_json::Value) -> Option<String> {
     let publisher = manifest.get("publisher")?.as_str()?;
     let name = manifest.get("name")?.as_str()?;
@@ -128,6 +149,18 @@ fn extension_id_from_manifest(manifest: &serde_json::Value) -> Option<String> {
 }
 
 /// Read `extension/package.json` from a VSIX ZIP without full extraction.
+///
+/// Opens the archive just enough to locate and parse the manifest entry.
+/// The VSIX is closed immediately after reading, keeping resource usage low.
+///
+/// # Errors
+///
+/// Returns a `String` describing the failure if:
+/// * the VSIX file cannot be opened,
+/// * the file is not a valid ZIP archive,
+/// * the `extension/package.json` entry is missing,
+/// * the entry cannot be read, or
+/// * the manifest is not valid JSON.
 fn read_manifest_from_vsix(vsix_path: &Path) -> Result<serde_json::Value, String> {
     let file = fs::File::open(vsix_path)
         .map_err(|e| format!("Failed to open VSIX for manifest read: {e}"))?;
@@ -157,6 +190,36 @@ fn read_manifest_from_vsix(vsix_path: &Path) -> Result<serde_json::Value, String
 ///
 /// If the versioned directory already exists, it is cleaned before extraction.
 /// The base `target_dir` is never deleted.
+///
+/// On Unix platforms, file permissions stored in the ZIP entry (e.g. the
+/// executable bit on native binaries) are restored automatically, masked to
+/// `0o777` to strip setuid/setgid/sticky bits from untrusted archives.
+///
+/// # Arguments
+///
+/// * `vsix_path` - Absolute path to the `.vsix` file to extract.
+/// * `target_dir` - Base directory under which extensions are installed.
+///
+/// # Returns
+///
+/// An [`ExtractResult`] containing the absolute path to the extracted
+/// extension directory and the parsed `package.json` manifest.
+///
+/// # Errors
+///
+/// Returns a `String` describing the failure if:
+/// * the VSIX file does not exist or cannot be opened,
+/// * the archive is not a valid ZIP,
+/// * the manifest is missing required fields (`publisher`, `name`),
+/// * a zip-slip (path traversal) entry is detected,
+/// * filesystem operations (create, write, permissions) fail.
+///
+/// # Examples
+///
+/// ```ignore
+/// let result = ext_extract_vsix("/tmp/theme.vsix", "/home/user/.vscodeee/extensions")?;
+/// println!("Installed to: {}", result.extension_path);
+/// ```
 #[tauri::command]
 pub fn ext_extract_vsix(vsix_path: String, target_dir: String) -> Result<ExtractResult, String> {
     let vsix = Path::new(&vsix_path);
@@ -220,10 +283,13 @@ pub fn ext_extract_vsix(vsix_path: String, target_dir: String) -> Result<Extract
             let canonical_ext_dir = ext_dir
                 .canonicalize()
                 .unwrap_or_else(|_| ext_dir.to_path_buf());
-            if let Some(resolved_parent) = out_path.parent().and_then(|p| {
-                let _ = fs::create_dir_all(p);
-                p.canonicalize().ok()
-            }) {
+
+            let parent = match out_path.parent() {
+                Some(p) => p,
+                None => continue,
+            };
+            let _ = fs::create_dir_all(parent);
+            if let Some(resolved_parent) = parent.canonicalize().ok() {
                 if !resolved_parent.starts_with(&canonical_ext_dir) {
                     return Err(format!(
                         "Zip-slip detected: entry {:?} escapes target directory",
@@ -244,6 +310,22 @@ pub fn ext_extract_vsix(vsix_path: String, target_dir: String) -> Result<Extract
                     .map_err(|e| format!("Failed to create file: {e}"))?;
                 std::io::copy(&mut entry, &mut out_file)
                     .map_err(|e| format!("Failed to write file: {e}"))?;
+
+                // Restore Unix permissions from the ZIP entry (e.g. +x on native binaries).
+                // Mask to 0o777 to strip setuid/setgid/sticky bits from untrusted archives.
+                #[cfg(unix)]
+                if let Some(mode) = entry.unix_mode() {
+                    let safe_mode = mode & 0o777;
+                    if let Err(e) =
+                        fs::set_permissions(&out_path, fs::Permissions::from_mode(safe_mode))
+                    {
+                        log::warn!(
+                            target: "vscodeee::ext_management",
+                            "Failed to restore permissions ({:#o}) on {:?}: {e}",
+                            safe_mode, out_path
+                        );
+                    }
+                }
             }
         }
     }
@@ -257,7 +339,21 @@ pub fn ext_extract_vsix(vsix_path: String, target_dir: String) -> Result<Extract
 /// Read the manifest (`package.json`) from a VSIX file without full extraction.
 ///
 /// Opens the ZIP archive, reads only `extension/package.json`, and returns
-/// the parsed JSON. Useful for pre-install validation.
+/// the parsed JSON. Useful for pre-install validation (e.g. checking the
+/// extension identifier or engine compatibility before extracting).
+///
+/// # Arguments
+///
+/// * `vsix_path` - Absolute path to the `.vsix` file to inspect.
+///
+/// # Returns
+///
+/// The parsed `package.json` as a [`serde_json::Value`].
+///
+/// # Errors
+///
+/// Returns a `String` if the file does not exist, is not a valid ZIP,
+/// the manifest entry is missing, or the JSON cannot be parsed.
 #[tauri::command]
 pub fn ext_read_vsix_manifest(vsix_path: String) -> Result<serde_json::Value, String> {
     let vsix = Path::new(&vsix_path);
@@ -272,7 +368,22 @@ pub fn ext_read_vsix_manifest(vsix_path: String) -> Result<serde_json::Value, St
 /// Recursively delete an extension directory.
 ///
 /// Validates that the path is under the user extensions directory before deletion.
-/// On failure, the directory may be left partially deleted.
+/// Deletions from the system temp directory are also allowed (for cleanup of
+/// staged extractions). On failure, the directory may be left partially deleted.
+///
+/// This command is idempotent: if the path does not exist, it returns `Ok(())`.
+///
+/// # Arguments
+///
+/// * `extension_path` - Absolute path to the extension directory to delete.
+/// * `extensions_base` - The user's extensions root directory used for
+///   path-traversal validation.
+///
+/// # Errors
+///
+/// Returns a `String` if the path exists but is outside both the extensions
+/// base directory and the system temp directory (security error), or if the
+/// filesystem deletion fails.
 #[tauri::command]
 pub fn ext_delete_extension(extension_path: String, extensions_base: String) -> Result<(), String> {
     let ext_path = Path::new(&extension_path);
@@ -283,33 +394,46 @@ pub fn ext_delete_extension(extension_path: String, extensions_base: String) -> 
         return Ok(());
     }
 
-    // Security: validate the path is within the extensions base directory
-    if let Ok(()) = validate_path_within(base_path, ext_path) {
-        fs::remove_dir_all(ext_path)
-            .map_err(|e| format!("Failed to delete extension directory: {e}"))?;
-        Ok(())
-    } else {
-        // If base doesn't exist yet (no canonicalization possible), allow deletion
-        // if the path looks reasonable
-        if ext_path.is_absolute() && ext_path.starts_with("/tmp/")
-            || ext_path.starts_with(&std::env::temp_dir())
-        {
-            fs::remove_dir_all(ext_path)
-                .map_err(|e| format!("Failed to delete extension directory: {e}"))?;
-            Ok(())
-        } else {
-            Err(format!(
-                "Security: path {:?} is not within extensions base {:?}",
-                ext_path, base_path
-            ))
-        }
+    // Security: validate the path is within the extensions base directory,
+    // or fall back to allowing deletion from the system temp directory.
+    let is_within_base = validate_path_within(base_path, ext_path).is_ok();
+    let is_temp = (ext_path.is_absolute() && ext_path.starts_with("/tmp/"))
+        || ext_path.starts_with(&std::env::temp_dir());
+
+    if !is_within_base && !is_temp {
+        return Err(format!(
+            "Security: path {:?} is not within extensions base {:?}",
+            ext_path, base_path
+        ));
     }
+
+    fs::remove_dir_all(ext_path)
+        .map_err(|e| format!("Failed to delete extension directory: {e}"))?;
+    Ok(())
 }
 
 /// Scan the user-installed extensions directory.
 ///
 /// Reads each subdirectory, looking for a `package.json` manifest.
-/// Returns metadata for each discovered extension.
+/// Returns metadata for each discovered extension. Subdirectories without
+/// a valid manifest (missing file, unparseable JSON, or missing `publisher`/
+/// `name` fields) are silently skipped.
+///
+/// Results are sorted alphabetically by extension identifier for
+/// deterministic ordering.
+///
+/// # Arguments
+///
+/// * `extensions_dir` - Absolute path to the user extensions directory.
+///
+/// # Returns
+///
+/// A `Vec<ScannedExtension>` sorted by [`ScannedExtension::id`].
+/// Returns an empty vector if the directory does not exist.
+///
+/// # Errors
+///
+/// Returns a `String` if the extensions directory exists but cannot be read.
 #[tauri::command]
 pub fn ext_scan_installed(extensions_dir: String) -> Result<Vec<ScannedExtension>, String> {
     let dir = Path::new(&extensions_dir);
@@ -390,6 +514,14 @@ pub fn ext_scan_installed(extensions_dir: String) -> Result<Vec<ScannedExtension
 ///
 /// Returns a string like `darwin-arm64`, `linux-x64`, or `win32-x64`
 /// matching VS Code's `TargetPlatform` enum values.
+///
+/// # Returns
+///
+/// A [`PlatformInfo`] struct containing the `target_platform` string.
+///
+/// # Errors
+///
+/// This command currently never fails; it always returns `Ok`.
 #[tauri::command]
 pub fn ext_get_target_platform() -> Result<PlatformInfo, String> {
     Ok(PlatformInfo {
@@ -399,7 +531,20 @@ pub fn ext_get_target_platform() -> Result<PlatformInfo, String> {
 
 /// Compute the total size (bytes) of an extension directory on disk.
 ///
-/// Recursively sums all file sizes. Returns 0 if the directory doesn't exist.
+/// Recursively walks the directory tree and sums every regular file's size.
+/// Returns 0 if the directory does not exist (idempotent behavior).
+///
+/// # Arguments
+///
+/// * `extension_path` - Absolute path to the extension directory to measure.
+///
+/// # Returns
+///
+/// The total size in bytes as a `u64`.
+///
+/// # Errors
+///
+/// Returns a `String` if a filesystem entry cannot be read during traversal.
 #[tauri::command]
 pub fn ext_compute_extension_size(extension_path: String) -> Result<u64, String> {
     let path = Path::new(&extension_path);
@@ -409,6 +554,10 @@ pub fn ext_compute_extension_size(extension_path: String) -> Result<u64, String>
     }
 
     let mut total_size: u64 = 0;
+
+    /// Recursively accumulate file sizes under `dir` into `total`.
+    ///
+    /// Directories are descended into; only regular files contribute to the sum.
     fn walk(dir: &Path, total: &mut u64) -> std::io::Result<()> {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
