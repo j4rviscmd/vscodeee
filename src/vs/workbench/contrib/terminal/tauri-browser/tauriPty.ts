@@ -27,30 +27,18 @@ import { Disposable } from '../../../../base/common/lifecycle.js';
 import { FlowControlConstants, ProcessPropertyType, type IProcessDataEvent, type IProcessProperty, type IProcessPropertyMap, type IProcessReadyEvent, type ITerminalChildProcess, type ITerminalLaunchError, type ITerminalLaunchResult } from '../../../../platform/terminal/common/terminal.js';
 import { ITerminalLogService } from '../../../../platform/terminal/common/terminal.js';
 
-// Tauri IPC types
-declare function __TAURI_INVOKE__(cmd: string, args?: Record<string, unknown>): Promise<unknown>;
-// eslint-disable-next-line @typescript-eslint/naming-convention
-declare function __TAURI_INTERNALS__listenEvent(event: string, handler: (event: { payload: unknown }) => void): Promise<() => void>;
+import { tauriInvoke } from './tauriIpc.js';
 
 /**
- * Helper to call Tauri invoke. Falls back to window.__TAURI_INTERNALS__.invoke
- * which is the standard Tauri v2 WebView API.
- */
-function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-	// Tauri v2 exposes invoke via window.__TAURI_INTERNALS__
-	const w = globalThis as unknown as {
-		__TAURI_INTERNALS__?: {
-			invoke: (cmd: string, args?: Record<string, unknown>) => Promise<T>;
-		};
-	};
-	if (w.__TAURI_INTERNALS__?.invoke) {
-		return w.__TAURI_INTERNALS__.invoke(cmd, args);
-	}
-	throw new Error('Tauri IPC not available');
-}
-
-/**
- * Helper to listen to Tauri events. Returns an unlisten function.
+ * Subscribe to a Tauri event and return an unlisten function.
+ *
+ * Uses the Tauri v2 plugin:event system for low-latency event delivery.
+ * The returned function must be called to stop receiving events and avoid leaks.
+ *
+ * @param event - The event name to listen for (e.g., `pty-output-1`)
+ * @param handler - Callback invoked with the event payload each time the event fires
+ * @returns A promise that resolves to an unlisten function
+ * @throws {Error} If the Tauri event system is not available in the current context
  */
 function tauriListen(event: string, handler: (payload: unknown) => void): Promise<() => void> {
 	const w = globalThis as unknown as {
@@ -77,6 +65,18 @@ function tauriListen(event: string, handler: (payload: unknown) => void): Promis
 	throw new Error('Tauri event system not available');
 }
 
+/**
+ * PTY child process implementation backed by the Rust PTY via Tauri IPC.
+ *
+ * Each instance maps 1:1 to a Rust-side `PtyInstance` managed by `PtyManager`.
+ * Output flows from the Rust reader thread as Tauri events (`pty-output-{id}`),
+ * and input is sent via Tauri invoke (`write_terminal`).
+ *
+ * Implements VS Code's flow control protocol: when unacknowledged output
+ * exceeds `FlowControlConstants.HighWatermarkChars`, the instance pauses
+ * emission and buffers data until the consumer calls `acknowledgeDataEvent`
+ * to drain back below `FlowControlConstants.LowWatermarkChars`.
+ */
 export class TauriPty extends Disposable implements ITerminalChildProcess {
 	// The Rust PTY id, assigned after start()
 	private _ptyId: number = 0;
@@ -135,6 +135,15 @@ export class TauriPty extends Disposable implements ITerminalChildProcess {
 		this._lastDimensions = { cols: _cols, rows: _rows };
 	}
 
+	/**
+	 * Start the PTY process.
+	 *
+	 * Invokes the Rust `create_terminal` command to spawn the shell, then
+	 * subscribes to `pty-output-{id}` and `pty-exit-{id}` Tauri events.
+	 * Fires `onProcessReady` upon successful spawn.
+	 *
+	 * @returns `undefined` on success, or an `ITerminalLaunchError` on failure
+	 */
 	async start(): Promise<ITerminalLaunchError | ITerminalLaunchResult | undefined> {
 		try {
 			this._logService.trace('TauriPty#start', { id: this.id, shell: this._shell, cwd: this._cwd });
@@ -152,13 +161,16 @@ export class TauriPty extends Disposable implements ITerminalChildProcess {
 			// Listen for output data from the Rust PTY
 			this._unlistenOutput = await tauriListen(`pty-output-${this._ptyId}`, (payload: unknown) => {
 				// Payload is Vec<u8> from Rust, arrives as number[] in JS
-				const data = payload instanceof Uint8Array
-					? new TextDecoder().decode(payload)
-					: typeof payload === 'string'
-						? payload
-						: Array.isArray(payload)
-							? new TextDecoder().decode(new Uint8Array(payload as number[]))
-							: String(payload);
+				let data: string;
+				if (payload instanceof Uint8Array) {
+					data = new TextDecoder().decode(payload);
+				} else if (typeof payload === 'string') {
+					data = payload;
+				} else if (Array.isArray(payload)) {
+					data = new TextDecoder().decode(new Uint8Array(payload as number[]));
+				} else {
+					data = String(payload);
+				}
 
 				this._handleOutput(data);
 			});
@@ -176,7 +188,7 @@ export class TauriPty extends Disposable implements ITerminalChildProcess {
 			this._onProcessReady.fire({
 				pid: this._ptyId, // Use pty ID as pseudo-PID
 				cwd: this._cwd,
-				requiresWindowsMode: false,
+				windowsPty: undefined,
 			});
 
 			return undefined; // Success
@@ -209,6 +221,15 @@ export class TauriPty extends Disposable implements ITerminalChildProcess {
 		}
 	}
 
+	/**
+	 * Acknowledge that the consumer has processed `charCount` characters of output.
+	 *
+	 * Decrements the unacknowledged character counter. If the instance is
+	 * currently paused and the counter drops below `LowWatermarkChars`,
+	 * the instance resumes emitting and flushes any buffered data.
+	 *
+	 * @param charCount - Number of characters the consumer has processed
+	 */
 	acknowledgeDataEvent(charCount: number): void {
 		this._unacknowledgedCharCount = Math.max(this._unacknowledgedCharCount - charCount, 0);
 
@@ -228,6 +249,13 @@ export class TauriPty extends Disposable implements ITerminalChildProcess {
 		}
 	}
 
+	/**
+	 * Send input data to the PTY's stdin.
+	 *
+	 * No-op if the PTY has not been started yet (`_ptyId === 0`).
+	 *
+	 * @param data - The string data to send to the shell's stdin
+	 */
 	input(data: string): void {
 		if (this._ptyId === 0) {
 			return; // Not started yet
@@ -237,6 +265,15 @@ export class TauriPty extends Disposable implements ITerminalChildProcess {
 		});
 	}
 
+	/**
+	 * Resize the PTY to the given dimensions.
+	 *
+	 * Skips the IPC call if the dimensions are unchanged from the last resize.
+	 * No-op if the PTY has not been started yet.
+	 *
+	 * @param cols - New terminal column count
+	 * @param rows - New terminal row count
+	 */
 	resize(cols: number, rows: number): void {
 		if (this._ptyId === 0) {
 			return; // Not started yet
@@ -250,6 +287,15 @@ export class TauriPty extends Disposable implements ITerminalChildProcess {
 		});
 	}
 
+	/**
+	 * Shut down the PTY process.
+	 *
+	 * Sends a close command to the Rust PTY manager. The `immediate` parameter
+	 * is accepted for interface compatibility but is not differentiated —
+	 * the PTY is always closed immediately.
+	 *
+	 * @param immediate - Whether to force immediate shutdown (currently unused, always closes immediately)
+	 */
 	shutdown(immediate: boolean): void {
 		if (this._ptyId === 0) {
 			return;
@@ -260,41 +306,117 @@ export class TauriPty extends Disposable implements ITerminalChildProcess {
 		});
 	}
 
-	sendSignal(_signal: string): void {
-		// TODO: Implement signal sending via Rust
-		// For now, this is a no-op. Signals would require a new Tauri command.
-		this._logService.trace('TauriPty#sendSignal (not implemented)', { signal: _signal });
+	/**
+	 * Send a signal to the PTY's child process.
+	 *
+	 * Delegates to the Rust `send_terminal_signal` command.
+	 * Supported signals: `SIGINT`, `SIGTERM`, `SIGKILL`, `SIGHUP`, `SIGQUIT`.
+	 *
+	 * @param signal - The signal name (e.g., `SIGINT`)
+	 */
+	sendSignal(signal: string): void {
+		if (this._ptyId === 0) {
+			return;
+		}
+		this._logService.trace('TauriPty#sendSignal', { id: this.id, ptyId: this._ptyId, signal });
+		tauriInvoke('send_terminal_signal', { id: this._ptyId, signal }).catch(err => {
+			this._logService.error('TauriPty#sendSignal failed', err instanceof Error ? err.message : String(err));
+		});
 	}
 
+	/**
+	 * Process binary data from the terminal.
+	 *
+	 * Currently a no-op. Binary data processing is not implemented in this
+	 * Tauri PTY backend.
+	 *
+	 * @param _data - Binary data string (unused)
+	 */
 	async processBinary(_data: string): Promise<void> {
 		// Binary data processing — not typically used in basic scenarios
 	}
 
+	/**
+	 * Clear the terminal screen by sending ANSI escape sequences.
+	 *
+	 * Sends `\x1b[2J\x1b[H` (clear screen + move cursor to home position)
+	 * to the PTY's stdin. This signals the shell to clear its scrollback buffer.
+	 */
 	async clearBuffer(): Promise<void> {
-		// TODO: Could be implemented by sending clear escape sequence
+		// Send ANSI clear screen sequence via write.
+		// xterm.js manages its own buffer, so this signals the shell
+		// to clear its scrollback.
+		if (this._ptyId !== 0) {
+			this.input('\x1b[2J\x1b[H');
+		}
 	}
 
+	/**
+	 * Set the Unicode version for the terminal.
+	 *
+	 * No-op in this implementation — Unicode version handling is performed
+	 * client-side by xterm.js.
+	 *
+	 * @param _version - Unicode version ('6' or '11'), unused
+	 */
 	async setUnicodeVersion(_version: '6' | '11'): Promise<void> {
 		// No-op — unicode version handling is done client-side by xterm.js
 	}
 
+	/**
+	 * Get the initial working directory that the shell was launched in.
+	 *
+	 * @returns The initial CWD string
+	 */
 	async getInitialCwd(): Promise<string> {
 		return this._properties.initialCwd;
 	}
 
+	/**
+	 * Get the current working directory of the shell process.
+	 *
+	 * Falls back to the initial CWD if the current CWD has not been updated.
+	 *
+	 * @returns The current CWD string
+	 */
 	async getCwd(): Promise<string> {
 		return this._properties.cwd || this._properties.initialCwd;
 	}
 
+	/**
+	 * Refresh and return a process property value.
+	 *
+	 * Returns the locally cached value without querying the Rust side.
+	 *
+	 * @typeParam T - The process property type to refresh
+	 * @param _property - The property to refresh
+	 * @returns The current value of the requested property
+	 */
 	async refreshProperty<T extends ProcessPropertyType>(_property: T): Promise<IProcessPropertyMap[T]> {
 		return this._properties[_property];
 	}
 
+	/**
+	 * Update a process property and notify listeners.
+	 *
+	 * Stores the new value in the local property map and fires
+	 * `onDidChangeProperty` with the updated property type and value.
+	 *
+	 * @typeParam T - The process property type to update
+	 * @param property - The property to update
+	 * @param value - The new value for the property
+	 */
 	async updateProperty<T extends ProcessPropertyType>(property: T, value: IProcessPropertyMap[T]): Promise<void> {
-		(this._properties as Record<string, unknown>)[property] = value;
+		(this._properties as unknown as Record<string, unknown>)[property] = value;
 		this._onDidChangeProperty.fire({ type: property, value });
 	}
 
+	/**
+	 * Dispose of the PTY instance.
+	 *
+	 * Unsubscribes from Tauri output and exit events, closes the Rust PTY
+	 * via `close_terminal`, and cleans up all internal state.
+	 */
 	override dispose(): void {
 		// Unlisten from Tauri events
 		this._unlistenOutput?.();

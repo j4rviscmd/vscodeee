@@ -71,7 +71,13 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(logging::build_plugin().build())
-        .manage(pty::manager::PtyManager::new())
+        .manage({
+            let mgr = pty::manager::PtyManager::new();
+            // Initialize terminal state store with app data directory
+            // Note: The actual app_data_dir is only available inside setup(),
+            // so we initialize the store there. Here we just create the manager.
+            mgr
+        })
         .manage(commands::file_watcher::FileWatcherState::new())
         .manage(commands::spawn_exthost::ExtHostState::new())
         .manage(Arc::clone(&channel_router))
@@ -109,6 +115,15 @@ pub fn run() {
             commands::terminal::close_terminal,
             commands::terminal::get_default_shell,
             commands::terminal::get_environment,
+            commands::terminal::send_terminal_signal,
+            commands::terminal::list_terminals,
+            commands::terminal::detect_shells,
+            commands::terminal::persist_terminal_state,
+            commands::terminal::load_terminal_state,
+            commands::terminal::persist_terminal_layout,
+            commands::terminal::load_terminal_layout,
+            commands::terminal::install_auto_reply,
+            commands::terminal::uninstall_all_auto_replies,
             // ── Window commands ──
             commands::native_host::is_fullscreen,
             commands::native_host::toggle_fullscreen,
@@ -222,6 +237,20 @@ pub fn run() {
         ])
         .setup(move |app| {
             log::info!(target: "vscodeee", "Tauri app started");
+
+            // ── Initialize terminal state store ──
+            {
+                use tauri::Manager;
+                if let Some(data_dir) = app.path().app_data_dir().ok() {
+                    let store = pty::state::TerminalStateStore::new(&data_dir);
+                    if let Some(mgr) = app.try_state::<pty::manager::PtyManager>() {
+                        mgr.set_state_store(store);
+                        log::info!(target: "vscodeee", "Terminal state store initialized at {:?}", data_dir);
+                    }
+                } else {
+                    log::warn!(target: "vscodeee", "Could not resolve app_data_dir for terminal state store");
+                }
+            }
 
             // ── Initialize system event monitoring ──
             log::debug!(target: "vscodeee", "Setting up system event monitors");

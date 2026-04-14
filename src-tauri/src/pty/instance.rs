@@ -9,13 +9,16 @@
 //! - A writer handle to send data to the shell's stdin
 //! - A master handle for resize operations
 //! - A background reader thread that emits output via Tauri events
-//! - A child process handle for lifecycle management
+//! - A child process handle for lifecycle management (PID, signals, exit)
 
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
+use serde::Serialize;
+
+use super::autoreply::AutoReplyInterceptor;
 
 /// Configuration for creating a new PTY instance.
 pub struct PtyConfig {
@@ -26,6 +29,22 @@ pub struct PtyConfig {
     pub id: u32,
 }
 
+/// Summary of a running PTY process, used by `list_processes`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessSummary {
+    /// The PTY instance ID (not the OS PID).
+    pub id: u32,
+    /// The OS process ID of the shell.
+    pub pid: u32,
+    /// The shell executable path.
+    pub shell: String,
+    /// The working directory the shell was started in.
+    pub cwd: String,
+    /// Whether the child process is still running.
+    pub is_alive: bool,
+}
+
 /// A running PTY instance with handles for I/O and control.
 pub struct PtyInstance {
     /// Writer handle to send data to the shell's stdin.
@@ -34,6 +53,14 @@ pub struct PtyInstance {
     master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     /// Handle to the background reader thread (joined on drop).
     _reader_handle: Option<thread::JoinHandle<()>>,
+    /// Child process handle — retained for signal delivery and PID tracking.
+    child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
+    /// The OS process ID of the child shell.
+    pid: u32,
+    /// The shell executable path.
+    shell: String,
+    /// The working directory the shell was started in.
+    cwd: String,
 }
 
 impl PtyInstance {
@@ -46,7 +73,12 @@ impl PtyInstance {
     /// # Arguments
     /// * `config` — Shell, working directory, and terminal dimensions
     /// * `app_handle` — Tauri app handle for emitting events
-    pub fn spawn(config: PtyConfig, app_handle: tauri::AppHandle) -> Result<Self, String> {
+    /// * `auto_reply` — Shared auto-reply interceptor (optional, pass None to disable)
+    pub fn spawn(
+        config: PtyConfig,
+        app_handle: tauri::AppHandle,
+        auto_reply: Option<Arc<AutoReplyInterceptor>>,
+    ) -> Result<Self, String> {
         let pty_system = native_pty_system();
 
         // Create the PTY pair (master + slave)
@@ -66,13 +98,18 @@ impl PtyInstance {
         cmd.env("TERM", "xterm-256color");
 
         // Spawn the shell in the slave PTY
-        let mut _child = pair
+        let child = pair
             .slave
             .spawn_command(cmd)
             .map_err(|e| format!("Failed to spawn shell '{}': {e}", config.shell))?;
 
+        // Get the child PID before dropping the slave
+        let pid = child.process_id().map(|p| p as u32).unwrap_or(0);
+
         // Drop the slave — we only interact through the master
         drop(pair.slave);
+
+        let child = Arc::new(Mutex::new(child));
 
         // Get the writer handle (can only be called once per portable-pty API)
         let writer = pair
@@ -92,6 +129,7 @@ impl PtyInstance {
 
         // Start background reader thread
         let pty_id = config.id;
+        let writer_for_reply = Arc::clone(&writer);
         let reader_handle = thread::spawn(move || {
             use tauri::Emitter;
 
@@ -110,10 +148,21 @@ impl PtyInstance {
                         break;
                     }
                     Ok(n) => {
+                        let data = &buf[..n];
+
+                        // Check auto-reply patterns before emitting
+                        if let Some(ref interceptor) = auto_reply {
+                            if let Some(reply) = interceptor.check(data) {
+                                // Write the reply back to the PTY
+                                if let Ok(mut w) = writer_for_reply.lock() {
+                                    let _ = w.write_all(reply.as_bytes());
+                                    let _ = w.flush();
+                                }
+                            }
+                        }
+
                         // Emit the output data as a Tauri event.
-                        // We send raw bytes as a Vec<u8> for binary safety
-                        // (xterm.js handles UTF-8 and escape sequences).
-                        let data = buf[..n].to_vec();
+                        let data = data.to_vec();
                         if let Err(e) = app_handle.emit(&event_name, data) {
                             log::error!(target: "vscodeee::pty::instance", "Failed to emit output event (pty:{pty_id}): {e}");
                             break;
@@ -131,10 +180,16 @@ impl PtyInstance {
             }
         });
 
+        log::info!(target: "vscodeee::pty::instance", "Spawned PTY {pty_id} (pid={pid}, shell={})", config.shell);
+
         Ok(Self {
             writer,
             master,
             _reader_handle: Some(reader_handle),
+            child,
+            pid,
+            shell: config.shell,
+            cwd: config.cwd,
         })
     }
 
@@ -167,5 +222,83 @@ impl PtyInstance {
                 pixel_height: 0,
             })
             .map_err(|e| format!("PTY resize failed: {e}"))
+    }
+
+    /// Send a signal to the child process.
+    ///
+    /// Maps signal names (e.g., "SIGINT", "SIGTERM") to platform-specific
+    /// signal numbers. On Unix, uses `libc::kill`. On Windows, uses
+    /// `TerminateProcess` for SIGKILL and `Ctrl+C` event for SIGINT.
+    pub fn send_signal(&self, signal: &str) -> Result<(), String> {
+        let pid = self.pid;
+        if pid == 0 {
+            return Err("Cannot send signal: no PID".to_string());
+        }
+
+        #[cfg(unix)]
+        {
+            let sig = match signal {
+                "SIGINT" => libc::SIGINT,
+                "SIGTERM" => libc::SIGTERM,
+                "SIGKILL" => libc::SIGKILL,
+                "SIGHUP" => libc::SIGHUP,
+                "SIGQUIT" => libc::SIGQUIT,
+                "SIGUSR1" => libc::SIGUSR1,
+                "SIGUSR2" => libc::SIGUSR2,
+                _ => return Err(format!("Unsupported signal: {signal}")),
+            };
+            let ret = unsafe { libc::kill(pid as i32, sig) };
+            if ret != 0 {
+                return Err(format!(
+                    "Failed to send {signal} to pid {pid}: {}",
+                    std::io::Error::last_os_error()
+                ));
+            }
+            log::debug!(target: "vscodeee::pty::instance", "Sent {signal} to pid {pid}");
+            Ok(())
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            // On Windows, we can't easily send signals via portable-pty.
+            // For SIGKILL, terminate the child. For SIGINT, send Ctrl+C.
+            match signal {
+                "SIGKILL" | "SIGTERM" => {
+                    let mut child = self.child.lock().map_err(|_| "lock poisoned".to_string())?;
+                    child
+                        .kill()
+                        .map_err(|e| format!("Failed to kill process: {e}"))
+                }
+                "SIGINT" => {
+                    // Write Ctrl+C to the PTY
+                    self.write(b"\x03")
+                }
+                _ => Err(format!("Unsupported signal on Windows: {signal}")),
+            }
+        }
+    }
+
+    /// Check if the child process is still alive.
+    pub fn is_alive(&self) -> bool {
+        if let Ok(mut child) = self.child.lock() {
+            match child.try_wait() {
+                Ok(Some(_)) => false, // Exited
+                Ok(None) => true,     // Still running
+                Err(_) => false,      // Error — assume dead
+            }
+        } else {
+            false // Lock poisoned — assume dead
+        }
+    }
+
+    /// Get the process summary for listing.
+    pub fn process_summary(&self, id: u32) -> ProcessSummary {
+        ProcessSummary {
+            id,
+            pid: self.pid,
+            shell: self.shell.clone(),
+            cwd: self.cwd.clone(),
+            is_alive: self.is_alive(),
+        }
     }
 }

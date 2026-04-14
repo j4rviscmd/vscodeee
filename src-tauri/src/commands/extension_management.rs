@@ -105,12 +105,12 @@ fn get_target_platform() -> String {
 
 /// Validate that a path is within the expected base directory (path traversal protection).
 fn validate_path_within(base: &Path, target: &Path) -> Result<(), ExtensionError> {
-    let canonical_base = base.canonicalize().map_err(|e| {
-        ExtensionError::Security(format!("Cannot canonicalize base path: {e}"))
-    })?;
-    let canonical_target = target.canonicalize().map_err(|e| {
-        ExtensionError::Security(format!("Cannot canonicalize target path: {e}"))
-    })?;
+    let canonical_base = base
+        .canonicalize()
+        .map_err(|e| ExtensionError::Security(format!("Cannot canonicalize base path: {e}")))?;
+    let canonical_target = target
+        .canonicalize()
+        .map_err(|e| ExtensionError::Security(format!("Cannot canonicalize target path: {e}")))?;
     if !canonical_target.starts_with(&canonical_base) {
         return Err(ExtensionError::Security(format!(
             "Path {:?} is outside of base directory {:?}",
@@ -131,8 +131,7 @@ fn extension_id_from_manifest(manifest: &serde_json::Value) -> Option<String> {
 fn read_manifest_from_vsix(vsix_path: &Path) -> Result<serde_json::Value, String> {
     let file = fs::File::open(vsix_path)
         .map_err(|e| format!("Failed to open VSIX for manifest read: {e}"))?;
-    let mut archive = ZipArchive::new(file)
-        .map_err(|e| format!("Invalid VSIX archive: {e}"))?;
+    let mut archive = ZipArchive::new(file).map_err(|e| format!("Invalid VSIX archive: {e}"))?;
 
     let mut entry = archive
         .by_name("extension/package.json")
@@ -200,8 +199,7 @@ pub fn ext_extract_vsix(vsix_path: String, target_dir: String) -> Result<Extract
 
     // 4. Open VSIX and extract files under extension/ prefix
     let file = fs::File::open(vsix).map_err(|e| format!("Failed to open VSIX: {e}"))?;
-    let mut archive =
-        ZipArchive::new(file).map_err(|e| format!("Invalid VSIX archive: {e}"))?;
+    let mut archive = ZipArchive::new(file).map_err(|e| format!("Invalid VSIX archive: {e}"))?;
 
     for i in 0..archive.len() {
         let mut entry = archive
@@ -219,7 +217,9 @@ pub fn ext_extract_vsix(vsix_path: String, target_dir: String) -> Result<Extract
             let out_path = ext_dir.join(relative);
 
             // Security: prevent zip-slip (path traversal)
-            let canonical_ext_dir = ext_dir.canonicalize().unwrap_or_else(|_| ext_dir.to_path_buf());
+            let canonical_ext_dir = ext_dir
+                .canonicalize()
+                .unwrap_or_else(|_| ext_dir.to_path_buf());
             if let Some(resolved_parent) = out_path.parent().and_then(|p| {
                 let _ = fs::create_dir_all(p);
                 p.canonicalize().ok()
@@ -240,8 +240,8 @@ pub fn ext_extract_vsix(vsix_path: String, target_dir: String) -> Result<Extract
                     fs::create_dir_all(parent)
                         .map_err(|e| format!("Failed to create parent dir: {e}"))?;
                 }
-                let mut out_file =
-                    fs::File::create(&out_path).map_err(|e| format!("Failed to create file: {e}"))?;
+                let mut out_file = fs::File::create(&out_path)
+                    .map_err(|e| format!("Failed to create file: {e}"))?;
                 std::io::copy(&mut entry, &mut out_file)
                     .map_err(|e| format!("Failed to write file: {e}"))?;
             }
@@ -319,8 +319,8 @@ pub fn ext_scan_installed(extensions_dir: String) -> Result<Vec<ScannedExtension
         return Ok(Vec::new());
     }
 
-    let entries = fs::read_dir(dir)
-        .map_err(|e| format!("Failed to read extensions directory: {e}"))?;
+    let entries =
+        fs::read_dir(dir).map_err(|e| format!("Failed to read extensions directory: {e}"))?;
 
     let mut extensions = Vec::new();
 
