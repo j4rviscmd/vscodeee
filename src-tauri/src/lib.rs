@@ -219,6 +219,10 @@ pub fn run() {
             commands::extension_management::ext_scan_installed,
             commands::extension_management::ext_get_target_platform,
             commands::extension_management::ext_compute_extension_size,
+            // ── Secret storage commands ──
+            commands::secret_storage::secret_get,
+            commands::secret_storage::secret_set,
+            commands::secret_storage::secret_delete,
         ])
         .setup(move |app| {
             log::info!(target: "vscodeee", "Tauri app started");
