@@ -185,13 +185,13 @@ Built-in extension scanning and OS theme detection for the Tauri backend. Modula
 
 Extension Host via Node.js sidecar + named pipe, Terminal via Rust `portable-pty`, Shared Process elimination.
 
-| Sub-task                      | Description                                                                                                                                                 |   Status   |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------: |
-| Extension Host (Node sidecar) | Node.js sidecar + WebSocket ↔ Rust relay ↔ Unix Socket full pipeline (PR [#58](https://github.com/j4rviscmd/vscodeee/pull/58))                              |     ✅     |
-| Terminal PTY integration      | Rust `portable-pty` → Tauri IPC → `TauriTerminalBackend` → VS Code Terminal UI (PR [#105](https://github.com/j4rviscmd/vscodeee/pull/105))                  |     ✅     |
-| Shared Process elimination    | Abolish Shared Process sidecar; implement services directly in WebView/Rust ([#88](https://github.com/j4rviscmd/vscodeee/issues/88))                        | 📋 Planned |
-| Extension ESM fix             | Fix ESM module resolution for built-in extensions in Extension Host (PR [#103](https://github.com/j4rviscmd/vscodeee/pull/103))                             |     ✅     |
-| OAuth authentication          | `tauri-plugin-deep-link` + `TauriURLCallbackProvider` for GitHub OAuth callback flow (PR [#112](https://github.com/j4rviscmd/vscodeee/pull/112))             |     ✅     |
+| Sub-task                      | Description                                                                                                                                      |   Status   |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | :--------: |
+| Extension Host (Node sidecar) | Node.js sidecar + WebSocket ↔ Rust relay ↔ Unix Socket full pipeline (PR [#58](https://github.com/j4rviscmd/vscodeee/pull/58))                   |     ✅     |
+| Terminal PTY integration      | Rust `portable-pty` → Tauri IPC → `TauriTerminalBackend` → VS Code Terminal UI (PR [#105](https://github.com/j4rviscmd/vscodeee/pull/105))       |     ✅     |
+| Shared Process elimination    | Abolish Shared Process sidecar; implement services directly in WebView/Rust ([#88](https://github.com/j4rviscmd/vscodeee/issues/88))             | 📋 Planned |
+| Extension ESM fix             | Fix ESM module resolution for built-in extensions in Extension Host (PR [#103](https://github.com/j4rviscmd/vscodeee/pull/103))                  |     ✅     |
+| OAuth authentication          | `tauri-plugin-deep-link` + `TauriURLCallbackProvider` for GitHub OAuth callback flow (PR [#112](https://github.com/j4rviscmd/vscodeee/pull/112)) |     ✅     |
 
 ### Phase 6: Platform Features
 
@@ -250,17 +250,17 @@ The following features depend on Chrome DevTools Protocol (CDP), which has no pu
 
 The following Native Host Service features are deferred to post-MVP:
 
-| Feature                    | Reason                                                                                                                                                                                      |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Microsoft Account login    | MVP supports GitHub authentication only. Microsoft authentication depends on `@azure/msal-node` and will be implemented post-MVP.                                                           |
-| System proxy resolution    | Requires platform-specific APIs (CFNetwork, WinHTTP, libproxy). The `resolve_proxy` command returns `None` (direct connection).                                                             |
-| System certificate loading | The `load_certificates` command returns an empty list. Extensions handle their own cert loading.                                                                                            |
-| Kerberos authentication    | `lookupKerberosAuthorization` returns `undefined`. Requires a Kerberos library — rarely needed outside enterprise AD environments.                                                          |
-| Window splash persistence  | `saveWindowSplash` is a no-op. Splash data is persisted via `localStorage` through `ISplashStorageService` instead.                                                                         |
-| macOS Touch Bar            | Not supported by Tauri's WebView. The Touch Bar API methods are no-ops.                                                                                                                     |
-| macOS tab management       | Window tab APIs (`newWindowTab`, `mergeAllWindowTabs`, etc.) are no-ops.                                                                                                                    |
-| GPU info / content tracing | `openGPUInfoWindow`, `openContentTracingWindow`, `startTracing`, `stopTracing` are no-ops.                                                                                                  |
-| Screenshot capture         | `getScreenshot` returns `undefined`. Requires platform-specific screen capture APIs.                                                                                                        |
+| Feature                    | Reason                                                                                                                             |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Microsoft Account login    | MVP supports GitHub authentication only. Microsoft authentication depends on `@azure/msal-node` and will be implemented post-MVP.  |
+| System proxy resolution    | Requires platform-specific APIs (CFNetwork, WinHTTP, libproxy). The `resolve_proxy` command returns `None` (direct connection).    |
+| System certificate loading | The `load_certificates` command returns an empty list. Extensions handle their own cert loading.                                   |
+| Kerberos authentication    | `lookupKerberosAuthorization` returns `undefined`. Requires a Kerberos library — rarely needed outside enterprise AD environments. |
+| Window splash persistence  | `saveWindowSplash` is a no-op. Splash data is persisted via `localStorage` through `ISplashStorageService` instead.                |
+| macOS Touch Bar            | Not supported by Tauri's WebView. The Touch Bar API methods are no-ops.                                                            |
+| macOS tab management       | Window tab APIs (`newWindowTab`, `mergeAllWindowTabs`, etc.) are no-ops.                                                           |
+| GPU info / content tracing | `openGPUInfoWindow`, `openContentTracingWindow`, `startTracing`, `stopTracing` are no-ops.                                         |
+| Screenshot capture         | `getScreenshot` returns `undefined`. Requires platform-specific screen capture APIs.                                               |
 
 > [!NOTE]
 > These features may be revisited if Tauri adds CDP support in the future, or if alternative approaches become viable.
@@ -269,9 +269,9 @@ The following Native Host Service features are deferred to post-MVP:
 
 Architectural differences between Electron (bundled Chromium) and Tauri (native system WebView) introduce permanent or platform-specific limitations.
 
-| Feature                   | Limitation                                                                     | Platform Details                                                                                                                               |
-| ------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `setBackgroundThrottling` | WebView internal JS timer/animation throttling cannot be controlled externally | All platforms — `NSProcessInfo.beginActivity()` (macOS) can prevent OS-level throttling, but WebView-internal behavior remains uncontrollable. |
+| Feature                   | Limitation                                                                                                            | Platform Details                                                                                                                                                                             |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `setBackgroundThrottling` | WebView internal JS timer/animation throttling cannot be controlled externally                                        | All platforms — `NSProcessInfo.beginActivity()` (macOS) can prevent OS-level throttling, but WebView-internal behavior remains uncontrollable.                                               |
 | Settings Sync             | Built-in Settings Sync is unavailable. The upstream sync service is licensed exclusively for official VS Code builds. | All platforms — use third-party extensions (e.g., [Settings Sync](https://marketplace.visualstudio.com/items?itemName=Shan.code-settings-sync)) that sync via GitHub Gist as an alternative. |
 
 > [!NOTE]
