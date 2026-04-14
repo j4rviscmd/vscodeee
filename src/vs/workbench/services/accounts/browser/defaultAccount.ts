@@ -11,7 +11,7 @@ import { getErrorMessage } from '../../../../base/common/errors.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { equals } from '../../../../base/common/objects.js';
-import { isWeb } from '../../../../base/common/platform.js';
+import { isTauri, isWeb } from '../../../../base/common/platform.js';
 import { IDefaultChatAgent } from '../../../../base/common/product.js';
 import { isString, isUndefined, Mutable } from '../../../../base/common/types.js';
 import { IRequestContext } from '../../../../base/parts/request/common/request.js';
@@ -318,7 +318,7 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 	}
 
 	private async init(): Promise<void> {
-		if (isWeb && !this.environmentService.remoteAuthority) {
+		if (isWeb && !this.environmentService.remoteAuthority && !isTauri) {
 			this.logService.debug('[DefaultAccount] Running in web without remote, skipping initialization');
 			return;
 		}
