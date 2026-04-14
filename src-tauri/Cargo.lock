@@ -5798,6 +5798,8 @@ name = "vscodeee"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "core-foundation 0.10.1",
+ "core-foundation-sys",
  "dirs",
  "futures-util",
  "globset",
@@ -5810,6 +5812,8 @@ dependencies = [
  "notify-rust",
  "open",
  "portable-pty",
+ "security-framework 3.7.0",
+ "security-framework-sys",
  "serde",
  "serde_json",
  "tauri",
