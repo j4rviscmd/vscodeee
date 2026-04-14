@@ -44,3 +44,12 @@ notify-rust = "4"
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
 tokio-tungstenite = "0.24"
 futures-util = { version = "0.3", default-features = false, features = ["sink"] }
+
+# macOS Keychain ACL control — used in debug builds to set permissive ACL
+# so that different worktree binaries can access the same Keychain items
+# without triggering password prompts.
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3"
+security-framework-sys = "2"
+core-foundation = "0.10"
+core-foundation-sys = "0.8"
