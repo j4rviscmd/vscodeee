@@ -41,6 +41,6 @@ tauri-plugin-deep-link = "2"
 thiserror = "2"
 zip = "2"
 notify-rust = "4"
-keyring = "3"
+keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
 tokio-tungstenite = "0.24"
 futures-util = { version = "0.3", default-features = false, features = ["sink"] }

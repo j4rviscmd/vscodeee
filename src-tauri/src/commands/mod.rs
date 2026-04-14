@@ -12,6 +12,7 @@ pub mod file_watcher;
 pub mod filesystem;
 pub mod ipc_channel;
 pub mod native_host;
+pub mod secret_storage;
 pub mod spawn_exthost;
 pub mod terminal;
 pub mod window;

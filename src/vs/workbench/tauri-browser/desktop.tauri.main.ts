@@ -60,6 +60,7 @@ import { IRequestService } from '../../platform/request/common/request.js';
 import { BrowserRequestService } from '../services/request/browser/requestService.js';
 import { mainWindow } from '../../base/browser/window.js';
 import { IWorkbenchLayoutService } from '../services/layout/browser/layoutService.js';
+import { IOpenerService } from '../../platform/opener/common/opener.js';
 
 import { TauriIPCMainProcessService } from '../../platform/ipc/tauri-browser/mainProcessService.js';
 import { TauriNativeHostService } from '../../platform/native/tauri-browser/nativeHostService.js';
@@ -70,6 +71,7 @@ import { isFolderToOpen, isWorkspaceToOpen } from '../../platform/window/common/
 import { invoke, listen } from '../../platform/tauri/common/tauriApi.js';
 import { ITauriWindowService, TauriWindowService } from '../../platform/window/tauri-browser/windowService.js';
 import { TauriURLCallbackProvider } from './urlCallbackProvider.js';
+import { TauriSecretStorageProvider } from '../../platform/secrets/tauri-browser/tauriSecretStorageProvider.js';
 
 export class TauriDesktopMain extends Disposable {
 
@@ -115,6 +117,7 @@ export class TauriDesktopMain extends Disposable {
 		instantiationService.invokeFunction(accessor => {
 			const layoutService = accessor.get(IWorkbenchLayoutService);
 			const nativeHostService = accessor.get(INativeHostService);
+			const openerService = accessor.get(IOpenerService);
 
 			listen('tauri://resize', () => layoutService.layout())
 				.then(unlisten => this._register({ dispose: unlisten }));
@@ -126,6 +129,16 @@ export class TauriDesktopMain extends Disposable {
 			this._register(nativeHostService.onDidUnmaximizeWindow(() => {
 				layoutService.updateWindowMaximizedState(mainWindow, false);
 			}));
+
+			// Override the default external opener to use Tauri's native host service
+			// instead of window.open(), which doesn't work in Tauri WebView.
+			// This ensures OAuth sign-in flows (e.g., Copilot) open the system browser.
+			openerService.setDefaultExternalOpener({
+				openExternal: async (href: string) => {
+					await nativeHostService.openExternal(href);
+					return true;
+				}
+			});
 		});
 	}
 
@@ -164,9 +177,14 @@ export class TauriDesktopMain extends Disposable {
 		this._register(deepLinkDisposable);
 		this._register(urlCallbackProvider);
 
+		// Secret storage provider — uses OS Keychain via Rust keyring crate
+		// to persist authentication tokens across app restarts.
+		const secretStorageProvider = new TauriSecretStorageProvider();
+
 		const workbenchOptions: IWorkbenchConstructionOptions = {
 			workspaceProvider,
 			urlCallbackProvider,
+			secretStorageProvider,
 		};
 
 		const environmentService = new TauriWorkbenchEnvironmentService(
