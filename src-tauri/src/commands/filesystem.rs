@@ -15,6 +15,7 @@
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 use std::path::Path;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogResult};
 
@@ -210,15 +211,50 @@ pub fn fs_read_file(path: String) -> Result<String, String> {
 ///
 /// The `content` parameter is base64-encoded binary data.
 /// Respects `create` and `overwrite` options to match VS Code's
-/// `IFileWriteOptions` semantics.
+/// `IFileWriteOptions` semantics. When `append` is true, content is
+/// appended to the end of the file (file is created if it does not exist).
 #[tauri::command]
 pub fn fs_write_file(
     path: String,
     content: String,
     create: bool,
     overwrite: bool,
+    append: Option<bool>,
 ) -> Result<(), String> {
     let p = Path::new(&path);
+    let is_append = append.unwrap_or(false);
+
+    // Append mode: create if missing, preserve existing content.
+    // Note: `create` and `overwrite` flags are intentionally ignored here
+    // because VS Code's FileService always passes `create: true, overwrite: true`
+    // when calling writeFile with append. The append semantics are defined
+    // solely by the `append` flag (create if missing, never truncate).
+    if is_append {
+        if p.is_dir() {
+            return Err("EntryIsADirectory".to_string());
+        }
+
+        // Ensure parent directory exists
+        if let Some(parent) = p.parent() {
+            if !parent.exists() {
+                std::fs::create_dir_all(parent).map_err(map_io_error)?;
+            }
+        }
+
+        let bytes = STANDARD
+            .decode(&content)
+            .map_err(|e| format!("Unknown: base64 decode error: {}", e))?;
+
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(p)
+            .map_err(map_io_error)?;
+        file.write_all(&bytes).map_err(map_io_error)?;
+        return Ok(());
+    }
+
+    // Non-append mode: original behavior preserved exactly
     let exists = p.exists();
 
     // Enforce create/overwrite semantics
@@ -756,5 +792,162 @@ pub async fn show_open_dialog(
                 file_paths: vec![],
             }),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    struct TestDir(std::path::PathBuf);
+
+    impl TestDir {
+        fn new() -> Self {
+            let dir = std::env::temp_dir().join("vscodeee_fs_append_test");
+            let _ = std::fs::create_dir_all(&dir);
+            Self(dir)
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn test_dir() -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join("vscodeee_fs_append_test");
+        let _ = std::fs::create_dir_all(&dir);
+        dir
+    }
+
+    fn cleanup(dir: &std::path::Path) {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn write_file_append_creates_new_file() {
+        let _guard = TestDir::new();
+        let dir = test_dir();
+        let path = dir.join("append_new.txt");
+        let _ = std::fs::remove_file(&path);
+        let content = STANDARD.encode(b"hello");
+
+        let result = fs_write_file(
+            path.to_str().unwrap().to_string(),
+            content,
+            true,
+            true,
+            Some(true),
+        );
+        assert!(result.is_ok());
+        let data = std::fs::read(&path).unwrap();
+        assert_eq!(data, b"hello");
+    }
+
+    #[test]
+    fn write_file_append_preserves_existing() {
+        let _guard = TestDir::new();
+        let dir = test_dir();
+        let path = dir.join("append_existing.txt");
+        {
+            let mut f = std::fs::File::create(&path).unwrap();
+            f.write_all(b"hello ").unwrap();
+        }
+        let content = STANDARD.encode(b"world");
+
+        let result = fs_write_file(
+            path.to_str().unwrap().to_string(),
+            content,
+            true,
+            true,
+            Some(true),
+        );
+        assert!(result.is_ok());
+        let data = std::fs::read(&path).unwrap();
+        assert_eq!(data, b"hello world");
+    }
+
+    #[test]
+    fn write_file_append_none_is_original_behavior() {
+        let _guard = TestDir::new();
+        let dir = test_dir();
+        let path = dir.join("no_append.txt");
+        {
+            let mut f = std::fs::File::create(&path).unwrap();
+            f.write_all(b"old content").unwrap();
+        }
+        let content = STANDARD.encode(b"new content");
+
+        let result = fs_write_file(
+            path.to_str().unwrap().to_string(),
+            content,
+            true,
+            true,
+            None,
+        );
+        assert!(result.is_ok());
+        let data = std::fs::read(&path).unwrap();
+        assert_eq!(data, b"new content");
+    }
+
+    #[test]
+    fn write_file_append_rejects_directory() {
+        let _guard = TestDir::new();
+        let dir = test_dir();
+        let content = STANDARD.encode(b"should fail");
+
+        let result = fs_write_file(
+            dir.to_str().unwrap().to_string(),
+            content,
+            true,
+            true,
+            Some(true),
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("EntryIsADirectory"));
+    }
+
+    #[test]
+    fn write_file_append_creates_parent_directories() {
+        let _guard = TestDir::new();
+        let dir = test_dir();
+        let path = dir.join("nested").join("sub").join("file.txt");
+
+        let content = STANDARD.encode(b"deep");
+        let result = fs_write_file(
+            path.to_str().unwrap().to_string(),
+            content,
+            true,
+            true,
+            Some(true),
+        );
+        assert!(result.is_ok());
+        let data = std::fs::read(&path).unwrap();
+        assert_eq!(data, b"deep");
+    }
+
+    #[test]
+    fn write_file_multiple_appends() {
+        let _guard = TestDir::new();
+        let dir = test_dir();
+        let path = dir.join("multi_append.txt");
+        let _ = std::fs::remove_file(&path);
+
+        for i in 0..3 {
+            let chunk = format!("chunk{} ", i);
+            let content = STANDARD.encode(chunk.as_bytes());
+            let result = fs_write_file(
+                path.to_str().unwrap().to_string(),
+                content,
+                true,
+                true,
+                Some(true),
+            );
+            assert!(result.is_ok());
+        }
+        let data = std::fs::read(&path).unwrap();
+        assert_eq!(data, b"chunk0 chunk1 chunk2 ");
     }
 }
