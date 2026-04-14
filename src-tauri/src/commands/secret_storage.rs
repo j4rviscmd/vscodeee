@@ -40,30 +40,60 @@ const SERVICE_NAME: &str = "vscodeee.secrets";
 ///
 /// # Returns
 /// The secret value as a string, or `None` if no entry exists.
+///
+/// On macOS debug builds, after successfully reading a Keychain item,
+/// the ACL is automatically patched to "any application" if it currently
+/// restricts access to specific binaries. This ensures that subsequent
+/// reads from different worktree binaries will not trigger a password prompt.
 #[tauri::command]
 pub fn secret_get(key: String) -> Result<Option<String>, String> {
     log::trace!(target: "vscodeee::secrets", "secret_get: key={key}");
 
-    match keyring::Entry::new(SERVICE_NAME, &key) {
-        Ok(entry) => match entry.get_password() {
-            Ok(password) => {
-                log::trace!(target: "vscodeee::secrets", "secret_get: found value for key={key}");
+    // On macOS debug builds, use the permissive ACL path: read the password
+    // and then patch the ACL to "any application" so future reads from
+    // different worktree binaries won't trigger a password dialog.
+    #[cfg(all(target_os = "macos", debug_assertions))]
+    {
+        return match macos_permissive::get_password_and_patch_acl(SERVICE_NAME, &key) {
+            Ok(Some(password)) => {
+                log::trace!(target: "vscodeee::secrets", "secret_get: found value for key={key} (permissive path)");
                 Ok(Some(password))
             }
-            Err(keyring::Error::NoEntry) => {
+            Ok(None) => {
                 log::trace!(target: "vscodeee::secrets", "secret_get: no entry for key={key}");
                 Ok(None)
             }
             Err(e) => {
-                log::warn!(target: "vscodeee::secrets", "secret_get: keyring error for key={key}: {e}");
-                Err(format!("Failed to get secret for key '{key}': {e}"))
+                log::warn!(target: "vscodeee::secrets", "secret_get: permissive path error for key={key}: {e}");
+                Err(e)
             }
-        },
-        Err(e) => {
-            log::warn!(target: "vscodeee::secrets", "secret_get: failed to create entry for key={key}: {e}");
-            Err(format!(
-                "Failed to create keyring entry for key '{key}': {e}"
-            ))
+        };
+    }
+
+    // On release builds (and non-macOS), use the default keyring behavior.
+    #[cfg(not(all(target_os = "macos", debug_assertions)))]
+    {
+        match keyring::Entry::new(SERVICE_NAME, &key) {
+            Ok(entry) => match entry.get_password() {
+                Ok(password) => {
+                    log::trace!(target: "vscodeee::secrets", "secret_get: found value for key={key}");
+                    Ok(Some(password))
+                }
+                Err(keyring::Error::NoEntry) => {
+                    log::trace!(target: "vscodeee::secrets", "secret_get: no entry for key={key}");
+                    Ok(None)
+                }
+                Err(e) => {
+                    log::warn!(target: "vscodeee::secrets", "secret_get: keyring error for key={key}: {e}");
+                    Err(format!("Failed to get secret for key '{key}': {e}"))
+                }
+            },
+            Err(e) => {
+                log::warn!(target: "vscodeee::secrets", "secret_get: failed to create entry for key={key}: {e}");
+                Err(format!(
+                    "Failed to create keyring entry for key '{key}': {e}"
+                ))
+            }
         }
     }
 }
@@ -150,9 +180,10 @@ mod macos_permissive {
         CFDictionaryCreateMutable, CFDictionaryRef, CFMutableDictionaryRef,
     };
     use security_framework_sys::item::{
-        kSecAttrAccount, kSecAttrService, kSecClass, kSecClassGenericPassword, kSecValueData,
+        kSecAttrAccount, kSecAttrService, kSecClass, kSecClassGenericPassword, kSecMatchLimit,
+        kSecReturnData, kSecValueData,
     };
-    use security_framework_sys::keychain_item::{SecItemAdd, SecItemDelete};
+    use security_framework_sys::keychain_item::{SecItemAdd, SecItemCopyMatching, SecItemDelete};
     use std::ffi::c_void;
     use std::ptr;
 
@@ -162,6 +193,10 @@ mod macos_permissive {
         // kSecAttrAccess: CFStringRef key for setting the access object on a
         // legacy Keychain item (macOS only, not available on iOS).
         static kSecAttrAccess: core_foundation_sys::string::CFStringRef;
+
+        // kSecMatchLimitOne: CFStringRef value for kSecMatchLimit that limits
+        // SecItemCopyMatching to return at most one item.
+        static kSecMatchLimitOne: core_foundation_sys::string::CFStringRef;
 
         // SecAccessCreate: Creates a new access object.
         // trustedList=NULL → only calling app; empty CFArray → empty list.
@@ -368,6 +403,103 @@ mod macos_permissive {
             );
 
             Ok(())
+        }
+    }
+
+    /// Read a generic password from the macOS Keychain and, if the item's ACL
+    /// restricts access to specific binaries, re-save it with an "any application"
+    /// ACL so that future reads from any worktree binary succeed without prompting.
+    ///
+    /// ## Behavior
+    /// 1. Use `SecItemCopyMatching` to read the password value.
+    /// 2. If the item does not exist, return `Ok(None)`.
+    /// 3. If the read succeeds, re-save the same value via `set_password_any_app`
+    ///    which deletes + re-creates the item with a fully permissive ACL.
+    ///    This is idempotent — if the ACL is already permissive, the re-save
+    ///    simply overwrites with the same value and ACL.
+    ///
+    /// ## Important
+    /// The first call from a new binary **may still trigger a password dialog**
+    /// if the existing item has a binary-restricted ACL and the user allowed
+    /// access. After that, the ACL is patched and subsequent calls won't prompt.
+    pub(super) fn get_password_and_patch_acl(
+        service: &str,
+        account: &str,
+    ) -> Result<Option<String>, String> {
+        unsafe {
+            let cf_service = CFString::new(service);
+            let cf_account = CFString::new(account);
+
+            // Build the query dictionary for SecItemCopyMatching.
+            let query = create_mutable_dict();
+            CFDictionaryAddValue(
+                query,
+                kSecClass as *const c_void,
+                kSecClassGenericPassword as *const c_void,
+            );
+            CFDictionaryAddValue(
+                query,
+                kSecAttrService as *const c_void,
+                cf_service.as_concrete_TypeRef() as *const c_void,
+            );
+            CFDictionaryAddValue(
+                query,
+                kSecAttrAccount as *const c_void,
+                cf_account.as_concrete_TypeRef() as *const c_void,
+            );
+            CFDictionaryAddValue(
+                query,
+                kSecReturnData as *const c_void,
+                core_foundation_sys::number::kCFBooleanTrue as *const c_void,
+            );
+            CFDictionaryAddValue(
+                query,
+                kSecMatchLimit as *const c_void,
+                kSecMatchLimitOne as *const c_void,
+            );
+
+            let mut result: CFTypeRef = ptr::null();
+            let status = SecItemCopyMatching(query as CFDictionaryRef, &mut result);
+            CFRelease(query as CFTypeRef);
+
+            // errSecItemNotFound = -25300
+            if status == -25300 {
+                return Ok(None);
+            }
+
+            if status != 0 {
+                return Err(format!(
+                    "Failed to get secret for key '{account}': Platform secure storage failure (status {status})"
+                ));
+            }
+
+            if result.is_null() {
+                return Ok(None);
+            }
+
+            // Convert CFData → String.
+            let data_ref = result as core_foundation_sys::data::CFDataRef;
+            let len = core_foundation_sys::data::CFDataGetLength(data_ref) as usize;
+            let ptr = core_foundation_sys::data::CFDataGetBytePtr(data_ref);
+            let bytes = std::slice::from_raw_parts(ptr, len);
+            let password = String::from_utf8_lossy(bytes).into_owned();
+            CFRelease(result);
+
+            // Re-save with permissive ACL to patch any binary-restricted ACL.
+            // This is idempotent — overwrites with same value + any-app ACL.
+            log::info!(
+                target: "vscodeee::secrets",
+                "get_password_and_patch_acl: re-saving with permissive ACL for key={account}"
+            );
+            if let Err(e) = set_password_any_app(service, account, &password) {
+                // Log the error but still return the password — the read succeeded.
+                log::warn!(
+                    target: "vscodeee::secrets",
+                    "get_password_and_patch_acl: failed to patch ACL for key={account}: {e}"
+                );
+            }
+
+            Ok(Some(password))
         }
     }
 }
