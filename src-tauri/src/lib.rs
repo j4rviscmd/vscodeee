@@ -186,6 +186,8 @@ pub fn run() {
             commands::native_host::kill_process,
             commands::native_host::install_shell_command,
             commands::native_host::uninstall_shell_command,
+            // ── Screenshot commands ──
+            commands::native_host::capture_screenshot,
             // ── Power commands ──
             commands::native_host::get_system_idle_state,
             commands::native_host::get_system_idle_time,
