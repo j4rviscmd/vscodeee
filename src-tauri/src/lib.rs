@@ -70,6 +70,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(logging::build_plugin().build())
         .manage({
             let mgr = pty::manager::PtyManager::new();
@@ -242,11 +243,12 @@ pub fn run() {
             commands::secret_storage::secret_delete,
         ])
         .setup(move |app| {
+            use tauri::Manager;
+
             log::info!(target: "vscodeee", "Tauri app started");
 
             // ── Initialize terminal state store ──
             {
-                use tauri::Manager;
                 if let Some(data_dir) = app.path().app_data_dir().ok() {
                     let store = pty::state::TerminalStateStore::new(&data_dir);
                     if let Some(mgr) = app.try_state::<pty::manager::PtyManager>() {
@@ -285,7 +287,6 @@ pub fn run() {
             // to preserve the native traffic lights and rounded corners.
             #[cfg(not(target_os = "macos"))]
             {
-                use tauri::Manager;
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.set_decorations(false);
                 }
@@ -294,7 +295,6 @@ pub fn run() {
             // Open devtools in debug builds for WebView debugging
             #[cfg(debug_assertions)]
             {
-                use tauri::Manager;
                 if let Some(window) = app.get_webview_window("main") {
                     window.open_devtools();
                 }
@@ -362,7 +362,6 @@ pub fn run() {
             // Apply fullscreen to the main window if restored
             if let Some(ref entry) = first_entry {
                 if entry.is_fullscreen {
-                    use tauri::Manager;
                     if let Some(window) = app.get_webview_window("main") {
                         let _ = window.set_fullscreen(true);
                     }

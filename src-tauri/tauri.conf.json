@@ -7,7 +7,7 @@
   "build": {
     "frontendDist": "../out",
     "beforeDevCommand": "",
-    "beforeBuildCommand": "node build/next/index.ts transpile"
+    "beforeBuildCommand": "node build/next/index.ts transpile && node build/next/index.ts transpile-extensions"
   },
   "app": {
     "withGlobalTauri": true,
@@ -36,10 +36,15 @@
       "desktop": {
         "schemes": ["vscodeee"]
       }
+    },
+    "updater": {
+      "endpoints": ["https://github.com/j4rviscmd/vscodeee/releases/latest/download/latest.json"],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZCMDVFMEJCQTMzODU1MzIKUldReVZUaWp1K0FGYXpHc2JDcFpoandoL21HL0w5UkxHTzdiMVFGUXFJNStUNkNRMk50R2UzSUgK"
     }
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",
