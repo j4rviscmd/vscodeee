@@ -521,7 +521,8 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 				return null;
 			}
 
-			return this.getDefaultAccountFromAuthenticatedSessions(authenticationProvider, sessions);
+			const result = await this.getDefaultAccountFromAuthenticatedSessions(authenticationProvider, sessions);
+			return result;
 		} catch (error) {
 			this.logService.error('[DefaultAccount] Failed to get default account for provider:', authenticationProvider.id, getErrorMessage(error));
 			return null;
@@ -613,7 +614,8 @@ class DefaultAccountProvider extends Disposable implements IDefaultAccountProvid
 					}
 				}
 
-				return await this.authenticationService.getSessions(authProviderId, undefined, { account: preferredAccount }, true);
+				const result = await this.authenticationService.getSessions(authProviderId, undefined, { account: preferredAccount }, true);
+				return result;
 			} catch (error) {
 				this.logService.warn(`[DefaultAccount] Attempt ${attempt} to get sessions failed:`, getErrorMessage(error));
 				if (attempt === 3) {
