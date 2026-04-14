@@ -67,7 +67,8 @@ export class TauriDiskFileSystemProvider extends AbstractDiskFileSystemProvider 
 		let caps =
 			FileSystemProviderCapabilities.FileReadWrite |
 			FileSystemProviderCapabilities.FileFolderCopy |
-			FileSystemProviderCapabilities.Trash;
+			FileSystemProviderCapabilities.Trash |
+			FileSystemProviderCapabilities.FileAppend;
 		if (isLinux) {
 			caps |= FileSystemProviderCapabilities.PathCaseSensitive;
 		}
@@ -130,6 +131,7 @@ export class TauriDiskFileSystemProvider extends AbstractDiskFileSystemProvider 
 			content: base64,
 			create: opts.create,
 			overwrite: opts.overwrite,
+			append: opts.append ?? false,
 		});
 	}
 
