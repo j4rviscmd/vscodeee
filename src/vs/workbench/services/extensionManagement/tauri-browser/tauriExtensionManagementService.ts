@@ -11,6 +11,7 @@
  * extract VSIX files to disk via Rust and register with the scanner.
  *
  * Key overrides over the web version:
+ * - `install()` — handles VSIX files via Rust extraction (not just directories)
  * - `createInstallExtensionTask()` — Tauri-specific task that extracts VSIX
  * - `deleteExtension()` — physically removes extension directory via Rust
  * - `getCompatibleVersion()` — allows ALL extensions (not just web-compatible)
@@ -20,7 +21,7 @@
 import { URI } from '../../../../base/common/uri.js';
 import { extCommands } from '../../../../platform/tauri/common/tauriExtensionCommands.js';
 import { WebExtensionManagementService } from '../common/webExtensionManagementService.js';
-import { IExtensionGalleryService, ILocalExtension, IGalleryExtension, InstallOperation, Metadata, IProductVersion } from '../../../../platform/extensionManagement/common/extensionManagement.js';
+import { IExtensionGalleryService, ILocalExtension, IGalleryExtension, InstallOperation, InstallOptions, Metadata, IProductVersion } from '../../../../platform/extensionManagement/common/extensionManagement.js';
 import { TargetPlatform, IExtensionManifest, IExtension, IExtensionIdentifier } from '../../../../platform/extensions/common/extensions.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
@@ -35,7 +36,7 @@ import { IBrowserWorkbenchEnvironmentService } from '../../environment/browser/e
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { areSameExtensions, getGalleryExtensionId } from '../../../../platform/extensionManagement/common/extensionManagementUtil.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
-import { AbstractExtensionTask, IInstallExtensionTask, InstallExtensionTaskOptions } from '../../../../platform/extensionManagement/common/abstractExtensionManagementService.js';
+import { AbstractExtensionTask, IInstallExtensionTask, InstallExtensionTaskOptions, toExtensionManagementError } from '../../../../platform/extensionManagement/common/abstractExtensionManagementService.js';
 import { isUndefined, isBoolean } from '../../../../base/common/types.js';
 import { joinPath } from '../../../../base/common/resources.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
@@ -172,6 +173,65 @@ export class TauriExtensionManagementService extends WebExtensionManagementServi
 				this.logService.error('Failed to delete extension directory:', error);
 			}
 		}
+	}
+
+	// --- VSIX file install override -------------------------------------------
+
+	/**
+	 * Override `install(URI)` to handle VSIX files via Rust extraction.
+	 *
+	 * The parent `WebExtensionManagementService.install()` calls
+	 * `scanExtensionManifest(location)` which reads `{location}/package.json` —
+	 * this only works for already-extracted directories, not ZIP-based VSIX files.
+	 *
+	 * Extensions like CodeLLDB download platform-specific VSIX packages to temp
+	 * locations and install them via the `workbench.extensions.installExtension`
+	 * command. Without this override those installs fail with
+	 * "Cannot find a valid extension from the location".
+	 */
+	override async install(location: URI, options: InstallOptions = {}): Promise<ILocalExtension> {
+		this.logService.trace('ExtensionManagementService#install', location.toString());
+
+		if (this.isVsixUri(location)) {
+			return this.installFromVsix(location, options);
+		}
+
+		return super.install(location, options);
+	}
+
+	private isVsixUri(location: URI): boolean {
+		return location.scheme === 'file' && /\.vsix$/i.test(location.fsPath);
+	}
+
+	private async installFromVsix(vsixUri: URI, options: InstallOptions): Promise<ILocalExtension> {
+		this.logService.info('Installing VSIX from file:', vsixUri.fsPath);
+
+		// Read manifest from VSIX via Rust (no extraction needed)
+		let manifest: IExtensionManifest;
+		try {
+			manifest = await extCommands.readVsixManifest(vsixUri.fsPath) as IExtensionManifest;
+		} catch (error) {
+			throw new Error(`Failed to read VSIX manifest from ${vsixUri.fsPath}: ${error}`);
+		}
+
+		if (!manifest.name || !manifest.version) {
+			throw new Error(`Invalid VSIX manifest: missing name or version in ${vsixUri.fsPath}`);
+		}
+
+		// Delegate to installExtensions() → createInstallExtensionTask()
+		// → TauriInstallExtensionTask handles extraction and registration.
+		const result = await this.installExtensions([{ manifest, extension: vsixUri, options }]);
+
+		if (result.length === 0 || !result[0]) {
+			throw toExtensionManagementError(new Error(`No result returned while installing VSIX ${vsixUri.fsPath}`));
+		}
+		if (result[0].local) {
+			return result[0].local;
+		}
+		if (result[0].error) {
+			throw result[0].error;
+		}
+		throw toExtensionManagementError(new Error(`Unknown error while installing VSIX ${vsixUri.fsPath}`));
 	}
 
 	/**
