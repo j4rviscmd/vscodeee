@@ -34,6 +34,17 @@ Maintain the current functionality of VSCode while achieving the following:
 
 ---
 
+## Architecture
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/screenshots/vscodeee_architecture_dark.png">
+  <img src="./docs/screenshots/vscodeee_architecture_light.png" alt="VSCodeee Architecture">
+</picture>
+
+> **Note**: Shared Process (upstream VS Code's hidden renderer for gallery, sync, telemetry) is **eliminated** in VSCodeee. Its services are implemented directly in the WebView or Rust backend — see [#88](https://github.com/j4rviscmd/vscodeee/issues/88).
+
+---
+
 ## Roadmap
 
 > **Current Phase: Phase 5 — Process Model** 📋
@@ -221,15 +232,6 @@ Tauri build pipeline, code signing (macOS/Windows), installers (.dmg, .msi, .App
 </details>
 
 ---
-
-## Architecture
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./docs/screenshots/vscodeee_architecture_dark.png">
-  <img src="./docs/screenshots/vscodeee_architecture_light.png" alt="VSCodeee Architecture">
-</picture>
-
-> **Note**: Shared Process (upstream VS Code's hidden renderer for gallery, sync, telemetry) is **eliminated** in VSCodeee. Its services are implemented directly in the WebView or Rust backend — see [#88](https://github.com/j4rviscmd/vscodeee/issues/88).
 
 ## MVP Excluded Features
 
