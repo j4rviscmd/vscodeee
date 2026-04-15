@@ -33,6 +33,199 @@
 /// and the secret key as the "account" (username) field.
 const SERVICE_NAME: &str = "vscodeee.secrets";
 
+// ── macOS debug-only: shared helpers ────────────────────────────────────────
+
+/// Delete a Keychain generic-password item by service and account,
+/// suppressing any authentication UI (password dialogs).
+///
+/// Returns `Ok(())` if the item was deleted, did not exist, or was
+/// inaccessible due to ACL restrictions. Returns `Err` only for
+/// unexpected platform errors.
+///
+/// # Safety
+/// Caller must ensure this is only called on macOS in debug builds.
+#[cfg(all(target_os = "macos", debug_assertions))]
+unsafe fn delete_keychain_item_skip_ui(
+    cf_service: &core_foundation::string::CFString,
+    cf_account: &core_foundation::string::CFString,
+) -> Result<(), i32> {
+    use core_foundation::base::TCFType;
+    use core_foundation_sys::base::{kCFAllocatorDefault, CFRelease, CFTypeRef};
+    use core_foundation_sys::dictionary::{
+        kCFTypeDictionaryKeyCallBacks, kCFTypeDictionaryValueCallBacks, CFDictionaryAddValue,
+        CFDictionaryCreateMutable, CFDictionaryRef,
+    };
+    use security_framework_sys::item::{
+        kSecAttrAccount, kSecAttrService, kSecClass, kSecClassGenericPassword,
+    };
+    use security_framework_sys::keychain_item::SecItemDelete;
+    use std::ffi::c_void;
+
+    extern "C" {
+        static kSecUseAuthenticationUI: core_foundation_sys::string::CFStringRef;
+        static kSecUseAuthenticationUISkip: core_foundation_sys::string::CFStringRef;
+    }
+
+    let query = CFDictionaryCreateMutable(
+        kCFAllocatorDefault,
+        0,
+        &kCFTypeDictionaryKeyCallBacks,
+        &kCFTypeDictionaryValueCallBacks,
+    );
+    CFDictionaryAddValue(
+        query,
+        kSecClass as *const c_void,
+        kSecClassGenericPassword as *const c_void,
+    );
+    CFDictionaryAddValue(
+        query,
+        kSecAttrService as *const c_void,
+        cf_service.as_concrete_TypeRef() as *const c_void,
+    );
+    CFDictionaryAddValue(
+        query,
+        kSecAttrAccount as *const c_void,
+        cf_account.as_concrete_TypeRef() as *const c_void,
+    );
+    CFDictionaryAddValue(
+        query,
+        kSecUseAuthenticationUI as *const c_void,
+        kSecUseAuthenticationUISkip as *const c_void,
+    );
+
+    let status = SecItemDelete(query as CFDictionaryRef);
+    CFRelease(query as CFTypeRef);
+
+    // errSecItemNotFound = -25300 or errSecAuthFailed = -25293: silently succeed.
+    if status == -25300 || status == -25293 || status == 0 {
+        Ok(())
+    } else {
+        Err(status)
+    }
+}
+
+// ── macOS debug-only: dialog-free Keychain read for external callers ────────
+//
+// Used by `network.rs::lookup_authorization` to read proxy credentials
+// from the Keychain without triggering macOS password dialogs.
+
+/// Read a Keychain password without triggering UI dialogs (macOS debug only).
+///
+/// Uses `kSecUseAuthenticationUISkip` so macOS returns `errSecAuthFailed`
+/// instead of showing a dialog when the ACL denies access. In that case the
+/// stale item is deleted and `Ok(None)` is returned.
+///
+/// # Arguments
+/// * `service` - The Keychain service name (e.g., `"vscodeee.auth.http.example.com:8080"`)
+/// * `account` - The Keychain account name (e.g., the auth realm)
+#[cfg(all(target_os = "macos", debug_assertions))]
+pub fn macos_permissive_get_password(
+    service: &str,
+    account: &str,
+) -> Result<Option<String>, String> {
+    use core_foundation::base::TCFType;
+    use core_foundation::string::CFString;
+    use core_foundation_sys::base::{kCFAllocatorDefault, CFRelease, CFTypeRef};
+    use core_foundation_sys::dictionary::{
+        kCFTypeDictionaryKeyCallBacks, kCFTypeDictionaryValueCallBacks, CFDictionaryAddValue,
+        CFDictionaryCreateMutable, CFDictionaryRef,
+    };
+    use security_framework_sys::item::{
+        kSecAttrAccount, kSecAttrService, kSecClass, kSecClassGenericPassword, kSecMatchLimit,
+        kSecReturnData,
+    };
+    use security_framework_sys::keychain_item::SecItemCopyMatching;
+    use std::ffi::c_void;
+    use std::ptr;
+
+    extern "C" {
+        static kSecUseAuthenticationUI: core_foundation_sys::string::CFStringRef;
+        static kSecUseAuthenticationUISkip: core_foundation_sys::string::CFStringRef;
+        static kSecMatchLimitOne: core_foundation_sys::string::CFStringRef;
+    }
+
+    unsafe {
+        let cf_service = CFString::new(service);
+        let cf_account = CFString::new(account);
+
+        let query = CFDictionaryCreateMutable(
+            kCFAllocatorDefault,
+            0,
+            &kCFTypeDictionaryKeyCallBacks,
+            &kCFTypeDictionaryValueCallBacks,
+        );
+        CFDictionaryAddValue(
+            query,
+            kSecClass as *const c_void,
+            kSecClassGenericPassword as *const c_void,
+        );
+        CFDictionaryAddValue(
+            query,
+            kSecAttrService as *const c_void,
+            cf_service.as_concrete_TypeRef() as *const c_void,
+        );
+        CFDictionaryAddValue(
+            query,
+            kSecAttrAccount as *const c_void,
+            cf_account.as_concrete_TypeRef() as *const c_void,
+        );
+        CFDictionaryAddValue(
+            query,
+            kSecReturnData as *const c_void,
+            core_foundation_sys::number::kCFBooleanTrue as *const c_void,
+        );
+        CFDictionaryAddValue(
+            query,
+            kSecMatchLimit as *const c_void,
+            kSecMatchLimitOne as *const c_void,
+        );
+        CFDictionaryAddValue(
+            query,
+            kSecUseAuthenticationUI as *const c_void,
+            kSecUseAuthenticationUISkip as *const c_void,
+        );
+
+        let mut result: CFTypeRef = ptr::null();
+        let status = SecItemCopyMatching(query as CFDictionaryRef, &mut result);
+        CFRelease(query as CFTypeRef);
+
+        // errSecItemNotFound = -25300
+        if status == -25300 {
+            return Ok(None);
+        }
+
+        // errSecAuthFailed = -25293: ACL denies access, delete stale item.
+        if status == -25293 {
+            log::warn!(
+                target: "vscodeee",
+                "macos_permissive_get_password: auth failed for service='{service}' \
+                 account='{account}' (ACL restricts calling binary), deleting stale item"
+            );
+            let _ = delete_keychain_item_skip_ui(&cf_service, &cf_account);
+            return Ok(None);
+        }
+
+        if status != 0 {
+            return Err(format!(
+                "SecItemCopyMatching failed with status {status} for service='{service}' account='{account}'"
+            ));
+        }
+
+        if result.is_null() {
+            return Ok(None);
+        }
+
+        let data_ref = result as core_foundation_sys::data::CFDataRef;
+        let len = core_foundation_sys::data::CFDataGetLength(data_ref) as usize;
+        let data_ptr = core_foundation_sys::data::CFDataGetBytePtr(data_ref);
+        let bytes = std::slice::from_raw_parts(data_ptr, len);
+        let password = String::from_utf8_lossy(bytes).into_owned();
+        CFRelease(result);
+
+        Ok(Some(password))
+    }
+}
+
 /// Retrieve a secret value from the OS credential store.
 ///
 /// # Arguments
@@ -54,7 +247,7 @@ pub fn secret_get(key: String) -> Result<Option<String>, String> {
     // different worktree binaries won't trigger a password dialog.
     #[cfg(all(target_os = "macos", debug_assertions))]
     {
-        return match macos_permissive::get_password_and_patch_acl(SERVICE_NAME, &key) {
+        match macos_permissive::get_password_and_patch_acl(SERVICE_NAME, &key) {
             Ok(Some(password)) => {
                 log::trace!(target: "vscodeee::secrets", "secret_get: found value for key={key} (permissive path)");
                 Ok(Some(password))
@@ -67,7 +260,7 @@ pub fn secret_get(key: String) -> Result<Option<String>, String> {
                 log::warn!(target: "vscodeee::secrets", "secret_get: permissive path error for key={key}: {e}");
                 Err(e)
             }
-        };
+        }
     }
 
     // On release builds (and non-macOS), use the default keyring behavior.
@@ -118,7 +311,7 @@ pub fn secret_set(key: String, value: String) -> Result<(), String> {
         log::info!(target: "vscodeee::secrets", "secret_set: using permissive ACL path for key={key}");
         macos_permissive::set_password_any_app(SERVICE_NAME, &key, &value)?;
         log::info!(target: "vscodeee::secrets", "secret_set: stored value for key={key} (permissive ACL)");
-        return Ok(());
+        Ok(())
     }
 
     // On release builds (and non-macOS), use the default keyring behavior.
@@ -146,21 +339,52 @@ pub fn secret_set(key: String, value: String) -> Result<(), String> {
 pub fn secret_delete(key: String) -> Result<(), String> {
     log::trace!(target: "vscodeee::secrets", "secret_delete: key={key}");
 
-    let entry = keyring::Entry::new(SERVICE_NAME, &key)
-        .map_err(|e| format!("Failed to create keyring entry for key '{key}': {e}"))?;
+    // On macOS debug builds, use the dialog-free delete helper to avoid
+    // triggering a Keychain password dialog when the ACL restricts the
+    // calling binary.
+    #[cfg(all(target_os = "macos", debug_assertions))]
+    {
+        use core_foundation::string::CFString;
 
-    match entry.delete_credential() {
-        Ok(()) => {
-            log::trace!(target: "vscodeee::secrets", "secret_delete: deleted key={key}");
-            Ok(())
+        unsafe {
+            let cf_service = CFString::new(SERVICE_NAME);
+            let cf_account = CFString::new(&key);
+
+            if delete_keychain_item_skip_ui(&cf_service, &cf_account).is_ok() {
+                log::trace!(
+                    target: "vscodeee::secrets",
+                    "secret_delete: deleted (or no entry for) key={key}"
+                );
+                Ok(())
+            } else {
+                // delete_keychain_item_skip_ui already handles -25300 and -25293,
+                // so any Err here is an unexpected platform error.
+                Err(format!(
+                    "Failed to delete secret for key '{key}': platform error"
+                ))
+            }
         }
-        Err(keyring::Error::NoEntry) => {
-            log::trace!(target: "vscodeee::secrets", "secret_delete: no entry for key={key} (noop)");
-            Ok(())
-        }
-        Err(e) => {
-            log::warn!(target: "vscodeee::secrets", "secret_delete: keyring error for key={key}: {e}");
-            Err(format!("Failed to delete secret for key '{key}': {e}"))
+    }
+
+    // On release builds (and non-macOS), use the default keyring behavior.
+    #[cfg(not(all(target_os = "macos", debug_assertions)))]
+    {
+        let entry = keyring::Entry::new(SERVICE_NAME, &key)
+            .map_err(|e| format!("Failed to create keyring entry for key '{key}': {e}"))?;
+
+        match entry.delete_credential() {
+            Ok(()) => {
+                log::trace!(target: "vscodeee::secrets", "secret_delete: deleted key={key}");
+                Ok(())
+            }
+            Err(keyring::Error::NoEntry) => {
+                log::trace!(target: "vscodeee::secrets", "secret_delete: no entry for key={key} (noop)");
+                Ok(())
+            }
+            Err(e) => {
+                log::warn!(target: "vscodeee::secrets", "secret_delete: keyring error for key={key}: {e}");
+                Err(format!("Failed to delete secret for key '{key}': {e}"))
+            }
         }
     }
 }
@@ -197,6 +421,15 @@ mod macos_permissive {
         // kSecMatchLimitOne: CFStringRef value for kSecMatchLimit that limits
         // SecItemCopyMatching to return at most one item.
         static kSecMatchLimitOne: core_foundation_sys::string::CFStringRef;
+
+        // kSecUseAuthenticationUI: CFStringRef key for controlling whether
+        // Security framework shows authentication UI (Keychain password dialogs).
+        static kSecUseAuthenticationUI: core_foundation_sys::string::CFStringRef;
+
+        // kSecUseAuthenticationUISkip: CFStringRef value for kSecUseAuthenticationUI
+        // that suppresses all user interaction. If the operation cannot be completed
+        // without user interaction, it returns errSecAuthFailed (-25293) instead.
+        static kSecUseAuthenticationUISkip: core_foundation_sys::string::CFStringRef;
 
         // SecAccessCreate: Creates a new access object.
         // trustedList=NULL → only calling app; empty CFArray → empty list.
@@ -419,9 +652,10 @@ mod macos_permissive {
     ///    simply overwrites with the same value and ACL.
     ///
     /// ## Important
-    /// The first call from a new binary **may still trigger a password dialog**
-    /// if the existing item has a binary-restricted ACL and the user allowed
-    /// access. After that, the ACL is patched and subsequent calls won't prompt.
+    /// The query uses `kSecUseAuthenticationUISkip` to suppress Keychain dialogs.
+    /// If the item's ACL denies access (the calling binary is not in the allowed
+    /// list), macOS returns `errSecAuthFailed` (-25293) and we delete the stale
+    /// item. The caller will re-create it with a permissive ACL on next write.
     pub(super) fn get_password_and_patch_acl(
         service: &str,
         account: &str,
@@ -457,6 +691,13 @@ mod macos_permissive {
                 kSecMatchLimit as *const c_void,
                 kSecMatchLimitOne as *const c_void,
             );
+            // Suppress authentication UI — if the item's ACL denies access,
+            // macOS returns errSecAuthFailed (-25293) instead of showing a dialog.
+            CFDictionaryAddValue(
+                query,
+                kSecUseAuthenticationUI as *const c_void,
+                kSecUseAuthenticationUISkip as *const c_void,
+            );
 
             let mut result: CFTypeRef = ptr::null();
             let status = SecItemCopyMatching(query as CFDictionaryRef, &mut result);
@@ -464,6 +705,20 @@ mod macos_permissive {
 
             // errSecItemNotFound = -25300
             if status == -25300 {
+                return Ok(None);
+            }
+
+            // errSecAuthFailed = -25293: returned when kSecUseAuthenticationUISkip
+            // is set and the item's ACL denies access to the calling binary.
+            // Delete the stale item so the caller can re-create it with a
+            // permissive ACL on next write.
+            if status == -25293 {
+                log::warn!(
+                    target: "vscodeee::secrets",
+                    "get_password_and_patch_acl: auth failed for key='{account}' \
+                     (ACL restricts calling binary), deleting stale item"
+                );
+                let _ = super::delete_keychain_item_skip_ui(&cf_service, &cf_account);
                 return Ok(None);
             }
 
