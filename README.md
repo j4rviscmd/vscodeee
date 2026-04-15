@@ -2,7 +2,7 @@
 
 # VS Codeee
 
-<img src="./docs/screenshots/workbench.png" alt="VS Codeee Phase 1" width="600">
+<img src="./docs/screenshots/workbench.png" alt="VS Codeee Phase 1">
 
 ## A project to run VSCode with Tauri 2.0
 
@@ -224,27 +224,10 @@ Tauri build pipeline, code signing (macOS/Windows), installers (.dmg, .msi, .App
 
 ## Architecture
 
-```text
-┌──────────────────────────────────────────┐
-│           Tauri WebView (Renderer)       │
-│  workbench.html + VS Code TypeScript     │
-│  • Extension Gallery / Management        │
-└──────────────┬───────────────────────────┘
-               │  invoke / emit (Tauri IPC)
-┌──────────────▼───────────────────────────┐
-│           Tauri Rust Backend             │
-│  • Custom Protocol (vscode-file://)      │
-│  • PTY Manager (portable-pty)            │
-│  • Deep-Link (vscodeee:// OAuth)         │
-│  • Window Management                     │
-│  • Native Host Services                  │
-└──────────────┬───────────────────────────┘
-               │  socket / named pipe
-┌──────────────▼───────────────────────────┐
-│         Node.js Sidecar Process          │
-│  • Extension Host                        │
-└──────────────────────────────────────────┘
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/screenshots/vscodeee_architecture_dark.png">
+  <img src="./docs/screenshots/vscodeee_architecture_light.png" alt="VSCodeee Architecture">
+</picture>
 
 > **Note**: Shared Process (upstream VS Code's hidden renderer for gallery, sync, telemetry) is **eliminated** in VSCodeee. Its services are implemented directly in the WebView or Rust backend — see [#88](https://github.com/j4rviscmd/vscodeee/issues/88).
 
