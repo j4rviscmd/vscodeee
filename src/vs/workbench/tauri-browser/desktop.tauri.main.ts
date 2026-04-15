@@ -12,7 +12,7 @@
 
 import product from '../../platform/product/common/product.js';
 import { Workbench } from '../browser/workbench.js';
-import { domContentLoaded, addDisposableListener, EventType } from '../../base/browser/dom.js';
+import { domContentLoaded, addDisposableListener, EventHelper, EventType } from '../../base/browser/dom.js';
 import { ServiceCollection } from '../../platform/instantiation/common/serviceCollection.js';
 import { ILogService, ILoggerService, getLogLevel, ConsoleLogger } from '../../platform/log/common/log.js';
 import { FileLoggerService } from '../../platform/log/common/fileLog.js';
@@ -122,6 +122,13 @@ export class TauriDesktopMain extends Disposable {
 			listen('tauri://resize', () => layoutService.layout())
 				.then(unlisten => this._register({ dispose: unlisten }));
 			this._register(addDisposableListener(mainWindow, EventType.RESIZE, () => layoutService.layout()));
+
+			// Prevent native WebView behaviors — mirrors BrowserWindow in window.ts.
+			const mainContainer = layoutService.mainContainer;
+			const preventEvent = (e: Event) => EventHelper.stop(e, true);
+			this._register(addDisposableListener(mainContainer, EventType.CONTEXT_MENU, preventEvent));
+			this._register(addDisposableListener(mainContainer, EventType.DROP, preventEvent));
+			this._register(addDisposableListener(mainContainer, EventType.WHEEL, e => e.preventDefault(), { passive: false }));
 
 			this._register(nativeHostService.onDidMaximizeWindow(() => {
 				layoutService.updateWindowMaximizedState(mainWindow, true);
