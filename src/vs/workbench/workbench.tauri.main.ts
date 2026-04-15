@@ -33,6 +33,7 @@ import './tauri-browser/desktop.tauri.main.js';
 //#region --- workbench actions (Tauri-specific)
 
 import './tauri-browser/actions/developerActions.js';
+import './tauri-browser/actions/nativeActions.js';
 
 //#endregion
 
