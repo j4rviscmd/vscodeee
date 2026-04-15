@@ -226,7 +226,7 @@ Tauri build pipeline, code signing (macOS/Windows), installers (.dmg, .msi, .App
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="./docs/screenshots/vscodeee_architecture_dark.png">
-  <img src="./docs/screenshots/vscodeee_architecture_light.png" alt="VSCodeee Architecture" width="600">
+  <img src="./docs/screenshots/vscodeee_architecture_light.png" alt="VSCodeee Architecture">
 </picture>
 
 > **Note**: Shared Process (upstream VS Code's hidden renderer for gallery, sync, telemetry) is **eliminated** in VSCodeee. Its services are implemented directly in the WebView or Rust backend — see [#88](https://github.com/j4rviscmd/vscodeee/issues/88).
