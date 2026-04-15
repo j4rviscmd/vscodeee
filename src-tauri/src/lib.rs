@@ -84,7 +84,7 @@ pub fn run() {
         .manage(Arc::clone(&channel_router))
         .manage(Arc::clone(&window_manager))
         .manage(Arc::clone(&pending_closes))
-        .manage(commands::updater::UpdaterState::new())
+        .manage(commands::updater::UpdaterState::default())
         .on_window_event(window::events::handle_window_event)
         .register_uri_scheme_protocol("vscode-file", move |ctx, request| {
             // On first call the state will have been initialized by setup().
