@@ -110,27 +110,66 @@ pub fn lookup_authorization(auth_info: AuthInfo) -> Result<Option<Credentials>, 
         auth_info.attempt
     );
 
-    match keyring::Entry::new(&service, &auth_info.realm) {
-        Ok(entry) => match entry.get_password() {
-            Ok(password) => {
-                log::debug!(target: "vscodeee", "lookup_authorization: found credential for {service}");
+    // On macOS debug builds, use the permissive Keychain path that suppresses
+    // password dialogs when the ACL restricts the calling binary.
+    #[cfg(all(target_os = "macos", debug_assertions))]
+    {
+        match crate::commands::secret_storage::macos_permissive_get_password(
+            &service,
+            &auth_info.realm,
+        ) {
+            Ok(Some(password)) => {
+                log::debug!(
+                    target: "vscodeee",
+                    "lookup_authorization: found credential for {service} (permissive path)"
+                );
                 Ok(Some(Credentials {
                     username: auth_info.realm.clone(),
                     password,
                 }))
             }
-            Err(keyring::Error::NoEntry) => {
-                log::debug!(target: "vscodeee", "lookup_authorization: no credential for {service}");
+            Ok(None) => {
+                log::debug!(
+                    target: "vscodeee",
+                    "lookup_authorization: no credential for {service} (permissive path)"
+                );
                 Ok(None)
             }
             Err(e) => {
-                log::warn!(target: "vscodeee", "lookup_authorization: keyring error for {service}: {e}");
+                log::warn!(
+                    target: "vscodeee",
+                    "lookup_authorization: permissive path error for {service}: {e}"
+                );
                 Ok(None)
             }
-        },
-        Err(e) => {
-            log::warn!(target: "vscodeee", "lookup_authorization: failed to create keyring entry for {service}: {e}");
-            Ok(None)
+        }
+    }
+
+    // On release builds (and non-macOS), use the default keyring behavior.
+    #[cfg(not(all(target_os = "macos", debug_assertions)))]
+    {
+        match keyring::Entry::new(&service, &auth_info.realm) {
+            Ok(entry) => match entry.get_password() {
+                Ok(password) => {
+                    log::debug!(target: "vscodeee", "lookup_authorization: found credential for {service}");
+                    Ok(Some(Credentials {
+                        username: auth_info.realm.clone(),
+                        password,
+                    }))
+                }
+                Err(keyring::Error::NoEntry) => {
+                    log::debug!(target: "vscodeee", "lookup_authorization: no credential for {service}");
+                    Ok(None)
+                }
+                Err(e) => {
+                    log::warn!(target: "vscodeee", "lookup_authorization: keyring error for {service}: {e}");
+                    Ok(None)
+                }
+            },
+            Err(e) => {
+                log::warn!(target: "vscodeee", "lookup_authorization: failed to create keyring entry for {service}: {e}");
+                Ok(None)
+            }
         }
     }
 }
