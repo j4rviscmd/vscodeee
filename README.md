@@ -2,7 +2,7 @@
 
 # VS Codeee
 
-<img src="./docs/screenshots/workbench.png" alt="VS Codeee Phase 1" width="600">
+<img src="./docs/screenshots/workbench.png" alt="VS Codeee Phase 1">
 
 ## A project to run VSCode with Tauri 2.0
 
