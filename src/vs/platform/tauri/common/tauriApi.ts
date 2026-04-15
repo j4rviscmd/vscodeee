@@ -68,3 +68,23 @@ export function emit(event: string, payload?: unknown): Promise<void> {
 export function listen<T>(event: string, handler: (event: { payload: T }) => void): Promise<UnlistenFn> {
 	return getTauriGlobal().event.listen<T>(event, handler);
 }
+
+/**
+ * Create a Tauri IPC Channel for streaming data from Rust to the WebView.
+ *
+ * Channels are passed as command arguments and allow Rust to call
+ * `channel.send(payload)` which dispatches to the `onmessage` callback.
+ *
+ * @param onmessage - Callback invoked for each message sent from Rust.
+ * @returns A Channel object that can be passed to `invoke()` args.
+ */
+export function createChannel<T>(onmessage: (message: T) => void): unknown {
+	const tauri = (globalThis as any).__TAURI__;
+	if (!tauri) {
+		throw new Error('Tauri API not available.');
+	}
+	// eslint-disable-next-line @typescript-eslint/no-unsafe-call
+	const channel = new tauri.core.Channel();
+	channel.onmessage = onmessage;
+	return channel;
+}
