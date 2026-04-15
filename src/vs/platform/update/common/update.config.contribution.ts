@@ -84,6 +84,13 @@ configurationRegistry.registerConfiguration({
 			scope: ConfigurationScope.APPLICATION,
 			description: localize('showPostInstallInfo', "Show update information tooltip in the title bar after a new version is installed."),
 			included: false,
+		},
+		'update.enabled': {
+			type: 'boolean',
+			default: false,
+			scope: ConfigurationScope.APPLICATION,
+			description: localize('updateEnabled', "Enable the auto-updater in development builds. Production builds always have the updater enabled regardless of this setting. Set to true to test update behavior during development."),
+			included: false,
 		}
 	}
 });

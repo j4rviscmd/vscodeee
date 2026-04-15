@@ -84,6 +84,7 @@ pub fn run() {
         .manage(Arc::clone(&channel_router))
         .manage(Arc::clone(&window_manager))
         .manage(Arc::clone(&pending_closes))
+        .manage(commands::updater::UpdaterState::new())
         .on_window_event(window::events::handle_window_event)
         .register_uri_scheme_protocol("vscode-file", move |ctx, request| {
             // On first call the state will have been initialized by setup().
@@ -168,6 +169,7 @@ pub fn run() {
             commands::native_host::windows_get_string_reg_key,
             // ── Lifecycle commands ──
             commands::native_host::notify_ready,
+            commands::native_host::is_dev_build,
             commands::native_host::close_window,
             commands::native_host::lifecycle_close_confirmed,
             commands::native_host::lifecycle_close_vetoed,
@@ -241,6 +243,11 @@ pub fn run() {
             commands::secret_storage::secret_get,
             commands::secret_storage::secret_set,
             commands::secret_storage::secret_delete,
+            // ── Updater commands ──
+            commands::updater::updater_check_for_updates,
+            commands::updater::updater_download_and_install,
+            commands::updater::updater_restart_and_update,
+            commands::updater::updater_get_current_version,
         ])
         .setup(move |app| {
             use tauri::Manager;
