@@ -136,19 +136,17 @@ export class WorkbenchContextKeysHandler extends Disposable {
 
 		// Opening folder support: support for opening a folder workspace
 		// (e.g. "Open Folder...") is limited in web when not connected
-		// to a remote. Tauri has native file system access, so it behaves like desktop.
-		const isTauri = typeof (globalThis as any).__TAURI_INTERNALS__ !== 'undefined';
+		// to a remote.
 		this.openFolderWorkspaceSupportContext = OpenFolderWorkspaceSupportContext.bindTo(this.contextKeyService);
-		this.openFolderWorkspaceSupportContext.set(isNative || isTauri || typeof this.environmentService.remoteAuthority === 'string');
+		this.openFolderWorkspaceSupportContext.set(isNative || typeof this.environmentService.remoteAuthority === 'string');
 
 		// Empty workspace support: empty workspaces require built-in file system
 		// providers to be available that allow to enter a workspace or open loose
 		// files. This condition is met:
 		// - desktop: always
-		// - tauri: always (has native file system)
 		// -     web: only when connected to a remote
 		this.emptyWorkspaceSupportContext = EmptyWorkspaceSupportContext.bindTo(this.contextKeyService);
-		this.emptyWorkspaceSupportContext.set(isNative || isTauri || typeof this.environmentService.remoteAuthority === 'string');
+		this.emptyWorkspaceSupportContext.set(isNative || typeof this.environmentService.remoteAuthority === 'string');
 
 		// Entering a multi root workspace support: support for entering a multi-root
 		// workspace (e.g. "Open Workspace from File...", "Duplicate Workspace", "Save Workspace")
@@ -156,10 +154,9 @@ export class WorkbenchContextKeysHandler extends Disposable {
 		// with a built-in file system provider.
 		// This condition is met:
 		// - desktop: always
-		// - tauri: always (has native file system)
 		// -     web: only when connected to a remote
 		this.enterMultiRootWorkspaceSupportContext = EnterMultiRootWorkspaceSupportContext.bindTo(this.contextKeyService);
-		this.enterMultiRootWorkspaceSupportContext.set(isNative || isTauri || typeof this.environmentService.remoteAuthority === 'string');
+		this.enterMultiRootWorkspaceSupportContext.set(isNative || typeof this.environmentService.remoteAuthority === 'string');
 
 		// Editor Layout
 		this.splitEditorsVerticallyContext = SplitEditorsVertically.bindTo(this.contextKeyService);

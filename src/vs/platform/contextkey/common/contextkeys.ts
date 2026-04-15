@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { isIOS, isLinux, isMacintosh, isMobile, isWeb, isWindows } from '../../../base/common/platform.js';
+import { isIOS, isLinux, isMacintosh, isMobile, isNative, isWeb, isWindows } from '../../../base/common/platform.js';
 import { localize } from '../../../nls.js';
 import { RawContextKey } from './contextkey.js';
 
@@ -12,7 +12,7 @@ export const IsLinuxContext = new RawContextKey<boolean>('isLinux', isLinux, loc
 export const IsWindowsContext = new RawContextKey<boolean>('isWindows', isWindows, localize('isWindows', "Whether the operating system is Windows"));
 
 export const IsWebContext = new RawContextKey<boolean>('isWeb', isWeb, localize('isWeb', "Whether the platform is a web browser"));
-export const IsMacNativeContext = new RawContextKey<boolean>('isMacNative', isMacintosh && !isWeb, localize('isMacNative', "Whether the operating system is macOS on a non-browser platform"));
+export const IsMacNativeContext = new RawContextKey<boolean>('isMacNative', isMacintosh && isNative, localize('isMacNative', "Whether the operating system is macOS on a desktop platform"));
 export const IsIOSContext = new RawContextKey<boolean>('isIOS', isIOS, localize('isIOS', "Whether the operating system is iOS"));
 export const IsMobileContext = new RawContextKey<boolean>('isMobile', isMobile, localize('isMobile', "Whether the platform is a mobile web browser"));
 

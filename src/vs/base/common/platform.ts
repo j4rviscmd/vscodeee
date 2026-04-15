@@ -106,6 +106,17 @@ else if (typeof navigator === 'object' && !isElectronRenderer) {
 	_isMobile = _userAgent?.indexOf('Mobi') >= 0;
 	_isWeb = true;
 	_isTauri = typeof ($globalThis as any).__TAURI_INTERNALS__ !== 'undefined';
+
+	// Tauri is a desktop app with native OS integration - treat as native
+	// desktop, not web. This ensures isNative-gated code paths (settings
+	// relauncher, native context keys, extension signature verification,
+	// etc.) activate correctly, while preventing web-only code paths from
+	// running in the Tauri WebView environment.
+	if (_isTauri) {
+		_isNative = true;
+		_isWeb = false;
+	}
+
 	_language = nls.getNLSLanguage() || LANGUAGE_DEFAULT;
 	_locale = navigator.language.toLowerCase();
 	_platformLocale = _locale;
@@ -149,6 +160,14 @@ export const isLinuxSnap = _isLinuxSnap;
 export const isNative = _isNative;
 export const isElectron = _isElectron;
 export const isWeb = _isWeb;
+/**
+ * Whether the application is running inside a Tauri WebView.
+ *
+ * When true, {@link isNative} is also forced to `true` and {@link isWeb}
+ * is set to `false` so that native-gated code paths (settings relauncher,
+ * native context keys, extension signature verification, etc.) activate
+ * correctly inside the Tauri WebView environment.
+ */
 export const isTauri = _isTauri;
 export const isWebWorker = (_isWeb && typeof $globalThis.importScripts === 'function');
 export const webWorkerOrigin = isWebWorker ? $globalThis.origin : undefined;

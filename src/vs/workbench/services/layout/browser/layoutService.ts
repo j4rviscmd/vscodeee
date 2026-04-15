@@ -9,7 +9,7 @@ import { ILayoutService } from '../../../../platform/layout/browser/layoutServic
 import { Part } from '../../../browser/part.js';
 import { IDimension } from '../../../../base/browser/dom.js';
 import { Direction, IViewSize } from '../../../../base/browser/ui/grid/grid.js';
-import { isMacintosh, isNative, isTauri, isWeb } from '../../../../base/common/platform.js';
+import { isMacintosh, isNative, isWeb } from '../../../../base/common/platform.js';
 import { isAuxiliaryWindow } from '../../../../base/browser/window.js';
 import { CustomTitleBarVisibility, TitleBarSetting, getMenuBarVisibility, hasCustomTitlebar, hasNativeMenu, hasNativeTitlebar } from '../../../../platform/window/common/window.js';
 import { isFullscreen, isWCOEnabled } from '../../../../base/browser/browser.js';
@@ -364,6 +364,24 @@ export interface IWorkbenchLayoutService extends ILayoutService {
 	getVisibleNeighborPart(part: Parts, direction: Direction): Parts | undefined;
 }
 
+/**
+ * Determines whether the custom (HTML-based) title bar should be displayed.
+ *
+ * The decision tree considers multiple factors in priority order:
+ * 1. Whether a custom title bar is configured at all.
+ * 2. Platform-specific fullscreen behavior (macOS native hides title bar in fullscreen).
+ * 3. Whether the title bar area contains non-empty content (command center, activity bar, etc.).
+ * 4. Menu bar visibility settings.
+ *
+ * On native platforms (including Tauri), the title bar is shown by default
+ * in windowed mode and hidden in fullscreen according to OS conventions.
+ * On web, the title bar is hidden unless explicitly needed for menu bar content.
+ *
+ * @param configurationService - The configuration service for reading title bar and menu bar settings.
+ * @param window - The target window to evaluate (used for fullscreen detection).
+ * @param menuBarToggled - Whether the menu bar was manually toggled by the user.
+ * @returns `true` if the custom title bar should be visible, `false` otherwise.
+ */
 export function shouldShowCustomTitleBar(configurationService: IConfigurationService, window: Window, menuBarToggled?: boolean): boolean {
 	if (!hasCustomTitlebar(configurationService)) {
 		return false;
@@ -388,10 +406,8 @@ export function shouldShowCustomTitleBar(configurationService: IConfigurationSer
 		return false;
 	}
 
-	// macOS (Electron or Tauri): title bar not needed when fullscreen.
-	// Tauri's TitleBarStyle::Overlay provides native traffic lights when windowed,
-	// so the title bar must remain visible to provide spacing and a drag region.
-	if (isMacintosh && (isNative || isTauri)) {
+	// macOS native: title bar not needed when fullscreen.
+	if (isMacintosh && isNative) {
 		return !inFullscreen;
 	}
 
