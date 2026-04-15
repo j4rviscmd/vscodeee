@@ -17,6 +17,15 @@ pub fn notify_ready() {
     log::info!(target: "vscodeee::commands::native_host", "Workbench notified ready");
 }
 
+/// Return whether the app was compiled in debug (development) mode.
+///
+/// Used by the TypeScript updater service to decide whether the
+/// `update.enabled` dev-flag is required.
+#[tauri::command]
+pub fn is_dev_build() -> bool {
+    cfg!(debug_assertions)
+}
+
 /// Close the current window.
 #[tauri::command]
 pub fn close_window(window: tauri::Window) -> Result<(), NativeHostError> {
