@@ -44,6 +44,10 @@ pub struct ExtHostSpawnResult {
     pub ext_host_pid: u32,
     /// The named pipe / Unix socket path.
     pub pipe_path: String,
+    /// Absolute path to the application root directory (where `out/` lives).
+    /// Used by the TypeScript side to set `vscode.env.appRoot` in the
+    /// extension host init data, so extensions can locate the installation.
+    pub app_root: String,
 }
 
 /// Managed state for tracking running Extension Host instances.
@@ -78,6 +82,7 @@ pub async fn spawn_exthost_with_relay(
     app_handle: tauri::AppHandle,
     exthost_state: tauri::State<'_, Arc<ExtHostState>>,
 ) -> Result<ExtHostSpawnResult, String> {
+    // TODO(Phase 5+): Add Windows named pipe support via tokio::net::windows::named_pipe.
     #[cfg(not(unix))]
     {
         let _ = (app_handle, exthost_state);
@@ -153,7 +158,10 @@ async fn spawn_exthost_with_relay_unix(
         *r = Some(relay_handle.task);
     }
 
-    // Monitor ExtHost process exit in background
+    // Spawn a background watchdog that polls the ExtHost process every 500ms.
+    // If the child exits unexpectedly (e.g. crash, OOM), an error is logged
+    // to aid debugging. The watchdog terminates when the process exits or
+    // the sidecar is cleaned up.
     let state_clone = Arc::clone(&exthost_state);
     tokio::spawn(async move {
         // Give the process a moment to start, then check periodically
@@ -197,6 +205,7 @@ async fn spawn_exthost_with_relay_unix(
         ws_port,
         ext_host_pid: pid,
         pipe_path,
+        app_root: app_root.to_string_lossy().into_owned(),
     })
 }
 
@@ -209,6 +218,7 @@ async fn spawn_exthost_with_relay_unix(
 pub async fn spawn_extension_host(
     app_handle: tauri::AppHandle,
 ) -> Result<ExtHostHandshakeResult, String> {
+    // TODO(Phase 5+): Add Windows named pipe support via tokio::net::windows::named_pipe.
     #[cfg(not(unix))]
     {
         let _ = app_handle;
