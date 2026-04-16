@@ -30,9 +30,14 @@ import { invoke } from '../../../../platform/tauri/common/tauriApi.js';
  * Result returned from the Rust `spawn_exthost_with_relay` command.
  */
 interface IExtHostSpawnResult {
+	/** WebSocket port on which the Rust relay is listening. */
 	readonly wsPort: number;
+	/** PID of the spawned Node.js Extension Host child process. */
 	readonly extHostPid: number;
+	/** Unix domain socket path used for IPC with the Extension Host. */
 	readonly pipePath: string;
+	/** Absolute path to the application root directory (where `out/` lives). */
+	readonly appRoot: string;
 }
 
 /**
@@ -54,16 +59,26 @@ export interface ITauriLocalProcessExtensionHostDataProvider {
  */
 export class TauriLocalProcessExtensionHost extends Disposable implements IExtensionHost {
 
+	/** PID of the spawned Extension Host process, or `null` if not yet started. */
 	public pid: number | null = null;
+	/** Always `null` for a local process extension host (no remote authority). */
 	public readonly remoteAuthority = null;
+	/** The extension host is started eagerly on application launch. */
 	public readonly startup = ExtensionHostStartup.EagerAutoStart;
+	/** Extensions loaded in this extension host instance, populated after `start()` completes. */
 	public extensions: ExtensionHostExtensions | null = null;
 
 	private readonly _onExit = this._register(new Emitter<[number, string | null]>());
+	/** Fires with `[code, signal]` when the Extension Host process exits unexpectedly. */
 	public readonly onExit: Event<[number, string | null]> = this._onExit.event;
 
 	private _protocol: PersistentProtocol | null = null;
 	private readonly _extensionHostLogsLocation: URI;
+	/**
+	 * Application root path received from the Rust spawn result.
+	 * Used to set `vscode.env.appRoot` in the extension host init data.
+	 */
+	private _appRoot: string | null = null;
 
 	constructor(
 		public readonly runningLocation: LocalProcessRunningLocation,
@@ -103,7 +118,8 @@ export class TauriLocalProcessExtensionHost extends Disposable implements IExten
 		this._logService.info('[TauriExtHost] Spawning extension host with WS relay...');
 		const result = await invoke<IExtHostSpawnResult>('spawn_exthost_with_relay');
 		this.pid = result.extHostPid;
-		this._logService.info(`[TauriExtHost] ExtHost PID=${result.extHostPid}, WS port=${result.wsPort}, pipe=${result.pipePath}`);
+		this._appRoot = result.appRoot;
+		this._logService.info(`[TauriExtHost] ExtHost PID=${result.extHostPid}, WS port=${result.wsPort}, pipe=${result.pipePath}, appRoot=${result.appRoot}`);
 
 		// 2) Connect WebSocket to the relay
 		this._logService.info('[TauriExtHost] Connecting WS to relay...');
@@ -153,25 +169,36 @@ export class TauriLocalProcessExtensionHost extends Disposable implements IExten
 					return;
 				}
 
-			if (isMessageOfType(msg, MessageType.Initialized)) {
-				// Extension Host is initialized — handshake complete
-				this._logService.info('[TauriExtHost] Received Initialized — handshake complete!');
-				clearTimeout(timeout);
-				disposable.dispose();
-
-				resolve(protocol);
-				return;
-			}
+				if (isMessageOfType(msg, MessageType.Initialized)) {
+					// Extension Host is initialized — handshake complete
+					this._logService.info('[TauriExtHost] Received Initialized — handshake complete!');
+					clearTimeout(timeout);
+					disposable.dispose();
+					resolve(protocol);
+					return;
+				}
 
 				this._logService.warn(`[TauriExtHost] Unexpected message during handshake, length=${msg.byteLength}`);
 			});
 		});
 	}
 
+	/**
+	 * Returns debug/inspect information for the Extension Host process.
+	 *
+	 * Always returns `undefined` because the Node.js inspector is not
+	 * currently wired up in the Tauri sidecar launch path.
+	 */
 	public getInspectPort(): IExtensionInspectInfo | undefined {
 		return undefined;
 	}
 
+	/**
+	 * Attempt to enable the Node.js inspector on the Extension Host.
+	 *
+	 * Always returns `false` because debug port forwarding is not
+	 * yet implemented for the Tauri sidecar architecture.
+	 */
 	public enableInspectPort(): Promise<boolean> {
 		return Promise.resolve(false);
 	}
@@ -224,6 +251,7 @@ export class TauriLocalProcessExtensionHost extends Disposable implements IExten
 			parentPid: 0, // Tauri has no equivalent to process.pid — the Rust sidecar monitors ExtHost lifecycle instead
 			environment: {
 				isExtensionDevelopmentDebug: this._environmentService.debugRenderer,
+				appRoot: this._appRoot ? URI.file(this._appRoot) : undefined,
 				appName: this._productService.nameLong,
 				appHost: 'desktop', // Tauri is a desktop app, not a web app
 				appUriScheme: this._productService.urlProtocol,
