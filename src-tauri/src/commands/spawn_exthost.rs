@@ -9,8 +9,14 @@
 //! 1. **PoC mode** (`spawn_extension_host`): Spawn + handshake + kill (Phase 0-2 verification)
 //! 2. **Production mode** (`spawn_exthost_with_relay`): Spawn + WS relay (Phase 5+)
 //!    Returns a WebSocket port for TypeScript to connect and run the protocol.
+//!
+//! Multiple Extension Host instances can run concurrently (e.g., VS Code places
+//! certain extensions like vscode-neovim on a separate host). Each instance is
+//! tracked by a unique `instance_id` in [`ExtHostState`].
 
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -38,6 +44,8 @@ pub struct ExtHostHandshakeResult {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtHostSpawnResult {
+    /// Unique identifier for this Extension Host instance, used for later cleanup.
+    pub instance_id: u32,
     /// WebSocket port for the TypeScript side to connect.
     pub ws_port: u16,
     /// PID of the spawned Node.js Extension Host process.
@@ -50,14 +58,27 @@ pub struct ExtHostSpawnResult {
     pub app_root: String,
 }
 
-/// Managed state for tracking running Extension Host instances.
+/// A running Extension Host instance tracked by [`ExtHostState`].
+#[cfg(unix)]
+struct ExtHostInstance {
+    /// The sidecar owning the child process.
+    sidecar: crate::exthost::sidecar::ExtHostSidecar,
+    /// Handle to the WebSocket relay task.
+    relay_task: tokio::task::JoinHandle<()>,
+}
+
+/// Managed state for tracking multiple running Extension Host instances.
+///
+/// VS Code may spawn multiple Extension Host processes concurrently (e.g.,
+/// when certain extensions are configured to run in a separate host via
+/// `"extensions.experimental.affinity"`). Each instance is tracked by a
+/// unique `instance_id` assigned by an atomic counter.
 pub struct ExtHostState {
-    /// Currently running sidecar (single instance for now; multi-instance in Phase 5B).
+    /// Map of instance_id → running ExtHost instance.
     #[cfg(unix)]
-    pub sidecar: Mutex<Option<crate::exthost::sidecar::ExtHostSidecar>>,
-    /// Handle to the relay task.
-    #[cfg(unix)]
-    pub relay_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    instances: Mutex<HashMap<u32, ExtHostInstance>>,
+    /// Monotonically increasing counter for generating unique instance IDs.
+    next_id: AtomicU32,
 }
 
 impl ExtHostState {
@@ -65,9 +86,8 @@ impl ExtHostState {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             #[cfg(unix)]
-            sidecar: Mutex::new(None),
-            #[cfg(unix)]
-            relay_task: Mutex::new(None),
+            instances: Mutex::new(HashMap::new()),
+            next_id: AtomicU32::new(1),
         })
     }
 }
@@ -100,9 +120,9 @@ pub async fn spawn_exthost_with_relay(
 /// Unix-specific implementation of [`spawn_exthost_with_relay`].
 ///
 /// Resolves the application root, verifies `out/bootstrap-fork.js` exists,
-/// tears down any previous sidecar/relay, spawns a new Node.js Extension Host,
-/// starts a WebSocket relay, stores state for later cleanup, and starts a
-/// background task to monitor the child process for unexpected exit.
+/// spawns a new Node.js Extension Host, starts a WebSocket relay, stores state
+/// for later cleanup, and starts a background task to monitor the child process
+/// for unexpected exit. Multiple instances can run concurrently.
 #[cfg(unix)]
 async fn spawn_exthost_with_relay_unix(
     app_handle: tauri::AppHandle,
@@ -122,18 +142,8 @@ async fn spawn_exthost_with_relay_unix(
         ));
     }
 
-    // Clean up any previous instance
-    {
-        let mut relay = exthost_state.relay_task.lock().await;
-        if let Some(task) = relay.take() {
-            task.abort();
-        }
-        let mut sidecar = exthost_state.sidecar.lock().await;
-        if let Some(mut prev) = sidecar.take() {
-            let _ = prev.child.kill().await;
-            let _ = prev.child.wait().await;
-        }
-    }
+    // Allocate a unique instance ID for this ExtHost
+    let instance_id = exthost_state.next_id.fetch_add(1, Ordering::Relaxed);
 
     // Step 1+2: Create pipe + spawn Node.js
     let (sidecar, unix_stream) = exthost::sidecar::spawn(&app_root)
@@ -150,32 +160,40 @@ async fn spawn_exthost_with_relay_unix(
 
     let ws_port = relay_handle.port;
 
-    // Store state for later cleanup
+    // Store instance for later cleanup
     {
-        let mut s = exthost_state.sidecar.lock().await;
-        *s = Some(sidecar);
-        let mut r = exthost_state.relay_task.lock().await;
-        *r = Some(relay_handle.task);
+        let mut instances = exthost_state.instances.lock().await;
+        instances.insert(
+            instance_id,
+            ExtHostInstance {
+                sidecar,
+                relay_task: relay_handle.task,
+            },
+        );
     }
 
     // Spawn a background watchdog that polls the ExtHost process every 500ms.
     // If the child exits unexpectedly (e.g. crash, OOM), an error is logged
-    // to aid debugging. The watchdog terminates when the process exits or
-    // the sidecar is cleaned up.
+    // and the instance is removed from state. The watchdog terminates when
+    // the process exits or the instance is cleaned up.
     let state_clone = Arc::clone(&exthost_state);
     tokio::spawn(async move {
         // Give the process a moment to start, then check periodically
         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
         loop {
             tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-            let mut guard = state_clone.sidecar.lock().await;
-            if let Some(ref mut sc) = *guard {
-                match sc.child.try_wait() {
+            let mut instances = state_clone.instances.lock().await;
+            if let Some(ref mut inst) = instances.get_mut(&instance_id) {
+                match inst.sidecar.child.try_wait() {
                     Ok(Some(status)) => {
                         log::error!(
                             target: "vscodeee::commands::spawn_exthost",
-                            "⚠️ ExtHost process EXITED with status: {status}"
+                            "ExtHost instance {instance_id} (PID={pid}) EXITED with status: {status}"
                         );
+                        // Clean up the dead instance
+                        if let Some(dead) = instances.remove(&instance_id) {
+                            dead.relay_task.abort();
+                        }
                         break;
                     }
                     Ok(None) => {
@@ -184,13 +202,13 @@ async fn spawn_exthost_with_relay_unix(
                     Err(e) => {
                         log::error!(
                             target: "vscodeee::commands::spawn_exthost",
-                            "⚠️ Failed to check ExtHost status: {e}"
+                            "Failed to check ExtHost instance {instance_id} status: {e}"
                         );
                         break;
                     }
                 }
             } else {
-                // Sidecar was cleaned up
+                // Instance was cleaned up (e.g., via kill_exthost)
                 break;
             }
         }
@@ -198,15 +216,95 @@ async fn spawn_exthost_with_relay_unix(
 
     log::info!(
         target: "vscodeee::commands::spawn_exthost",
-        "ExtHost running: PID={pid}, WS port={ws_port}, pipe={pipe_path}"
+        "ExtHost running: instance_id={instance_id}, PID={pid}, WS port={ws_port}, pipe={pipe_path}"
     );
 
     Ok(ExtHostSpawnResult {
+        instance_id,
         ws_port,
         ext_host_pid: pid,
         pipe_path,
         app_root: app_root.to_string_lossy().into_owned(),
     })
+}
+
+/// Kill a specific Extension Host instance by its instance ID.
+///
+/// Terminates the Node.js child process, aborts the WebSocket relay task,
+/// and removes the instance from managed state. This is called from TypeScript
+/// when a `TauriLocalProcessExtensionHost` is disposed.
+///
+/// Returns `Ok(())` if the instance was found and cleaned up, or if the
+/// instance was already gone (idempotent).
+#[tauri::command]
+pub async fn kill_exthost(
+    instance_id: u32,
+    exthost_state: tauri::State<'_, Arc<ExtHostState>>,
+) -> Result<(), String> {
+    #[cfg(not(unix))]
+    {
+        let _ = (instance_id, exthost_state);
+        return Ok(());
+    }
+
+    #[cfg(unix)]
+    {
+        let mut instances = exthost_state.instances.lock().await;
+        if let Some(mut inst) = instances.remove(&instance_id) {
+            log::info!(
+                target: "vscodeee::commands::spawn_exthost",
+                "Killing ExtHost instance {instance_id}"
+            );
+            inst.relay_task.abort();
+            let _ = inst.sidecar.child.kill().await;
+            let _ = inst.sidecar.child.wait().await;
+            log::info!(
+                target: "vscodeee::commands::spawn_exthost",
+                "ExtHost instance {instance_id} terminated"
+            );
+        } else {
+            log::debug!(
+                target: "vscodeee::commands::spawn_exthost",
+                "ExtHost instance {instance_id} not found (already cleaned up)"
+            );
+        }
+        Ok(())
+    }
+}
+
+/// Kill all running Extension Host instances.
+///
+/// Called during application shutdown to ensure all child processes are
+/// properly terminated.
+#[tauri::command]
+pub async fn kill_all_exthosts(
+    exthost_state: tauri::State<'_, Arc<ExtHostState>>,
+) -> Result<(), String> {
+    #[cfg(not(unix))]
+    {
+        let _ = exthost_state;
+        return Ok(());
+    }
+
+    #[cfg(unix)]
+    {
+        let mut instances = exthost_state.instances.lock().await;
+        let count = instances.len();
+        for (id, mut inst) in instances.drain() {
+            log::info!(
+                target: "vscodeee::commands::spawn_exthost",
+                "Killing ExtHost instance {id} (shutdown)"
+            );
+            inst.relay_task.abort();
+            let _ = inst.sidecar.child.kill().await;
+            let _ = inst.sidecar.child.wait().await;
+        }
+        log::info!(
+            target: "vscodeee::commands::spawn_exthost",
+            "All {count} ExtHost instances terminated"
+        );
+        Ok(())
+    }
 }
 
 /// Spawn an Extension Host process as a Node.js sidecar and run the handshake (PoC mode).
