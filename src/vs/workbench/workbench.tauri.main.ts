@@ -77,7 +77,7 @@ import './services/clipboard/browser/clipboardService.js';
 import './services/localization/browser/localeService.js';
 import './services/path/browser/pathService.js';
 import './services/themes/tauri-browser/tauriHostColorSchemeService.js';
-import './services/encryption/browser/encryptionService.js';
+import '../platform/encryption/tauri-browser/tauriEncryptionService.js';
 import './services/imageResize/browser/imageResizeService.js';
 import './services/secrets/browser/secretStorageService.js';
 import './services/workingCopy/tauri-browser/workingCopyBackupService.js';
