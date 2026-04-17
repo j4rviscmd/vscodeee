@@ -170,6 +170,19 @@ impl PtyManager {
         self.auto_reply.uninstall_all();
     }
 
+    /// Close all running PTY instances.
+    ///
+    /// Called during application shutdown to ensure all child shell processes
+    /// and their reader threads are cleaned up. Each `PtyInstance::Drop` kills
+    /// the child process and closes the master PTY.
+    pub fn close_all(&self) {
+        if let Ok(mut instances) = self.instances.lock() {
+            let count = instances.len();
+            instances.clear();
+            log::info!(target: "vscodeee::pty::manager", "Closed all {count} PTY instances");
+        }
+    }
+
     /// Acquire the instances lock, look up a PTY by ID, and apply a function to it.
     ///
     /// Reduces boilerplate for read-only operations that need a single instance.

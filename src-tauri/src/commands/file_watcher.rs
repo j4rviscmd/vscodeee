@@ -53,6 +53,10 @@ pub struct FileWatcherState {
 
 struct WatcherHandle {
     _watcher: RecommendedWatcher,
+    /// The sender half of the event channel.
+    /// When `WatcherHandle` is dropped, the sender is dropped, causing the
+    /// batching thread's `rx.recv()` to return `Err(Disconnected)` and exit.
+    _event_tx: std::sync::mpsc::Sender<NotifyEvent>,
     correlation_id: Option<i32>,
 }
 
@@ -60,6 +64,21 @@ impl FileWatcherState {
     pub fn new() -> Self {
         Self {
             watchers: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Stop all file watchers.
+    ///
+    /// Same logic as the `fs_watch_stop_all` command, but callable from
+    /// non-command contexts (e.g., shutdown coordinator).
+    pub fn shutdown_all(&self) {
+        if let Ok(mut watchers) = self.watchers.lock() {
+            let count = watchers.len();
+            watchers.clear();
+            log::info!(
+                target: "vscodeee::file_watcher",
+                "Stopped all watchers (count={count})"
+            );
         }
     }
 }
@@ -140,10 +159,14 @@ pub fn fs_watch_start(
     // Batch events using a channel + spawn
     let (tx, rx) = std::sync::mpsc::channel::<NotifyEvent>();
 
+    // Clone tx for the closure; the original is stored in WatcherHandle so
+    // that dropping the handle closes the channel and terminates the thread.
+    let tx_for_watcher = tx.clone();
+
     let mut watcher = RecommendedWatcher::new(
         move |res: Result<NotifyEvent, notify::Error>| {
             if let Ok(event) = res {
-                let _ = tx.send(event);
+                let _ = tx_for_watcher.send(event);
             }
         },
         Config::default().with_poll_interval(std::time::Duration::from_millis(500)),
@@ -207,6 +230,7 @@ pub fn fs_watch_start(
         watch_id,
         WatcherHandle {
             _watcher: watcher,
+            _event_tx: tx,
             correlation_id,
         },
     );

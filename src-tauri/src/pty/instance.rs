@@ -48,10 +48,10 @@ pub struct ProcessSummary {
 /// A running PTY instance with handles for I/O and control.
 pub struct PtyInstance {
     /// Writer handle to send data to the shell's stdin.
-    writer: Arc<Mutex<Box<dyn Write + Send>>>,
+    writer: Arc<Mutex<Option<Box<dyn Write + Send>>>>,
     /// Master PTY handle for resize operations.
-    master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
-    /// Handle to the background reader thread (joined on drop).
+    master: Arc<Mutex<Option<Box<dyn MasterPty + Send>>>>,
+    /// Handle to the background reader thread (detached on drop).
     _reader_handle: Option<thread::JoinHandle<()>>,
     /// Child process handle — retained for signal delivery and PID tracking.
     child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
@@ -61,6 +61,58 @@ pub struct PtyInstance {
     shell: String,
     /// The working directory the shell was started in.
     cwd: String,
+}
+
+impl Drop for PtyInstance {
+    fn drop(&mut self) {
+        let pid = self.pid;
+        log::info!(target: "vscodeee::pty::instance", "Dropping PTY instance (pid={pid})");
+
+        // 1. Close the writer (sends EOF to the shell's stdin)
+        if let Ok(mut writer) = self.writer.lock() {
+            *writer = None;
+        }
+
+        // 2. Kill the child process if still alive
+        #[cfg(unix)]
+        {
+            // Use libc::kill directly for synchronous termination — the tokio
+            // runtime may already be shut down during Drop.
+            if self.pid != 0 {
+                unsafe {
+                    // First try SIGTERM for graceful shutdown
+                    libc::kill(self.pid as i32, libc::SIGTERM);
+                }
+                // Give the process a moment, then SIGKILL if still alive
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                if let Ok(mut child) = self.child.lock() {
+                    match child.try_wait() {
+                        Ok(None) => {
+                            // Still running — force kill
+                            unsafe {
+                                libc::kill(self.pid as i32, libc::SIGKILL);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            if let Ok(mut child) = self.child.lock() {
+                let _ = child.kill();
+            }
+        }
+
+        // 3. Drop the master PTY handle — on Unix this sends SIGHUP to the
+        //    child's session, ensuring termination of the process group.
+        if let Ok(mut master) = self.master.lock() {
+            *master = None;
+        }
+
+        log::info!(target: "vscodeee::pty::instance", "PTY instance dropped (pid={pid})");
+    }
 }
 
 impl PtyInstance {
@@ -116,7 +168,7 @@ impl PtyInstance {
             .master
             .take_writer()
             .map_err(|e| format!("Failed to take PTY writer: {e}"))?;
-        let writer = Arc::new(Mutex::new(writer));
+        let writer = Arc::new(Mutex::new(Some(writer)));
 
         // Get the reader handle for output
         let mut reader = pair
@@ -125,7 +177,7 @@ impl PtyInstance {
             .map_err(|e| format!("Failed to clone PTY reader: {e}"))?;
 
         let master: Box<dyn MasterPty + Send> = pair.master;
-        let master = Arc::new(Mutex::new(master));
+        let master = Arc::new(Mutex::new(Some(master)));
 
         // Start background reader thread
         let pty_id = config.id;
@@ -154,9 +206,11 @@ impl PtyInstance {
                         if let Some(ref interceptor) = auto_reply {
                             if let Some(reply) = interceptor.check(data) {
                                 // Write the reply back to the PTY
-                                if let Ok(mut w) = writer_for_reply.lock() {
-                                    let _ = w.write_all(reply.as_bytes());
-                                    let _ = w.flush();
+                                if let Ok(mut guard) = writer_for_reply.lock() {
+                                    if let Some(ref mut w) = *guard {
+                                        let _ = w.write_all(reply.as_bytes());
+                                        let _ = w.flush();
+                                    }
                                 }
                             }
                         }
@@ -199,6 +253,9 @@ impl PtyInstance {
             .writer
             .lock()
             .map_err(|_| "PTY writer lock poisoned".to_string())?;
+        let writer = writer
+            .as_mut()
+            .ok_or_else(|| "PTY writer already closed".to_string())?;
         writer
             .write_all(data)
             .map_err(|e| format!("PTY write failed: {e}"))?;
@@ -210,10 +267,13 @@ impl PtyInstance {
 
     /// Resize the PTY to new dimensions.
     pub fn resize(&self, cols: u16, rows: u16) -> Result<(), String> {
-        let master = self
+        let mut master = self
             .master
             .lock()
             .map_err(|_| "PTY master lock poisoned".to_string())?;
+        let master = master
+            .as_mut()
+            .ok_or_else(|| "PTY master already closed".to_string())?;
         master
             .resize(PtySize {
                 rows,
