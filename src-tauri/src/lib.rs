@@ -6,6 +6,9 @@
 /// Tauri commands exposed to the WebView via `invoke()`
 mod commands;
 
+/// Shutdown coordination — ordered cleanup of child processes and threads.
+mod shutdown;
+
 /// Custom protocol handlers for vscode-file:// etc.
 mod protocol;
 
@@ -85,6 +88,10 @@ pub fn run() {
         .manage(Arc::clone(&window_manager))
         .manage(Arc::clone(&pending_closes))
         .manage(commands::updater::UpdaterState::default())
+        .manage({
+            let coordinator = shutdown::ShutdownCoordinator::new();
+            coordinator
+        })
         .on_window_event(window::events::handle_window_event)
         .register_uri_scheme_protocol("vscode-file", move |ctx, request| {
             // On first call the state will have been initialized by setup().
@@ -273,6 +280,48 @@ pub fn run() {
             log::debug!(target: "vscodeee", "Setting up system event monitors");
             system_events::setup(app);
 
+            // ── Register resources with ShutdownCoordinator ──
+            {
+                use tauri::Manager;
+                use shutdown::ShutdownPhase;
+
+                let coordinator = app.state::<Arc<shutdown::ShutdownCoordinator>>();
+                let coordinator = coordinator.inner();
+                let handle = app.handle().clone();
+
+                // Phase 0: Extension Hosts — kill Node.js sidecar processes
+                {
+                    let h = handle.clone();
+                    coordinator.register(ShutdownPhase::Extensions, "Extension Hosts", Box::new(move || {
+                        if let Some(state) = h.try_state::<Arc<commands::spawn_exthost::ExtHostState>>() {
+                            state.inner().sync_kill_all();
+                        }
+                    }));
+                }
+
+                // Phase 1: PTY instances — close all shell processes
+                {
+                    let h = handle.clone();
+                    coordinator.register(ShutdownPhase::Pty, "PTY Manager", Box::new(move || {
+                        if let Some(pty) = h.try_state::<pty::manager::PtyManager>() {
+                            pty.close_all();
+                        }
+                    }));
+                }
+
+                // Phase 2: File watchers — stop all watcher threads
+                {
+                    let h = handle.clone();
+                    coordinator.register(ShutdownPhase::FileWatchers, "File Watchers", Box::new(move || {
+                        if let Some(watchers) = h.try_state::<commands::file_watcher::FileWatcherState>() {
+                            watchers.shutdown_all();
+                        }
+                    }));
+                }
+
+                log::info!(target: "vscodeee", "ShutdownCoordinator resources registered");
+            }
+
             // ── Read user settings and load session ──
             let settings = window::settings::read_window_settings();
             let session = window::session::SessionStore::load();
@@ -418,6 +467,15 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                log::info!(target: "vscodeee", "RunEvent::Exit — running shutdown cleanup");
+                use tauri::Manager;
+                if let Some(coordinator) = app_handle.try_state::<Arc<shutdown::ShutdownCoordinator>>() {
+                    coordinator.shutdown_all();
+                }
+            }
+        });
 }

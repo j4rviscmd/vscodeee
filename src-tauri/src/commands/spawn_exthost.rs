@@ -90,6 +90,74 @@ impl ExtHostState {
             next_id: AtomicU32::new(1),
         })
     }
+
+    /// Kill all running Extension Host instances.
+    ///
+    /// Same logic as the `kill_all_exthosts` command, but callable from
+    /// non-command contexts (e.g., shutdown coordinator).
+    #[cfg(unix)]
+    pub async fn shutdown_all(&self) {
+        let mut instances = self.instances.lock().await;
+        let count = instances.len();
+        for (id, mut inst) in instances.drain() {
+            log::info!(
+                target: "vscodeee::commands::spawn_exthost",
+                "Killing ExtHost instance {id} (shutdown)"
+            );
+            inst.relay_task.abort();
+            let _ = inst.sidecar.child.kill().await;
+            let _ = inst.sidecar.child.wait().await;
+        }
+        log::info!(
+            target: "vscodeee::commands::spawn_exthost",
+            "All {count} ExtHost instances terminated (shutdown_all)"
+        );
+    }
+
+    #[cfg(not(unix))]
+    pub async fn shutdown_all(&self) {}
+
+    /// Kill all ExtHost processes synchronously using `libc::kill`.
+    ///
+    /// Used from the shutdown coordinator closure when the tokio runtime
+    /// may not be available (e.g., during `RunEvent::Exit`).
+    #[cfg(unix)]
+    pub fn sync_kill_all(&self) {
+        let pids: Vec<u32> = match self.instances.try_lock() {
+            Ok(instances) => instances
+                .iter()
+                .filter_map(|(_, inst)| inst.sidecar.child.id())
+                .collect(),
+            Err(_) => {
+                log::warn!(
+                    target: "vscodeee::commands::spawn_exthost",
+                    "Could not acquire ExtHost state lock for sync kill"
+                );
+                return;
+            }
+        };
+        for pid in &pids {
+            unsafe {
+                libc::kill(*pid as i32, libc::SIGTERM);
+            }
+        }
+        if !pids.is_empty() {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            for pid in &pids {
+                unsafe {
+                    libc::kill(*pid as i32, libc::SIGKILL);
+                }
+            }
+        }
+        log::info!(
+            target: "vscodeee::commands::spawn_exthost",
+            "Synchronously killed {} ExtHost processes",
+            pids.len()
+        );
+    }
+
+    #[cfg(not(unix))]
+    pub fn sync_kill_all(&self) {}
 }
 
 /// Spawn an Extension Host with a WebSocket relay for production use.
