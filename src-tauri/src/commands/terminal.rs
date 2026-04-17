@@ -28,6 +28,8 @@
 //! | `install_auto_reply` | Install an auto-reply pattern |
 //! | `uninstall_all_auto_replies` | Remove all auto-reply patterns |
 
+use std::collections::HashMap;
+
 use tauri::State;
 
 use crate::pty::instance::ProcessSummary;
@@ -35,16 +37,29 @@ use crate::pty::manager::PtyManager;
 use crate::pty::profiles::DetectedShell;
 
 /// Spawn a new terminal (PTY) instance.
+///
+/// The reader thread is paused until `activate_terminal` is called.
+/// The frontend must register event listeners before activating.
 #[tauri::command]
 pub fn create_terminal(
     shell: String,
     cwd: String,
     cols: u16,
     rows: u16,
+    env: HashMap<String, String>,
     pty_manager: State<'_, PtyManager>,
     app_handle: tauri::AppHandle,
 ) -> Result<u32, String> {
-    pty_manager.create(shell, cwd, cols, rows, app_handle)
+    pty_manager.create(shell, cwd, cols, rows, env, app_handle)
+}
+
+/// Activate a terminal's reader thread, starting output emission.
+///
+/// Must be called after event listeners for `pty-output-{id}` and
+/// `pty-exit-{id}` have been registered.
+#[tauri::command]
+pub fn activate_terminal(id: u32, pty_manager: State<'_, PtyManager>) -> Result<(), String> {
+    pty_manager.activate(id)
 }
 
 /// Write data to a terminal's stdin.

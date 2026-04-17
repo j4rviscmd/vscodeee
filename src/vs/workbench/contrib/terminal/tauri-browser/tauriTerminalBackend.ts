@@ -165,7 +165,7 @@ class TauriTerminalBackend extends BaseTerminalBackend implements ITerminalBacke
 		cols: number,
 		rows: number,
 		_unicodeVersion: '6' | '11',
-		_env: IProcessEnvironment,
+		env: IProcessEnvironment,
 		_options: ITerminalProcessOptions,
 		_shouldPersist: boolean
 	): Promise<ITerminalChildProcess> {
@@ -182,9 +182,33 @@ class TauriTerminalBackend extends BaseTerminalBackend implements ITerminalBacke
 			? shellLaunchConfig.cwd
 			: shellLaunchConfig.cwd?.fsPath ?? cwd;
 
+		// Build environment: merge provided env with shell-specific overrides.
+		// The env object from VS Code's terminal infrastructure already includes
+		// TERM_PROGRAM, COLORTERM, LANG, and other terminal-specific vars.
+		const terminalEnv: Record<string, string> = {};
+
+		// Variables inherited from the parent process that should NOT be
+		// forwarded to the PTY shell because they describe the parent's
+		// terminal multiplexer state, not the new PTY session's state.
+		// If TMUX/TMUX_PANE are forwarded, the shell's .zshrc/.bashrc
+		// believes it is already inside a tmux session and skips interactive
+		// session pickers (e.g., fzf-based tmux session selectors).
+		const envBlocklist = new Set([
+			'TMUX',
+			'TMUX_PANE',
+		]);
+
+		for (const [key, value] of Object.entries(env)) {
+			if (value !== undefined && value !== null && !envBlocklist.has(key)) {
+				terminalEnv[key] = value;
+			}
+		}
+		// Override TERM_PROGRAM to identify as vscodeee
+		terminalEnv['TERM_PROGRAM'] = 'vscodeee';
+
 		this._logService.trace('TauriTerminalBackend#createProcess', { id, shell, cwd: resolvedCwd, cols, rows });
 
-		const pty = new TauriPty(id, shell, resolvedCwd, cols, rows, this._logService);
+		const pty = new TauriPty(id, shell, resolvedCwd, cols, rows, terminalEnv, this._logService);
 		this._ptys.set(id, pty);
 		return pty;
 	}

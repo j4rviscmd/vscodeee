@@ -59,12 +59,16 @@ impl PtyManager {
     ///
     /// Spawns a shell process in a pseudo-terminal and starts a background
     /// reader thread that emits output via Tauri events.
+    ///
+    /// **Important**: The reader thread is paused until `activate()` is called.
+    /// The frontend must register event listeners before activating.
     pub fn create(
         &self,
         shell: String,
         cwd: String,
         cols: u16,
         rows: u16,
+        env: std::collections::HashMap<String, String>,
         app_handle: tauri::AppHandle,
     ) -> Result<u32, String> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
@@ -75,6 +79,7 @@ impl PtyManager {
             cols,
             rows,
             id,
+            env,
         };
 
         let instance = PtyInstance::spawn(config, app_handle, Some(Arc::clone(&self.auto_reply)))?;
@@ -87,6 +92,14 @@ impl PtyManager {
 
         log::info!(target: "vscodeee::pty::manager", "Created PTY instance {id}");
         Ok(id)
+    }
+
+    /// Activate a PTY instance's reader thread, starting output emission.
+    ///
+    /// Must be called after the frontend has registered event listeners for
+    /// `pty-output-{id}` and `pty-exit-{id}`.
+    pub fn activate(&self, id: u32) -> Result<(), String> {
+        self.with_instance(id, |inst| inst.activate())
     }
 
     /// Write data to a PTY instance.
