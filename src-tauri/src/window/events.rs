@@ -64,6 +64,90 @@ impl PendingCloses {
 /// If TS does not respond within this duration, the window is force-destroyed.
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Safety-net timeout for the ready-to-show handshake.
+/// If the TypeScript layer does not call `notify_ready` within this duration,
+/// the window is shown automatically to prevent a permanently invisible app.
+const SHOW_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Tracks pending ready-to-show handshakes per window.
+///
+/// Each window starts hidden (`visible: false`). When the TypeScript workbench
+/// calls `notify_ready`, the pending show is cancelled. If TS never responds
+/// (crash/hang), the safety-net timeout shows the window anyway.
+pub struct PendingShows {
+    inner: Mutex<HashMap<String, oneshot::Sender<()>>>,
+}
+
+impl PendingShows {
+    /// Creates a new empty `PendingShows` tracker.
+    pub fn new() -> Self {
+        Self {
+            inner: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Register a pending show for the given window label.
+    /// Returns the receiver that the safety timeout task should await.
+    pub fn register(&self, label: &str) -> oneshot::Receiver<()> {
+        let (tx, rx) = oneshot::channel();
+        let mut map = self.inner.lock().unwrap();
+        // If a previous pending show exists for this label, the old sender
+        // is dropped which cancels the old timeout.
+        map.insert(label.to_string(), tx);
+        rx
+    }
+
+    /// Cancel a pending show for the given window label.
+    /// Called when the TypeScript layer invokes `notify_ready`.
+    pub fn cancel(&self, label: &str) -> bool {
+        let mut map = self.inner.lock().unwrap();
+        if let Some(tx) = map.remove(label) {
+            let _ = tx.send(());
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Spawn a safety timeout task for the given window.
+    ///
+    /// If `notify_ready` is not called within `SHOW_TIMEOUT`, the window
+    /// is shown automatically. Before showing, the window geometry is
+    /// validated against the current display configuration via
+    /// [`restore_geometry::ensure_on_screen`] to handle cases where the
+    /// restored position is off-screen.
+    ///
+    /// # Parameters
+    ///
+    /// * `app_handle` - The Tauri app handle, used to look up the window by label.
+    /// * `label` - The Tauri window label (e.g. `"main"`, `"main_2"`).
+    pub fn spawn_safety_timeout(&self, app_handle: &tauri::AppHandle, label: &str) {
+        use tauri::Manager;
+        let cancel_rx = self.register(label);
+        let label = label.to_string();
+        let handle = app_handle.clone();
+
+        tauri::async_runtime::spawn(async move {
+            tokio::select! {
+                _ = cancel_rx => {
+                    // TS called notify_ready — nothing to do.
+                }
+                _ = tokio::time::sleep(SHOW_TIMEOUT) => {
+                    log::warn!(
+                        "Ready-to-show timed out for window '{label}' after {}s — showing anyway",
+                        SHOW_TIMEOUT.as_secs()
+                    );
+                    if let Some(ww) = handle.get_webview_window(&label) {
+                        crate::window::restore_geometry::ensure_on_screen(&ww.as_ref().window());
+                        let _ = ww.show();
+                        let _ = ww.set_focus();
+                    }
+                }
+            }
+        });
+    }
+}
+
 /// Payload for the unified fullscreen change event.
 ///
 /// Emitted on the `vscodeee:window:fullscreen` channel whenever a window
@@ -106,6 +190,26 @@ pub mod event_names {
     /// The TypeScript `TauriLifecycleService` handles veto logic and responds
     /// with either `lifecycle_close_confirmed` or `lifecycle_close_vetoed`.
     pub const LIFECYCLE_CLOSE_REQUESTED: &str = "vscodeee:lifecycle:close-requested";
+}
+
+/// Emit a state-change event to both the specific window and globally when a
+/// boolean property transitions between `current` and `previous`.
+fn emit_state_change(
+    handle: &tauri::AppHandle,
+    label: &str,
+    window_id: u32,
+    current: bool,
+    previous: bool,
+    enter_event: &str,
+    leave_event: &str,
+) {
+    if current && !previous {
+        let _ = handle.emit_to(label, enter_event, window_id);
+        let _ = handle.emit(enter_event, window_id);
+    } else if !current && previous {
+        let _ = handle.emit_to(label, leave_event, window_id);
+        let _ = handle.emit(leave_event, window_id);
+    }
 }
 
 /// Handle a single window event — called from `Builder::on_window_event()`.
@@ -209,31 +313,28 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
                 wm.set_fullscreen(&label_c, is_fullscreen).await;
 
                 if let Some(id) = wm.id_for_label(&label_c).await {
-                    if is_maximized && !was_maximized {
-                        let _ = handle_c.emit_to(&label_c, event_names::WINDOW_MAXIMIZE, id);
-                        let _ = handle_c.emit(event_names::WINDOW_MAXIMIZE, id);
-                    } else if !is_maximized && was_maximized {
-                        let _ = handle_c.emit_to(&label_c, event_names::WINDOW_UNMAXIMIZE, id);
-                        let _ = handle_c.emit(event_names::WINDOW_UNMAXIMIZE, id);
-                    }
+                    emit_state_change(
+                        &handle_c,
+                        &label_c,
+                        id,
+                        is_maximized,
+                        was_maximized,
+                        event_names::WINDOW_MAXIMIZE,
+                        event_names::WINDOW_UNMAXIMIZE,
+                    );
 
-                    if is_fullscreen && !was_fullscreen {
+                    if is_fullscreen != was_fullscreen {
+                        let (specific_event, fullscreen) = if is_fullscreen {
+                            (event_names::WINDOW_ENTER_FULLSCREEN, true)
+                        } else {
+                            (event_names::WINDOW_LEAVE_FULLSCREEN, false)
+                        };
                         let payload = FullscreenPayload {
                             window_id: id,
-                            fullscreen: true,
+                            fullscreen,
                         };
-                        let _ =
-                            handle_c.emit_to(&label_c, event_names::WINDOW_ENTER_FULLSCREEN, id);
-                        let _ = handle_c.emit(event_names::WINDOW_ENTER_FULLSCREEN, id);
-                        let _ = handle_c.emit(event_names::WINDOW_FULLSCREEN, payload);
-                    } else if !is_fullscreen && was_fullscreen {
-                        let payload = FullscreenPayload {
-                            window_id: id,
-                            fullscreen: false,
-                        };
-                        let _ =
-                            handle_c.emit_to(&label_c, event_names::WINDOW_LEAVE_FULLSCREEN, id);
-                        let _ = handle_c.emit(event_names::WINDOW_LEAVE_FULLSCREEN, id);
+                        let _ = handle_c.emit_to(&label_c, specific_event, id);
+                        let _ = handle_c.emit(specific_event, id);
                         let _ = handle_c.emit(event_names::WINDOW_FULLSCREEN, payload);
                     }
                 }
