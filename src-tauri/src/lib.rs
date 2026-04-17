@@ -121,6 +121,7 @@ pub fn run() {
             commands::spawn_exthost::kill_exthost,
             commands::spawn_exthost::kill_all_exthosts,
             commands::terminal::create_terminal,
+            commands::terminal::activate_terminal,
             commands::terminal::write_terminal,
             commands::terminal::resize_terminal,
             commands::terminal::close_terminal,

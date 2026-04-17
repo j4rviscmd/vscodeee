@@ -43,7 +43,7 @@
 //! Release builds use the default ACL (application-specific).
 
 use aes_gcm::aead::{Aead, KeyInit, OsRng};
-use aes_gcm::{Aes256Gcm, AeadCore, Nonce};
+use aes_gcm::{AeadCore, Aes256Gcm, Nonce};
 use base64::Engine;
 use rand::RngCore;
 use std::sync::Mutex;
@@ -174,7 +174,8 @@ fn load_or_create_master_key() -> Result<Vec<u8>, String> {
 
     #[cfg(not(all(target_os = "macos", debug_assertions)))]
     {
-        entry.set_password(&key_b64)
+        entry
+            .set_password(&key_b64)
             .map_err(|e| format!("Failed to store master key: {e}"))?;
     }
 
@@ -207,7 +208,8 @@ pub fn encryption_encrypt(value: String) -> Result<String, String> {
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
 
     // Encrypt with AES-256-GCM. The tag is appended automatically.
-    let ciphertext = cipher.encrypt(&nonce, value.as_bytes())
+    let ciphertext = cipher
+        .encrypt(&nonce, value.as_bytes())
         .map_err(|e| format!("AES-GCM encryption failed: {e}"))?;
 
     // Prepend nonce to ciphertext+tag and base64-encode.
@@ -225,7 +227,8 @@ pub fn encryption_encrypt(value: String) -> Result<String, String> {
 pub fn encryption_decrypt(value: String) -> Result<String, String> {
     let key_bytes = get_master_key()?;
 
-    let combined = base64_engine().decode(&value)
+    let combined = base64_engine()
+        .decode(&value)
         .map_err(|e| format!("Failed to decode encrypted value: {e}"))?;
 
     if combined.len() < NONCE_LEN + GCM_TAG_LEN {
@@ -238,11 +241,11 @@ pub fn encryption_decrypt(value: String) -> Result<String, String> {
     let cipher = Aes256Gcm::new_from_slice(&key_bytes)
         .map_err(|e| format!("Failed to create AES cipher: {e}"))?;
 
-    let plaintext = cipher.decrypt(nonce, ciphertext)
+    let plaintext = cipher
+        .decrypt(nonce, ciphertext)
         .map_err(|e| format!("AES-GCM decryption failed: {e}"))?;
 
-    String::from_utf8(plaintext)
-        .map_err(|e| format!("Decrypted value is not valid UTF-8: {e}"))
+    String::from_utf8(plaintext).map_err(|e| format!("Decrypted value is not valid UTF-8: {e}"))
 }
 
 // ── macOS debug-only: permissive ACL for master key ─────────────────────────
@@ -267,7 +270,7 @@ mod macos_permissive {
     use std::ffi::c_void;
     use std::ptr;
 
-    use super::{MASTER_KEY_SERVICE, MASTER_KEY_ACCOUNT};
+    use super::{MASTER_KEY_ACCOUNT, MASTER_KEY_SERVICE};
 
     const ERR_SEC_ITEM_NOT_FOUND: i32 = -25300;
     const ERR_SEC_AUTH_FAILED: i32 = -25293;
@@ -320,9 +323,21 @@ mod macos_permissive {
         cf_account: &CFString,
     ) -> CFMutableDictionaryRef {
         let query = create_mutable_dict();
-        CFDictionaryAddValue(query, kSecClass as *const c_void, kSecClassGenericPassword as *const c_void);
-        CFDictionaryAddValue(query, kSecAttrService as *const c_void, cf_service.as_concrete_TypeRef() as *const c_void);
-        CFDictionaryAddValue(query, kSecAttrAccount as *const c_void, cf_account.as_concrete_TypeRef() as *const c_void);
+        CFDictionaryAddValue(
+            query,
+            kSecClass as *const c_void,
+            kSecClassGenericPassword as *const c_void,
+        );
+        CFDictionaryAddValue(
+            query,
+            kSecAttrService as *const c_void,
+            cf_service.as_concrete_TypeRef() as *const c_void,
+        );
+        CFDictionaryAddValue(
+            query,
+            kSecAttrAccount as *const c_void,
+            cf_account.as_concrete_TypeRef() as *const c_void,
+        );
         query
     }
 
@@ -335,9 +350,21 @@ mod macos_permissive {
             let cf_account = CFString::new(MASTER_KEY_ACCOUNT);
 
             let query = create_query_dict(&cf_service, &cf_account);
-            CFDictionaryAddValue(query, kSecReturnData as *const c_void, core_foundation_sys::number::kCFBooleanTrue as *const c_void);
-            CFDictionaryAddValue(query, kSecMatchLimit as *const c_void, kSecMatchLimitOne as *const c_void);
-            CFDictionaryAddValue(query, kSecUseAuthenticationUI as *const c_void, kSecUseAuthenticationUISkip as *const c_void);
+            CFDictionaryAddValue(
+                query,
+                kSecReturnData as *const c_void,
+                core_foundation_sys::number::kCFBooleanTrue as *const c_void,
+            );
+            CFDictionaryAddValue(
+                query,
+                kSecMatchLimit as *const c_void,
+                kSecMatchLimitOne as *const c_void,
+            );
+            CFDictionaryAddValue(
+                query,
+                kSecUseAuthenticationUI as *const c_void,
+                kSecUseAuthenticationUISkip as *const c_void,
+            );
 
             let mut result: CFTypeRef = ptr::null();
             let status = SecItemCopyMatching(query as CFDictionaryRef, &mut result);
@@ -426,8 +453,16 @@ mod macos_permissive {
 
             let build_add_dict = || -> CFMutableDictionaryRef {
                 let dict = create_query_dict(&cf_service, &cf_account);
-                CFDictionaryAddValue(dict, kSecValueData as *const c_void, cf_password.as_concrete_TypeRef() as *const c_void);
-                CFDictionaryAddValue(dict, kSecAttrAccess as *const c_void, access_ref as *const c_void);
+                CFDictionaryAddValue(
+                    dict,
+                    kSecValueData as *const c_void,
+                    cf_password.as_concrete_TypeRef() as *const c_void,
+                );
+                CFDictionaryAddValue(
+                    dict,
+                    kSecAttrAccess as *const c_void,
+                    access_ref as *const c_void,
+                );
                 dict
             };
 
@@ -467,12 +502,13 @@ mod macos_permissive {
     }
 
     /// Delete a Keychain item suppressing authentication UI.
-    unsafe fn delete_keychain_item_skip_ui(
-        cf_service: &CFString,
-        cf_account: &CFString,
-    ) {
+    unsafe fn delete_keychain_item_skip_ui(cf_service: &CFString, cf_account: &CFString) {
         let query = create_query_dict(cf_service, cf_account);
-        CFDictionaryAddValue(query, kSecUseAuthenticationUI as *const c_void, kSecUseAuthenticationUISkip as *const c_void);
+        CFDictionaryAddValue(
+            query,
+            kSecUseAuthenticationUI as *const c_void,
+            kSecUseAuthenticationUISkip as *const c_void,
+        );
 
         let status = SecItemDelete(query as CFDictionaryRef);
         CFRelease(query as CFTypeRef);
