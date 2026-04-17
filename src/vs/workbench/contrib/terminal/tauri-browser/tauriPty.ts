@@ -126,6 +126,7 @@ export class TauriPty extends Disposable implements ITerminalChildProcess {
 		private readonly _cwd: string,
 		private readonly _cols: number,
 		private readonly _rows: number,
+		private readonly _env: Record<string, string>,
 		private readonly _logService: ITerminalLogService,
 	) {
 		super();
@@ -138,9 +139,14 @@ export class TauriPty extends Disposable implements ITerminalChildProcess {
 	/**
 	 * Start the PTY process.
 	 *
-	 * Invokes the Rust `create_terminal` command to spawn the shell, then
-	 * subscribes to `pty-output-{id}` and `pty-exit-{id}` Tauri events.
-	 * Fires `onProcessReady` upon successful spawn.
+	 * Uses a two-phase startup to prevent race conditions with initial output:
+	 * 1. Spawn the PTY via Rust (reader thread is paused)
+	 * 2. Register event listeners for output and exit
+	 * 3. Activate the reader thread (output starts flowing)
+	 *
+	 * This ensures that interactive programs started during shell initialization
+	 * (e.g., fzf session pickers in .zshrc) have their output captured from
+	 * the very first byte.
 	 *
 	 * @returns `undefined` on success, or an `ITerminalLaunchError` on failure
 	 */
@@ -148,16 +154,18 @@ export class TauriPty extends Disposable implements ITerminalChildProcess {
 		try {
 			this._logService.trace('TauriPty#start', { id: this.id, shell: this._shell, cwd: this._cwd });
 
-			// Spawn the PTY via Rust
+			// Phase 1: Spawn the PTY via Rust (reader thread is paused)
 			this._ptyId = await tauriInvoke<number>('create_terminal', {
 				shell: this._shell,
 				cwd: this._cwd,
 				cols: this._cols,
 				rows: this._rows,
+				env: this._env,
 			});
 
-			this._logService.trace('TauriPty#start result', { id: this.id, ptyId: this._ptyId });
+			this._logService.trace('TauriPty#start spawned', { id: this.id, ptyId: this._ptyId });
 
+			// Phase 2: Register event listeners BEFORE activating the reader
 			// Listen for output data from the Rust PTY
 			this._unlistenOutput = await tauriListen(`pty-output-${this._ptyId}`, (payload: unknown) => {
 				// Payload is Vec<u8> from Rust, arrives as number[] in JS
@@ -182,6 +190,12 @@ export class TauriPty extends Disposable implements ITerminalChildProcess {
 				this._logService.trace('TauriPty#exit', { id: this.id, ptyId: this._ptyId, exitCode });
 				this._onProcessExit.fire(exitCode);
 			});
+
+			// Phase 3: Activate the reader thread now that listeners are registered.
+			// This unblocks the Rust reader thread, which will read all buffered
+			// PTY output and emit it as events that we're now ready to receive.
+			await tauriInvoke('activate_terminal', { id: this._ptyId });
+			this._logService.trace('TauriPty#start activated', { id: this.id, ptyId: this._ptyId });
 
 			// Fire process ready event
 			// TODO: Get actual PID from Rust if needed

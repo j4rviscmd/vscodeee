@@ -11,6 +11,7 @@
 //! - A background reader thread that emits output via Tauri events
 //! - A child process handle for lifecycle management (PID, signals, exit)
 
+use std::collections::HashMap;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -27,6 +28,9 @@ pub struct PtyConfig {
     pub cols: u16,
     pub rows: u16,
     pub id: u32,
+    /// Additional environment variables to set in the shell process.
+    /// These are overlaid on top of the inherited parent environment.
+    pub env: HashMap<String, String>,
 }
 
 /// Summary of a running PTY process, used by `list_processes`.
@@ -61,6 +65,9 @@ pub struct PtyInstance {
     shell: String,
     /// The working directory the shell was started in.
     cwd: String,
+    /// One-shot channel sender to activate the reader thread.
+    /// `None` after activation (consumed on first call to `activate()`).
+    activate_tx: Mutex<Option<std::sync::mpsc::SyncSender<()>>>,
 }
 
 impl Drop for PtyInstance {
@@ -149,6 +156,20 @@ impl PtyInstance {
         // Set TERM for proper terminal emulation
         cmd.env("TERM", "xterm-256color");
 
+        // Remove environment variables inherited from the parent process
+        // that describe the parent's terminal multiplexer state.
+        // Without this, if `cargo tauri dev` runs inside tmux, the child
+        // shell's .zshrc/.bashrc sees TMUX as set and skips interactive
+        // session pickers (e.g., fzf-based tmux session selectors).
+        cmd.env_remove("TMUX");
+        cmd.env_remove("TMUX_PANE");
+
+        // Apply additional environment variables from the frontend.
+        // These overlay on top of the inherited parent environment.
+        for (key, value) in &config.env {
+            cmd.env(key, value);
+        }
+
         // Spawn the shell in the slave PTY
         let child = pair
             .slave
@@ -180,10 +201,25 @@ impl PtyInstance {
         let master = Arc::new(Mutex::new(Some(master)));
 
         // Start background reader thread
+        // The reader blocks on a one-shot channel until activate() is called.
+        // This gives the frontend time to register event listeners before any
+        // output is emitted, preventing loss of initial shell output (e.g.,
+        // interactive prompts from .zshrc like fzf session pickers).
         let pty_id = config.id;
         let writer_for_reply = Arc::clone(&writer);
+        let (activate_tx, activate_rx) = std::sync::mpsc::sync_channel::<()>(0);
         let reader_handle = thread::spawn(move || {
             use tauri::Emitter;
+
+            // Wait for activation signal from the frontend.
+            // The PTY output is buffered in the kernel's PTY buffer until we read it,
+            // so no data is lost during the wait.
+            if activate_rx.recv().is_err() {
+                log::warn!(target: "vscodeee::pty::instance",
+                    "Reader activation channel closed before signal (pty:{pty_id})");
+                return;
+            }
+            log::info!(target: "vscodeee::pty::instance", "Reader activated (pty:{pty_id})");
 
             let event_name = format!("pty-output-{pty_id}");
             let mut buf = [0u8; 8192];
@@ -244,7 +280,30 @@ impl PtyInstance {
             pid,
             shell: config.shell,
             cwd: config.cwd,
+            activate_tx: Mutex::new(Some(activate_tx)),
         })
+    }
+
+    /// Activate the PTY reader thread, allowing it to start emitting output events.
+    ///
+    /// This must be called after the frontend has registered event listeners for
+    /// `pty-output-{id}` and `pty-exit-{id}`. Calling this before listeners are
+    /// registered would cause the same race condition as the old immediate-start
+    /// approach.
+    ///
+    /// Safe to call multiple times — only the first call has an effect.
+    pub fn activate(&self) -> Result<(), String> {
+        let mut tx = self
+            .activate_tx
+            .lock()
+            .map_err(|_| "Activate lock poisoned".to_string())?;
+        if let Some(sender) = tx.take() {
+            sender
+                .send(())
+                .map_err(|_| "Reader thread already terminated".to_string())?;
+        }
+        // Already activated — no-op
+        Ok(())
     }
 
     /// Write data to the PTY (sends to the shell's stdin).
