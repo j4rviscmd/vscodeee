@@ -3,301 +3,253 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-//! Secret storage commands — OS Keychain backend for ISecretStorageProvider.
+//! Encryption commands — master-key approach for secret storage.
 //!
-//! Uses the `keyring` crate to access platform-native credential stores:
-//! - macOS: Keychain Access
-//! - Windows: Credential Manager
-//! - Linux: Secret Service (GNOME Keyring / KDE Wallet)
+//! Instead of storing each secret as an individual OS credential store entry
+//! (which triggers per-item Keychain ACL dialogs on macOS), this module stores
+//! a single **master encryption key** in the OS credential store and encrypts
+//! all secrets with AES-256-GCM before persisting them to SQLite via
+//! VS Code's `BaseSecretStorageService`.
 //!
-//! The service name is fixed to `vscodeee.secrets` to namespace all secrets
-//! under a single application entry.
+//! ## Architecture
 //!
-//! ## macOS ACL behavior (debug vs release)
+//! ```text
+//! TypeScript (BaseSecretStorageService)
+//!   ├─ TauriEncryptionService.encrypt(value)
+//!   │   └─ invoke('encryption_encrypt') → this module → AES-256-GCM
+//!   ├─ TauriEncryptionService.decrypt(value)
+//!   │   └─ invoke('encryption_decrypt') → this module → AES-256-GCM
+//!   └─ IStorageService → SQLite (encrypted blobs)
 //!
-//! On macOS, Keychain items have an Access Control List (ACL) that specifies
-//! which applications are allowed to read the item without prompting the user.
-//! By default, only the binary that created the item is added to the ACL.
+//! Rust side:
+//!   encryption_get_key() → keyring crate → OS credential store (1 item)
+//!   encryption_encrypt() → get cached key → AES-256-GCM → base64
+//!   encryption_decrypt() → base64 → get cached key → AES-256-GCM
 //!
-//! In debug builds (e.g., `cargo tauri dev`), each git worktree produces a
-//! binary at a different path, causing macOS to prompt for a password every
-//! time a new worktree accesses the same secret. To avoid this friction
-//! during development, debug builds store Keychain items with an
-//! "any application" ACL (no application restriction).
+//! ## Master key caching
 //!
-//! Release builds retain the default behavior — only the signed application
-//! binary is granted access, preserving security for end users.
+//! The master key is read from the OS credential store on first access and
+//! cached in memory via `Mutex<Option<Vec<u8>>>`. Subsequent encrypt/decrypt operations
+//! use the cached key without hitting the Keychain, matching the behavior
+//! of Electron's safeStorage (which also caches the Chromium os_crypt key
+//! after first access).
+//! ```
+//!
+//! ## macOS ACL behavior
+//!
+//! Only the master key is stored in the Keychain. On macOS debug builds,
+//! the master key is stored with a permissive ("any application") ACL so that
+//! different worktree binaries can access it without triggering password dialogs.
+//! Release builds use the default ACL (application-specific).
 
-/// The keyring service name used for all secret storage entries.
-/// Each secret is stored as a separate entry with this service name
-/// and the secret key as the "account" (username) field.
-const SERVICE_NAME: &str = "vscodeee.secrets";
+use aes_gcm::aead::{Aead, KeyInit, OsRng};
+use aes_gcm::{Aes256Gcm, AeadCore, Nonce};
+use base64::Engine;
+use rand::RngCore;
+use std::sync::Mutex;
 
-/// macOS Security Framework status codes used throughout this module.
-const ERR_SEC_ITEM_NOT_FOUND: i32 = -25300;
-const ERR_SEC_AUTH_FAILED: i32 = -25293;
-const ERR_SEC_DUPLICATE_ITEM: i32 = -25299;
+/// Keyring service name for the master encryption key.
+/// Only one Keychain/credential store entry is created with this service name.
+const MASTER_KEY_SERVICE: &str = "vscodeee.encryption.master";
 
-// ── macOS debug-only: shared helpers ────────────────────────────────────────
+/// Keyring account name for the master encryption key.
+const MASTER_KEY_ACCOUNT: &str = "master-key";
 
-/// Delete a Keychain generic-password item by service and account,
-/// suppressing any authentication UI (password dialogs).
+/// AES-256-GCM key length in bytes.
+const KEY_LEN: usize = 32;
+
+/// AES-GCM nonce length in bytes.
+const NONCE_LEN: usize = 12;
+
+/// AES-GCM authentication tag length in bytes.
+const GCM_TAG_LEN: usize = 16;
+
+/// In-memory cache of the master encryption key.
 ///
-/// Returns `Ok(())` if the item was deleted, did not exist, or was
-/// inaccessible due to ACL restrictions. Returns `Err` only for
-/// unexpected platform errors.
-///
-/// # Safety
-/// Caller must ensure this is only called on macOS in debug builds.
-#[cfg(all(target_os = "macos", debug_assertions))]
-unsafe fn delete_keychain_item_skip_ui(
-    cf_service: &core_foundation::string::CFString,
-    cf_account: &core_foundation::string::CFString,
-) -> Result<(), i32> {
-    use core_foundation::base::TCFType;
-    use core_foundation_sys::base::{kCFAllocatorDefault, CFRelease, CFTypeRef};
-    use core_foundation_sys::dictionary::{
-        kCFTypeDictionaryKeyCallBacks, kCFTypeDictionaryValueCallBacks, CFDictionaryAddValue,
-        CFDictionaryCreateMutable, CFDictionaryRef,
-    };
-    use security_framework_sys::item::{
-        kSecAttrAccount, kSecAttrService, kSecClass, kSecClassGenericPassword,
-    };
-    use security_framework_sys::keychain_item::SecItemDelete;
-    use std::ffi::c_void;
+/// Initialized once on first access from the OS credential store, then
+/// reused for all subsequent encrypt/decrypt operations without hitting
+/// the Keychain again. Mirrors Electron safeStorage's internal caching
+/// of the Chromium `os_crypt` key.
+static MASTER_KEY_CACHE: Mutex<Option<Vec<u8>>> = Mutex::new(None);
 
-    extern "C" {
-        static kSecUseAuthenticationUI: core_foundation_sys::string::CFStringRef;
-        static kSecUseAuthenticationUISkip: core_foundation_sys::string::CFStringRef;
-    }
-
-    let query = CFDictionaryCreateMutable(
-        kCFAllocatorDefault,
-        0,
-        &kCFTypeDictionaryKeyCallBacks,
-        &kCFTypeDictionaryValueCallBacks,
-    );
-    CFDictionaryAddValue(
-        query,
-        kSecClass as *const c_void,
-        kSecClassGenericPassword as *const c_void,
-    );
-    CFDictionaryAddValue(
-        query,
-        kSecAttrService as *const c_void,
-        cf_service.as_concrete_TypeRef() as *const c_void,
-    );
-    CFDictionaryAddValue(
-        query,
-        kSecAttrAccount as *const c_void,
-        cf_account.as_concrete_TypeRef() as *const c_void,
-    );
-    CFDictionaryAddValue(
-        query,
-        kSecUseAuthenticationUI as *const c_void,
-        kSecUseAuthenticationUISkip as *const c_void,
-    );
-
-    let status = SecItemDelete(query as CFDictionaryRef);
-    CFRelease(query as CFTypeRef);
-
-    if status == ERR_SEC_ITEM_NOT_FOUND || status == ERR_SEC_AUTH_FAILED || status == 0 {
-        Ok(())
-    } else {
-        Err(status)
-    }
+/// Base64 encoding config used for all encryption/decryption operations.
+fn base64_engine() -> base64::engine::GeneralPurpose {
+    base64::engine::GeneralPurpose::new(
+        &base64::alphabet::STANDARD,
+        base64::engine::general_purpose::NO_PAD,
+    )
 }
 
-// ── macOS debug-only: dialog-free Keychain read for external callers ────────
-//
-// Used by `network.rs::lookup_authorization` to read proxy credentials
-// from the Keychain without triggering macOS password dialogs.
+// ── Master key management ───────────────────────────────────────────────────
 
-/// Read a Keychain password without triggering UI dialogs (macOS debug only).
+/// Retrieve the master encryption key, using the in-memory cache if available.
 ///
-/// Uses `kSecUseAuthenticationUISkip` so macOS returns `errSecAuthFailed`
-/// instead of showing a dialog when the ACL denies access. In that case the
-/// stale item is deleted and `Ok(None)` is returned.
-///
-/// # Arguments
-/// * `service` - The Keychain service name (e.g., `"vscodeee.auth.http.example.com:8080"`)
-/// * `account` - The Keychain account name (e.g., the auth realm)
-#[cfg(all(target_os = "macos", debug_assertions))]
-pub fn macos_permissive_get_password(
-    service: &str,
-    account: &str,
-) -> Result<Option<String>, String> {
-    macos_permissive::read_password_skip_ui(service, account)
+/// On first call, reads the key from the OS credential store (or generates
+/// a new one if none exists) and caches it. Subsequent calls return the
+/// cached key immediately without Keychain access.
+fn get_master_key() -> Result<Vec<u8>, String> {
+    let mut cache = MASTER_KEY_CACHE.lock().unwrap();
+    if let Some(key) = cache.as_ref() {
+        return Ok(key.clone());
+    }
+
+    // Slow path: load from credential store and cache.
+    let key = load_or_create_master_key()?;
+    log::info!(target: "vscodeee::encryption", "get_master_key: cached master key in memory");
+    *cache = Some(key.clone());
+    Ok(key)
 }
 
-/// Retrieve a secret value from the OS credential store.
+/// Load the master key from the OS credential store or create a new one.
 ///
-/// # Arguments
-/// * `key` - The secret key to look up.
-///
-/// # Returns
-/// The secret value as a string, or `None` if no entry exists.
-///
-/// On macOS debug builds, after successfully reading a Keychain item,
-/// the ACL is automatically patched to "any application" if it currently
-/// restricts access to specific binaries. This ensures that subsequent
-/// reads from different worktree binaries will not trigger a password prompt.
-#[tauri::command]
-pub fn secret_get(key: String) -> Result<Option<String>, String> {
-    log::trace!(target: "vscodeee::secrets", "secret_get: key={key}");
+/// If no key exists, a new 256-bit random key is generated and stored.
+/// On macOS debug builds, the key is stored with a permissive ACL.
+fn load_or_create_master_key() -> Result<Vec<u8>, String> {
+    // Try to read existing key from the credential store.
+    let entry = keyring::Entry::new(MASTER_KEY_SERVICE, MASTER_KEY_ACCOUNT)
+        .map_err(|e| format!("Failed to create keyring entry for master key: {e}"))?;
 
-    // On macOS debug builds, use the permissive ACL path: read the password
-    // and then patch the ACL to "any application" so future reads from
-    // different worktree binaries won't trigger a password dialog.
-    #[cfg(all(target_os = "macos", debug_assertions))]
-    {
-        match macos_permissive::get_password_and_patch_acl(SERVICE_NAME, &key) {
-            Ok(Some(password)) => {
-                log::trace!(target: "vscodeee::secrets", "secret_get: found value for key={key} (permissive path)");
-                Ok(Some(password))
-            }
-            Ok(None) => {
-                log::trace!(target: "vscodeee::secrets", "secret_get: no entry for key={key}");
-                Ok(None)
-            }
-            Err(e) => {
-                log::warn!(target: "vscodeee::secrets", "secret_get: permissive path error for key={key}: {e}");
-                Err(e)
-            }
-        }
-    }
+    match entry.get_password() {
+        Ok(key_b64) => {
+            let key_bytes = base64_engine()
+                .decode(&key_b64)
+                .map_err(|e| format!("Failed to decode master key: {e}"))?;
 
-    // On release builds (and non-macOS), use the default keyring behavior.
-    #[cfg(not(all(target_os = "macos", debug_assertions)))]
-    {
-        match keyring::Entry::new(SERVICE_NAME, &key) {
-            Ok(entry) => match entry.get_password() {
-                Ok(password) => {
-                    log::trace!(target: "vscodeee::secrets", "secret_get: found value for key={key}");
-                    Ok(Some(password))
-                }
-                Err(keyring::Error::NoEntry) => {
-                    log::trace!(target: "vscodeee::secrets", "secret_get: no entry for key={key}");
-                    Ok(None)
-                }
-                Err(e) => {
-                    log::warn!(target: "vscodeee::secrets", "secret_get: keyring error for key={key}: {e}");
-                    Err(format!("Failed to get secret for key '{key}': {e}"))
-                }
-            },
-            Err(e) => {
-                log::warn!(target: "vscodeee::secrets", "secret_get: failed to create entry for key={key}: {e}");
-                Err(format!(
-                    "Failed to create keyring entry for key '{key}': {e}"
-                ))
-            }
-        }
-    }
-}
-
-/// Store a secret value in the OS credential store.
-///
-/// # Arguments
-/// * `key` - The secret key.
-/// * `value` - The secret value to store.
-///
-/// On macOS debug builds, the Keychain item is stored with an "any application"
-/// ACL to avoid password prompts across different worktree binaries.
-/// On release builds, the default (application-specific) ACL is used.
-#[tauri::command]
-pub fn secret_set(key: String, value: String) -> Result<(), String> {
-    log::trace!(target: "vscodeee::secrets", "secret_set: key={key}");
-
-    // On macOS debug builds, use the permissive ACL path to avoid password
-    // prompts when multiple worktree binaries access the same Keychain item.
-    #[cfg(all(target_os = "macos", debug_assertions))]
-    {
-        log::info!(target: "vscodeee::secrets", "secret_set: using permissive ACL path for key={key}");
-        macos_permissive::set_password_any_app(SERVICE_NAME, &key, &value)?;
-        log::info!(target: "vscodeee::secrets", "secret_set: stored value for key={key} (permissive ACL)");
-        Ok(())
-    }
-
-    // On release builds (and non-macOS), use the default keyring behavior.
-    #[cfg(not(all(target_os = "macos", debug_assertions)))]
-    {
-        let entry = keyring::Entry::new(SERVICE_NAME, &key)
-            .map_err(|e| format!("Failed to create keyring entry for key '{key}': {e}"))?;
-
-        entry
-            .set_password(&value)
-            .map_err(|e| format!("Failed to set secret for key '{key}': {e}"))?;
-
-        log::trace!(target: "vscodeee::secrets", "secret_set: stored value for key={key}");
-        Ok(())
-    }
-}
-
-/// Delete a secret from the OS credential store.
-///
-/// # Arguments
-/// * `key` - The secret key to delete.
-///
-/// Silently succeeds if no entry exists for the given key.
-#[tauri::command]
-pub fn secret_delete(key: String) -> Result<(), String> {
-    log::trace!(target: "vscodeee::secrets", "secret_delete: key={key}");
-
-    // On macOS debug builds, use the dialog-free delete helper to avoid
-    // triggering a Keychain password dialog when the ACL restricts the
-    // calling binary.
-    #[cfg(all(target_os = "macos", debug_assertions))]
-    {
-        use core_foundation::string::CFString;
-
-        unsafe {
-            let cf_service = CFString::new(SERVICE_NAME);
-            let cf_account = CFString::new(&key);
-
-            if delete_keychain_item_skip_ui(&cf_service, &cf_account).is_ok() {
-                log::trace!(
-                    target: "vscodeee::secrets",
-                    "secret_delete: deleted (or no entry for) key={key}"
+            if key_bytes.len() != KEY_LEN {
+                log::warn!(
+                    target: "vscodeee::encryption",
+                    "get_or_create_master_key: existing key has wrong length ({}), regenerating",
+                    key_bytes.len()
                 );
-                Ok(())
+                // Delete the corrupted key before regenerating to avoid
+                // ERR_SEC_DUPLICATE_ITEM on platforms that don't upsert.
+                let _ = entry.delete_credential();
+                // Fall through to generate a new key.
             } else {
-                // delete_keychain_item_skip_ui already handles -25300 and -25293,
-                // so any Err here is an unexpected platform error.
-                Err(format!(
-                    "Failed to delete secret for key '{key}': platform error"
-                ))
+                log::trace!(target: "vscodeee::encryption", "get_or_create_master_key: loaded existing key");
+                return Ok(key_bytes);
             }
+        }
+        Err(keyring::Error::NoEntry) => {
+            log::info!(target: "vscodeee::encryption", "get_or_create_master_key: no existing key, generating new one");
+        }
+        Err(e) => {
+            // On macOS debug builds, the existing key might have a restricted ACL
+            // that blocks the current binary. Try to delete it and regenerate.
+            log::warn!(
+                target: "vscodeee::encryption",
+                "get_or_create_master_key: failed to read existing key: {e}, attempting regeneration"
+            );
+
+            // Try macOS-specific permissive approach first.
+            #[cfg(all(target_os = "macos", debug_assertions))]
+            {
+                if let Ok(Some(key_str)) = macos_permissive::read_master_key_skip_ui() {
+                    if let Ok(key_bytes) = base64_engine().decode(&key_str) {
+                        if key_bytes.len() == KEY_LEN {
+                            log::info!(target: "vscodeee::encryption", "get_or_create_master_key: read key via permissive path, re-saving with any-app ACL");
+                            // Re-save with permissive ACL for future access.
+                            macos_permissive::set_master_key_any_app(&key_str)?;
+                            return Ok(key_bytes);
+                        }
+                    }
+                }
+            }
+
+            // Delete the corrupted/inaccessible entry and regenerate.
+            let _ = entry.delete_credential();
         }
     }
 
-    // On release builds (and non-macOS), use the default keyring behavior.
+    // Generate a new 256-bit key.
+    let mut key_bytes = vec![0u8; KEY_LEN];
+    OsRng.fill_bytes(&mut key_bytes);
+    let key_b64 = base64_engine().encode(&key_bytes);
+
+    // Store using platform-appropriate method.
+    #[cfg(all(target_os = "macos", debug_assertions))]
+    {
+        macos_permissive::set_master_key_any_app(&key_b64)?;
+    }
+
     #[cfg(not(all(target_os = "macos", debug_assertions)))]
     {
-        let entry = keyring::Entry::new(SERVICE_NAME, &key)
-            .map_err(|e| format!("Failed to create keyring entry for key '{key}': {e}"))?;
-
-        match entry.delete_credential() {
-            Ok(()) => {
-                log::trace!(target: "vscodeee::secrets", "secret_delete: deleted key={key}");
-                Ok(())
-            }
-            Err(keyring::Error::NoEntry) => {
-                log::trace!(target: "vscodeee::secrets", "secret_delete: no entry for key={key} (noop)");
-                Ok(())
-            }
-            Err(e) => {
-                log::warn!(target: "vscodeee::secrets", "secret_delete: keyring error for key={key}: {e}");
-                Err(format!("Failed to delete secret for key '{key}': {e}"))
-            }
-        }
+        entry.set_password(&key_b64)
+            .map_err(|e| format!("Failed to store master key: {e}"))?;
     }
+
+    log::info!(target: "vscodeee::encryption", "get_or_create_master_key: generated and stored new master key");
+    Ok(key_bytes)
 }
 
-// ── macOS debug-only: permissive ACL implementation ──────────────────────────
+// ── Tauri commands ──────────────────────────────────────────────────────────
+
+/// Check whether the encryption service is available.
+///
+/// Returns `true` if the OS credential store is accessible and a master
+/// key can be obtained or created.
+#[tauri::command]
+pub fn encryption_is_available() -> bool {
+    // Try to create a keyring entry — if this fails, encryption is unavailable.
+    keyring::Entry::new(MASTER_KEY_SERVICE, MASTER_KEY_ACCOUNT).is_ok()
+}
+
+/// Encrypt a plaintext string using AES-256-GCM with the master key.
+///
+/// The output format is: `base64(nonce || ciphertext || tag)`.
+#[tauri::command]
+pub fn encryption_encrypt(value: String) -> Result<String, String> {
+    let key_bytes = get_master_key()?;
+    let cipher = Aes256Gcm::new_from_slice(&key_bytes)
+        .map_err(|e| format!("Failed to create AES cipher: {e}"))?;
+
+    // Generate a random 96-bit nonce.
+    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+
+    // Encrypt with AES-256-GCM. The tag is appended automatically.
+    let ciphertext = cipher.encrypt(&nonce, value.as_bytes())
+        .map_err(|e| format!("AES-GCM encryption failed: {e}"))?;
+
+    // Prepend nonce to ciphertext+tag and base64-encode.
+    let mut combined = Vec::with_capacity(NONCE_LEN + ciphertext.len());
+    combined.extend_from_slice(&nonce);
+    combined.extend_from_slice(&ciphertext);
+
+    Ok(base64_engine().encode(&combined))
+}
+
+/// Decrypt a ciphertext string using AES-256-GCM with the master key.
+///
+/// Expects the input format: `base64(nonce || ciphertext || tag)`.
+#[tauri::command]
+pub fn encryption_decrypt(value: String) -> Result<String, String> {
+    let key_bytes = get_master_key()?;
+
+    let combined = base64_engine().decode(&value)
+        .map_err(|e| format!("Failed to decode encrypted value: {e}"))?;
+
+    if combined.len() < NONCE_LEN + GCM_TAG_LEN {
+        return Err("Encrypted value too short".to_string());
+    }
+
+    let (nonce_bytes, ciphertext) = combined.split_at(NONCE_LEN);
+    let nonce = Nonce::from_slice(nonce_bytes);
+
+    let cipher = Aes256Gcm::new_from_slice(&key_bytes)
+        .map_err(|e| format!("Failed to create AES cipher: {e}"))?;
+
+    let plaintext = cipher.decrypt(nonce, ciphertext)
+        .map_err(|e| format!("AES-GCM decryption failed: {e}"))?;
+
+    String::from_utf8(plaintext)
+        .map_err(|e| format!("Decrypted value is not valid UTF-8: {e}"))
+}
+
+// ── macOS debug-only: permissive ACL for master key ─────────────────────────
 //
-// Uses the macOS Security Framework C API directly to create Keychain items
-// with an "any application" ACL. This avoids the password prompt that occurs
-// when different binaries (from different worktrees) access the same item.
+// Only the master key needs a permissive ACL. All other secrets are encrypted
+// and stored in SQLite, so they never touch the Keychain.
+
 #[cfg(all(target_os = "macos", debug_assertions))]
 mod macos_permissive {
     use core_foundation::base::TCFType;
@@ -315,59 +267,29 @@ mod macos_permissive {
     use std::ffi::c_void;
     use std::ptr;
 
-    /// FFI declarations for macOS Security Framework APIs not exposed
-    /// by the `security-framework-sys` crate.
+    use super::{MASTER_KEY_SERVICE, MASTER_KEY_ACCOUNT};
+
+    const ERR_SEC_ITEM_NOT_FOUND: i32 = -25300;
+    const ERR_SEC_AUTH_FAILED: i32 = -25293;
+    const ERR_SEC_DUPLICATE_ITEM: i32 = -25299;
+
     extern "C" {
-        /// CFStringRef key for setting the access object on a
-        /// legacy Keychain item (macOS only, not available on iOS).
         static kSecAttrAccess: core_foundation_sys::string::CFStringRef;
-
-        /// CFStringRef value for `kSecMatchLimit` that limits
-        /// `SecItemCopyMatching` to return at most one item.
         static kSecMatchLimitOne: core_foundation_sys::string::CFStringRef;
-
-        /// CFStringRef key for controlling whether
-        /// Security framework shows authentication UI (Keychain password dialogs).
         static kSecUseAuthenticationUI: core_foundation_sys::string::CFStringRef;
-
-        /// CFStringRef value for `kSecUseAuthenticationUI` that suppresses all
-        /// user interaction. If the operation cannot be completed without user
-        /// interaction, it returns `errSecAuthFailed` (-25293) instead.
         static kSecUseAuthenticationUISkip: core_foundation_sys::string::CFStringRef;
 
-        /// Creates a new `SecAccess` object.
-        ///
-        /// - `trusted_list = NULL` -> only the calling app is trusted.
-        /// - `trusted_list = empty CFArray` -> empty trusted list.
-        ///
-        /// We pass `NULL` here and then patch ACL entries afterwards via
-        /// [`SecACLSetContents`].
         fn SecAccessCreate(
             descriptor: core_foundation_sys::string::CFStringRef,
             trusted_list: core_foundation_sys::array::CFArrayRef,
             access_ref: *mut security_framework_sys::base::SecAccessRef,
         ) -> OSStatus;
 
-        /// Retrieves all ACL entries from a [`SecAccess`] object.
-        ///
-        /// The caller must release the returned `CFArrayRef` via `CFRelease`.
         fn SecAccessCopyACLList(
             access_ref: security_framework_sys::base::SecAccessRef,
             acl_list: *mut core_foundation_sys::array::CFArrayRef,
         ) -> OSStatus;
 
-        /// Sets the application list for an ACL entry.
-        ///
-        /// Passing `NULL` for `application_list` means "any application"
-        /// (no access restriction). This is the key mechanism for the
-        /// permissive ACL behavior used in debug builds.
-        ///
-        /// # Arguments
-        ///
-        /// * `acl` - Opaque `SecACLRef` pointer.
-        /// * `application_list` - `CFArrayRef` of trusted apps, or `NULL` for any app.
-        /// * `description` - Human-readable description string.
-        /// * `prompt_selector` - `SecKeychainPromptSelector` value controlling prompt behavior.
         fn SecACLSetContents(
             acl: *const c_void,
             application_list: core_foundation_sys::array::CFArrayRef,
@@ -375,17 +297,6 @@ mod macos_permissive {
             prompt_selector: u16,
         ) -> OSStatus;
 
-        /// Reads the current contents of an ACL entry.
-        ///
-        /// The caller must release the returned `application_list` and
-        /// `description` via `CFRelease` when no longer needed.
-        ///
-        /// # Arguments
-        ///
-        /// * `acl` - Opaque `SecACLRef` pointer.
-        /// * `application_list` - Receives a `CFArrayRef` of trusted apps.
-        /// * `description` - Receives a `CFStringRef` description.
-        /// * `prompt_selector` - Receives a `SecKeychainPromptSelector` value.
         fn SecACLCopyContents(
             acl: *const c_void,
             application_list: *mut core_foundation_sys::array::CFArrayRef,
@@ -394,7 +305,6 @@ mod macos_permissive {
         ) -> OSStatus;
     }
 
-    /// Create a new mutable CFDictionary. Caller must CFRelease when done.
     unsafe fn create_mutable_dict() -> CFMutableDictionaryRef {
         CFDictionaryCreateMutable(
             kCFAllocatorDefault,
@@ -404,75 +314,48 @@ mod macos_permissive {
         )
     }
 
-    /// Read a Keychain password using `kSecUseAuthenticationUISkip`.
-    ///
-    /// Shared implementation for both `macos_permissive_get_password` (public,
-    /// used by `network.rs`) and `get_password_and_patch_acl` (internal).
-    ///
-    /// If the item's ACL denies access, macOS returns `errSecAuthFailed` and
-    /// the stale item is deleted silently, returning `Ok(None)`.
-    pub(super) fn read_password_skip_ui(
-        service: &str,
-        account: &str,
-    ) -> Result<Option<String>, String> {
-        unsafe {
-            let cf_service = CFString::new(service);
-            let cf_account = CFString::new(account);
+    /// Build a query dictionary matching a generic-password item by service and account.
+    unsafe fn create_query_dict(
+        cf_service: &CFString,
+        cf_account: &CFString,
+    ) -> CFMutableDictionaryRef {
+        let query = create_mutable_dict();
+        CFDictionaryAddValue(query, kSecClass as *const c_void, kSecClassGenericPassword as *const c_void);
+        CFDictionaryAddValue(query, kSecAttrService as *const c_void, cf_service.as_concrete_TypeRef() as *const c_void);
+        CFDictionaryAddValue(query, kSecAttrAccount as *const c_void, cf_account.as_concrete_TypeRef() as *const c_void);
+        query
+    }
 
-            let query = create_mutable_dict();
-            CFDictionaryAddValue(
-                query,
-                kSecClass as *const c_void,
-                kSecClassGenericPassword as *const c_void,
-            );
-            CFDictionaryAddValue(
-                query,
-                kSecAttrService as *const c_void,
-                cf_service.as_concrete_TypeRef() as *const c_void,
-            );
-            CFDictionaryAddValue(
-                query,
-                kSecAttrAccount as *const c_void,
-                cf_account.as_concrete_TypeRef() as *const c_void,
-            );
-            CFDictionaryAddValue(
-                query,
-                kSecReturnData as *const c_void,
-                core_foundation_sys::number::kCFBooleanTrue as *const c_void,
-            );
-            CFDictionaryAddValue(
-                query,
-                kSecMatchLimit as *const c_void,
-                kSecMatchLimitOne as *const c_void,
-            );
-            CFDictionaryAddValue(
-                query,
-                kSecUseAuthenticationUI as *const c_void,
-                kSecUseAuthenticationUISkip as *const c_void,
-            );
+    /// Read the master key from Keychain using `kSecUseAuthenticationUISkip`.
+    ///
+    /// Returns `Ok(None)` if the item does not exist or is inaccessible due to ACL.
+    pub(super) fn read_master_key_skip_ui() -> Result<Option<String>, String> {
+        unsafe {
+            let cf_service = CFString::new(MASTER_KEY_SERVICE);
+            let cf_account = CFString::new(MASTER_KEY_ACCOUNT);
+
+            let query = create_query_dict(&cf_service, &cf_account);
+            CFDictionaryAddValue(query, kSecReturnData as *const c_void, core_foundation_sys::number::kCFBooleanTrue as *const c_void);
+            CFDictionaryAddValue(query, kSecMatchLimit as *const c_void, kSecMatchLimitOne as *const c_void);
+            CFDictionaryAddValue(query, kSecUseAuthenticationUI as *const c_void, kSecUseAuthenticationUISkip as *const c_void);
 
             let mut result: CFTypeRef = ptr::null();
             let status = SecItemCopyMatching(query as CFDictionaryRef, &mut result);
             CFRelease(query as CFTypeRef);
 
-            if status == super::ERR_SEC_ITEM_NOT_FOUND {
+            if status == ERR_SEC_ITEM_NOT_FOUND {
                 return Ok(None);
             }
 
-            if status == super::ERR_SEC_AUTH_FAILED {
-                log::warn!(
-                    target: "vscodeee::secrets",
-                    "read_password_skip_ui: auth failed for service='{service}' account='{account}' \
-                     (ACL restricts calling binary), deleting stale item"
-                );
-                let _ = super::delete_keychain_item_skip_ui(&cf_service, &cf_account);
+            if status == ERR_SEC_AUTH_FAILED {
+                log::warn!(target: "vscodeee::encryption", "read_master_key_skip_ui: auth failed, ACL restricts binary");
+                // Delete the stale item so we can regenerate.
+                delete_keychain_item_skip_ui(&cf_service, &cf_account);
                 return Ok(None);
             }
 
             if status != 0 {
-                return Err(format!(
-                    "SecItemCopyMatching failed with status {status} for service='{service}' account='{account}'"
-                ));
+                return Err(format!("SecItemCopyMatching failed with status {status}"));
             }
 
             if result.is_null() {
@@ -490,256 +373,112 @@ mod macos_permissive {
         }
     }
 
-    /// Store a generic password in the macOS Keychain with an "any application" ACL.
-    ///
-    /// This function:
-    /// 1. Creates a `SecAccess` object (default ACL).
-    /// 2. Iterates all ACL entries and sets each one's application list to NULL
-    ///    (= `applications: <null>` = any application can access without prompting).
-    /// 3. Deletes any existing item with the same service/account.
-    /// 4. Creates a new Keychain item with the fully permissive ACL.
-    ///
-    /// ## Key insight
-    /// - `SecACLSetContents(acl, NULL, ...)` → `applications: <null>` (any app, no prompt)
-    /// - `SecACLSetContents(acl, empty_array, ...)` → `applications (0)` (no app allowed!)
-    /// - `SecAccessCreate(desc, NULL, ...)` → default ACL with calling app only
-    ///
-    /// ## Migration behavior
-    /// If the existing item has a restricted ACL (the calling binary is not in
-    /// the allowed list), the skip-UI delete will fail silently and `SecItemAdd`
-    /// returns `errSecDuplicateItem`.  In that case we fall back to a **normal**
-    /// `SecItemDelete` (which may show a one-time confirmation dialog).  Once the
-    /// user approves, the item is deleted and re-created with the permissive ACL.
-    /// Subsequent runs will not show any dialog.
-    pub(super) fn set_password_any_app(
-        service: &str,
-        account: &str,
-        password: &str,
-    ) -> Result<(), String> {
+    /// Store the master key in Keychain with an "any application" ACL.
+    pub(super) fn set_master_key_any_app(key_b64: &str) -> Result<(), String> {
         unsafe {
-            // Step 1: Create a SecAccess with default ACL (we'll patch it below).
-            let descriptor = CFString::new(service);
+            // Create SecAccess with default ACL, then patch to "any app".
+            let descriptor = CFString::new(MASTER_KEY_SERVICE);
             let mut access_ref: security_framework_sys::base::SecAccessRef = ptr::null_mut();
             let status = SecAccessCreate(
                 descriptor.as_concrete_TypeRef(),
-                ptr::null(), // default: calling app only (we'll override below)
+                ptr::null(),
                 &mut access_ref,
             );
             if status != 0 {
-                return Err(format!(
-                    "SecAccessCreate failed with status {status} for key '{account}'"
-                ));
+                return Err(format!("SecAccessCreate failed with status {status}"));
             }
 
-            // Step 2: Get all ACL entries and set each one to "any application".
+            // Patch all ACL entries to "any application".
             let mut acl_list: core_foundation_sys::array::CFArrayRef = ptr::null();
             let status = SecAccessCopyACLList(access_ref, &mut acl_list);
             if status != 0 {
                 CFRelease(access_ref as CFTypeRef);
-                return Err(format!(
-                    "SecAccessCopyACLList failed with status {status} for key '{account}'"
-                ));
+                return Err(format!("SecAccessCopyACLList failed with status {status}"));
             }
 
             let acl_count = core_foundation_sys::array::CFArrayGetCount(acl_list);
-            log::info!(
-                target: "vscodeee::secrets",
-                "set_password_any_app: patching {acl_count} ACL entries for key={account}"
-            );
-
             for i in 0..acl_count {
                 let acl = core_foundation_sys::array::CFArrayGetValueAtIndex(acl_list, i);
 
-                // Read current contents to preserve description and prompt selector.
                 let mut app_list: core_foundation_sys::array::CFArrayRef = ptr::null();
                 let mut desc: core_foundation_sys::string::CFStringRef = ptr::null();
                 let mut prompt: u16 = 0;
-                let status = SecACLCopyContents(acl, &mut app_list, &mut desc, &mut prompt);
-                if status != 0 {
-                    log::warn!(
-                        target: "vscodeee::secrets",
-                        "set_password_any_app: SecACLCopyContents failed for ACL {i}: status={status}"
-                    );
+                let copy_status = SecACLCopyContents(acl, &mut app_list, &mut desc, &mut prompt);
+                if copy_status != 0 {
                     continue;
                 }
 
-                // Set application list to NULL = any application (no restriction).
-                let status = SecACLSetContents(
-                    acl,
-                    ptr::null(), // NULL = applications: <null> = any app
-                    desc,
-                    prompt,
-                );
+                SecACLSetContents(acl, ptr::null(), desc, prompt);
 
-                // Clean up the copies.
                 if !app_list.is_null() {
                     CFRelease(app_list as CFTypeRef);
                 }
                 if !desc.is_null() {
                     CFRelease(desc as CFTypeRef);
                 }
-
-                if status != 0 {
-                    log::warn!(
-                        target: "vscodeee::secrets",
-                        "set_password_any_app: SecACLSetContents failed for ACL {i}: status={status}"
-                    );
-                }
             }
-
             CFRelease(acl_list as CFTypeRef);
 
-            // Prepare CFString values (these are auto-released via Drop).
-            let cf_service = CFString::new(service);
-            let cf_account = CFString::new(account);
-            let cf_password = core_foundation::data::CFData::from_buffer(password.as_bytes());
+            // Prepare values.
+            let cf_service = CFString::new(MASTER_KEY_SERVICE);
+            let cf_account = CFString::new(MASTER_KEY_ACCOUNT);
+            let cf_password = core_foundation::data::CFData::from_buffer(key_b64.as_bytes());
 
-            // Helper closure to build the SecItemAdd dictionary with all
-            // required attributes including the permissive ACL.
             let build_add_dict = || -> CFMutableDictionaryRef {
-                let dict = create_mutable_dict();
-                CFDictionaryAddValue(
-                    dict,
-                    kSecClass as *const c_void,
-                    kSecClassGenericPassword as *const c_void,
-                );
-                CFDictionaryAddValue(
-                    dict,
-                    kSecAttrService as *const c_void,
-                    cf_service.as_concrete_TypeRef() as *const c_void,
-                );
-                CFDictionaryAddValue(
-                    dict,
-                    kSecAttrAccount as *const c_void,
-                    cf_account.as_concrete_TypeRef() as *const c_void,
-                );
-                CFDictionaryAddValue(
-                    dict,
-                    kSecValueData as *const c_void,
-                    cf_password.as_concrete_TypeRef() as *const c_void,
-                );
-                CFDictionaryAddValue(
-                    dict,
-                    kSecAttrAccess as *const c_void,
-                    access_ref as *const c_void,
-                );
+                let dict = create_query_dict(&cf_service, &cf_account);
+                CFDictionaryAddValue(dict, kSecValueData as *const c_void, cf_password.as_concrete_TypeRef() as *const c_void);
+                CFDictionaryAddValue(dict, kSecAttrAccess as *const c_void, access_ref as *const c_void);
                 dict
             };
 
-            // Step 3: Delete existing item if present.  First try with UI skip;
-            // if the item has a restricted ACL the skip-UI delete silently
-            // "succeeds" without actually removing it, so we may get a
-            // duplicate error on add (handled in Step 4).
-            let _ = super::delete_keychain_item_skip_ui(&cf_service, &cf_account);
+            // Delete existing, then add new.
+            delete_keychain_item_skip_ui(&cf_service, &cf_account);
 
-            // Step 4: Add new item with the fully permissive ACL.
             let add_dict = build_add_dict();
             let mut status = SecItemAdd(add_dict as CFDictionaryRef, ptr::null_mut());
             CFRelease(add_dict as CFTypeRef);
 
-            // Step 5: If add failed because the old item was not deleted (it had
-            // a restricted ACL), fall back to a normal SecItemDelete that may show
-            // a one-time confirmation dialog, then retry the add.
-            if status == super::ERR_SEC_DUPLICATE_ITEM {
-                log::info!(
-                    target: "vscodeee::secrets",
-                    "set_password_any_app: SecItemAdd returned errSecDuplicateItem for key={account}, \
-                     falling back to normal delete"
-                );
-
-                let del_dict = create_mutable_dict();
-                CFDictionaryAddValue(
-                    del_dict,
-                    kSecClass as *const c_void,
-                    kSecClassGenericPassword as *const c_void,
-                );
-                CFDictionaryAddValue(
-                    del_dict,
-                    kSecAttrService as *const c_void,
-                    cf_service.as_concrete_TypeRef() as *const c_void,
-                );
-                CFDictionaryAddValue(
-                    del_dict,
-                    kSecAttrAccount as *const c_void,
-                    cf_account.as_concrete_TypeRef() as *const c_void,
-                );
-
+            // Fallback: if skip-UI delete failed due to ACL, try normal delete.
+            if status == ERR_SEC_DUPLICATE_ITEM {
+                log::info!(target: "vscodeee::encryption", "set_master_key_any_app: duplicate item, falling back to normal delete");
+                let del_dict = create_query_dict(&cf_service, &cf_account);
                 let del_status = SecItemDelete(del_dict as CFDictionaryRef);
                 CFRelease(del_dict as CFTypeRef);
 
-                // Both "deleted OK" and "not found" (race condition) are
-                // recoverable — retry the add with the permissive ACL.
-                if del_status == 0 || del_status == super::ERR_SEC_ITEM_NOT_FOUND {
-                    if del_status == super::ERR_SEC_ITEM_NOT_FOUND {
-                        log::warn!(
-                            target: "vscodeee::secrets",
-                            "set_password_any_app: fallback delete returned errSecItemNotFound \
-                             for key={account} (race condition), retrying add"
-                        );
-                    }
+                if del_status == 0 || del_status == ERR_SEC_ITEM_NOT_FOUND {
                     let retry_dict = build_add_dict();
                     status = SecItemAdd(retry_dict as CFDictionaryRef, ptr::null_mut());
                     CFRelease(retry_dict as CFTypeRef);
                 } else {
                     CFRelease(access_ref as CFTypeRef);
-                    return Err(format!(
-                        "set_password_any_app: fallback delete failed with status {del_status} \
-                         for key '{account}'"
-                    ));
+                    return Err(format!("Fallback delete failed with status {del_status}"));
                 }
             }
 
             CFRelease(access_ref as CFTypeRef);
 
             if status != 0 {
-                return Err(format!(
-                    "SecItemAdd failed with status {status} for key '{account}'"
-                ));
+                return Err(format!("SecItemAdd failed with status {status}"));
             }
 
-            log::info!(
-                target: "vscodeee::secrets",
-                "set_password_any_app: stored with fully permissive ACL for key={account}"
-            );
-
+            log::info!(target: "vscodeee::encryption", "set_master_key_any_app: stored master key with permissive ACL");
             Ok(())
         }
     }
 
-    /// Read a generic password from the macOS Keychain and, if the item's ACL
-    /// restricts access to specific binaries, re-save it with an "any application"
-    /// ACL so that future reads from any worktree binary succeed without prompting.
-    ///
-    /// ## Behavior
-    /// 1. Use `read_password_skip_ui` to read the password value.
-    /// 2. If the item does not exist, return `Ok(None)`.
-    /// 3. If the read succeeds, re-save the same value via `set_password_any_app`
-    ///    which deletes + re-creates the item with a fully permissive ACL.
-    ///    This is idempotent — if the ACL is already permissive, the re-save
-    ///    simply overwrites with the same value and ACL.
-    pub(super) fn get_password_and_patch_acl(
-        service: &str,
-        account: &str,
-    ) -> Result<Option<String>, String> {
-        let password = match read_password_skip_ui(service, account)? {
-            Some(pw) => pw,
-            None => return Ok(None),
-        };
+    /// Delete a Keychain item suppressing authentication UI.
+    unsafe fn delete_keychain_item_skip_ui(
+        cf_service: &CFString,
+        cf_account: &CFString,
+    ) {
+        let query = create_query_dict(cf_service, cf_account);
+        CFDictionaryAddValue(query, kSecUseAuthenticationUI as *const c_void, kSecUseAuthenticationUISkip as *const c_void);
 
-        // Re-save with permissive ACL to patch any binary-restricted ACL.
-        // This is idempotent — overwrites with same value + any-app ACL.
-        log::info!(
-            target: "vscodeee::secrets",
-            "get_password_and_patch_acl: re-saving with permissive ACL for key={account}"
-        );
-        if let Err(e) = set_password_any_app(service, account, &password) {
-            // Log the error but still return the password — the read succeeded.
-            log::warn!(
-                target: "vscodeee::secrets",
-                "get_password_and_patch_acl: failed to patch ACL for key={account}: {e}"
-            );
+        let status = SecItemDelete(query as CFDictionaryRef);
+        CFRelease(query as CFTypeRef);
+
+        if status != 0 && status != ERR_SEC_ITEM_NOT_FOUND && status != ERR_SEC_AUTH_FAILED {
+            log::warn!(target: "vscodeee::encryption", "delete_keychain_item_skip_ui: unexpected status {status}");
         }
-
-        Ok(Some(password))
     }
 }

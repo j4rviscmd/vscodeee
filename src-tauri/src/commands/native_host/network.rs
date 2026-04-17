@@ -22,7 +22,7 @@ pub struct AuthInfo {
     pub attempt: u32,
 }
 
-/// Credentials returned from the OS credential store.
+/// Credentials returned from the credential store.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Credentials {
     pub username: String,
@@ -45,7 +45,7 @@ pub fn find_free_port(
     _timeout: u64,
     stride: u16,
 ) -> Result<u16, NativeHostError> {
-    let stride = if stride == 0 { 1 } else { stride };
+    let stride = stride.max(1);
     let mut port = start_port;
     let end = start_port.saturating_add(give_up_after);
     while port < end {
@@ -84,92 +84,18 @@ pub fn load_certificates() -> Vec<String> {
 
 // ─── Credential store commands ──────────────────────────────────────────
 
-/// Look up stored credentials from the OS credential store for a given auth challenge.
+/// Look up stored credentials for a given auth challenge.
 ///
-/// Uses the `keyring` crate to access:
-/// - macOS: Keychain Access
-/// - Windows: Credential Manager
-/// - Linux: Secret Service (GNOME Keyring / KDE Wallet)
+/// Proxy authentication credentials are now managed through TypeScript's
+/// `ISecretStorageService` (encrypted with the master key and stored in SQLite)
+/// rather than directly in the OS credential store. This command always
+/// returns `None` and will be removed in a future cleanup.
 ///
-/// The credential service name is constructed as:
-/// `vscodeee.auth.{scheme}.{host}:{port}`
-///
-/// Returns `None` if no matching credential is found.
+// TODO(Phase 2): Remove this command once proxy auth is fully routed through
+// ISecretStorageService on the TypeScript side.
 #[tauri::command]
-pub fn lookup_authorization(auth_info: AuthInfo) -> Result<Option<Credentials>, NativeHostError> {
-    let service = format!(
-        "vscodeee.auth.{}.{}:{}",
-        auth_info.scheme, auth_info.host, auth_info.port
-    );
-
-    log::debug!(
-        target: "vscodeee",
-        "lookup_authorization: service={}, realm={}, attempt={}",
-        service,
-        auth_info.realm,
-        auth_info.attempt
-    );
-
-    // On macOS debug builds, use the permissive Keychain path that suppresses
-    // password dialogs when the ACL restricts the calling binary.
-    #[cfg(all(target_os = "macos", debug_assertions))]
-    {
-        match crate::commands::secret_storage::macos_permissive_get_password(
-            &service,
-            &auth_info.realm,
-        ) {
-            Ok(Some(password)) => {
-                log::debug!(
-                    target: "vscodeee",
-                    "lookup_authorization: found credential for {service} (permissive path)"
-                );
-                Ok(Some(Credentials {
-                    username: auth_info.realm.clone(),
-                    password,
-                }))
-            }
-            Ok(None) => {
-                log::debug!(
-                    target: "vscodeee",
-                    "lookup_authorization: no credential for {service} (permissive path)"
-                );
-                Ok(None)
-            }
-            Err(e) => {
-                log::warn!(
-                    target: "vscodeee",
-                    "lookup_authorization: permissive path error for {service}: {e}"
-                );
-                Ok(None)
-            }
-        }
-    }
-
-    // On release builds (and non-macOS), use the default keyring behavior.
-    #[cfg(not(all(target_os = "macos", debug_assertions)))]
-    {
-        match keyring::Entry::new(&service, &auth_info.realm) {
-            Ok(entry) => match entry.get_password() {
-                Ok(password) => {
-                    log::debug!(target: "vscodeee", "lookup_authorization: found credential for {service}");
-                    Ok(Some(Credentials {
-                        username: auth_info.realm.clone(),
-                        password,
-                    }))
-                }
-                Err(keyring::Error::NoEntry) => {
-                    log::debug!(target: "vscodeee", "lookup_authorization: no credential for {service}");
-                    Ok(None)
-                }
-                Err(e) => {
-                    log::warn!(target: "vscodeee", "lookup_authorization: keyring error for {service}: {e}");
-                    Ok(None)
-                }
-            },
-            Err(e) => {
-                log::warn!(target: "vscodeee", "lookup_authorization: failed to create keyring entry for {service}: {e}");
-                Ok(None)
-            }
-        }
-    }
+pub fn lookup_authorization(_auth_info: AuthInfo) -> Result<Option<Credentials>, NativeHostError> {
+    // Proxy credentials are now managed by TypeScript's ISecretStorageService
+    // via the master encryption key. No longer reading from Keychain here.
+    Ok(None)
 }
