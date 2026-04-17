@@ -30,6 +30,8 @@ import { invoke } from '../../../../platform/tauri/common/tauriApi.js';
  * Result returned from the Rust `spawn_exthost_with_relay` command.
  */
 interface IExtHostSpawnResult {
+	/** Unique identifier for this Extension Host instance, used for cleanup via `kill_exthost`. */
+	readonly instanceId: number;
 	/** WebSocket port on which the Rust relay is listening. */
 	readonly wsPort: number;
 	/** PID of the spawned Node.js Extension Host child process. */
@@ -75,6 +77,11 @@ export class TauriLocalProcessExtensionHost extends Disposable implements IExten
 	private _protocol: PersistentProtocol | null = null;
 	private readonly _extensionHostLogsLocation: URI;
 	/**
+	 * Instance ID assigned by the Rust side, used to clean up this specific
+	 * Extension Host instance via the `kill_exthost` command.
+	 */
+	private _instanceId: number | null = null;
+	/**
 	 * Application root path received from the Rust spawn result.
 	 * Used to set `vscode.env.appRoot` in the extension host init data.
 	 */
@@ -118,8 +125,9 @@ export class TauriLocalProcessExtensionHost extends Disposable implements IExten
 		this._logService.info('[TauriExtHost] Spawning extension host with WS relay...');
 		const result = await invoke<IExtHostSpawnResult>('spawn_exthost_with_relay');
 		this.pid = result.extHostPid;
+		this._instanceId = result.instanceId;
 		this._appRoot = result.appRoot;
-		this._logService.info(`[TauriExtHost] ExtHost PID=${result.extHostPid}, WS port=${result.wsPort}, pipe=${result.pipePath}, appRoot=${result.appRoot}`);
+		this._logService.info(`[TauriExtHost] ExtHost instance=${result.instanceId}, PID=${result.extHostPid}, WS port=${result.wsPort}, pipe=${result.pipePath}, appRoot=${result.appRoot}`);
 
 		// 2) Connect WebSocket to the relay
 		this._logService.info('[TauriExtHost] Connecting WS to relay...');
@@ -214,11 +222,21 @@ export class TauriLocalProcessExtensionHost extends Disposable implements IExten
 	}
 
 	/**
-	 * Send a termination message to the extension host and dispose all resources.
+	 * Send a termination message to the extension host, clean up the Rust-side
+	 * sidecar/relay, and dispose all resources.
 	 */
 	public override dispose(): void {
 		if (this._protocol) {
 			this._protocol.send(VSBuffer.fromString(JSON.stringify({ type: '__$terminate' })));
+		}
+		// Ask Rust to kill this specific ExtHost instance and its relay.
+		// Fire-and-forget: errors are logged but do not block disposal.
+		if (this._instanceId !== null) {
+			const instanceId = this._instanceId;
+			this._instanceId = null;
+			invoke('kill_exthost', { instanceId }).catch(err => {
+				this._logService.warn(`[TauriExtHost] Failed to kill ExtHost instance ${instanceId}: ${err}`);
+			});
 		}
 		super.dispose();
 	}

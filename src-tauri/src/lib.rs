@@ -111,6 +111,8 @@ pub fn run() {
             commands::ipc_channel::ipc_handshake,
             commands::spawn_exthost::spawn_extension_host,
             commands::spawn_exthost::spawn_exthost_with_relay,
+            commands::spawn_exthost::kill_exthost,
+            commands::spawn_exthost::kill_all_exthosts,
             commands::terminal::create_terminal,
             commands::terminal::write_terminal,
             commands::terminal::resize_terminal,
