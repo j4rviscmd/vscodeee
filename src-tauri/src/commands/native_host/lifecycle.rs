@@ -74,6 +74,14 @@ pub async fn quit_app(
     window_manager: tauri::State<'_, std::sync::Arc<crate::window::manager::WindowManager>>,
 ) -> Result<(), NativeHostError> {
     crate::window::events::save_session_snapshot(&window_manager).await;
+
+    // Run shutdown cleanup before exiting — kills all child processes.
+    if let Some(coordinator) =
+        app.try_state::<std::sync::Arc<crate::shutdown::ShutdownCoordinator>>()
+    {
+        coordinator.shutdown_all();
+    }
+
     app.exit(0);
     Ok(())
 }
@@ -86,6 +94,14 @@ pub async fn exit_app(
     window_manager: tauri::State<'_, std::sync::Arc<crate::window::manager::WindowManager>>,
 ) -> Result<(), NativeHostError> {
     crate::window::events::save_session_snapshot(&window_manager).await;
+
+    // Run shutdown cleanup before exiting — kills all child processes.
+    if let Some(coordinator) =
+        app.try_state::<std::sync::Arc<crate::shutdown::ShutdownCoordinator>>()
+    {
+        coordinator.shutdown_all();
+    }
+
     app.exit(code);
     Ok(())
 }
