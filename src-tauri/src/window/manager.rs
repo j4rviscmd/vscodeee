@@ -106,24 +106,11 @@ impl WindowManager {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let label = format!("main_{id}");
 
-        // Build URL with optional query params
-        let mut url_str = String::from("vs/code/tauri-browser/workbench/workbench-tauri.html");
-        let mut has_param = false;
-        if let Some(ref folder) = options.folder_uri {
-            url_str.push_str("?folder=");
-            url_str.push_str(&encode_uri_component(folder));
-            has_param = true;
-        } else if let Some(ref workspace) = options.workspace_uri {
-            url_str.push_str("?workspace=");
-            url_str.push_str(&encode_uri_component(workspace));
-            has_param = true;
-        }
-        // Always pass the window label so the new window can resolve its ID
-        let separator = if has_param { '&' } else { '?' };
-        url_str.push(separator);
-        url_str.push_str("windowLabel=");
-        url_str.push_str(&label);
-
+        let url_str = build_workbench_url(
+            options.folder_uri.as_deref(),
+            options.workspace_uri.as_deref(),
+            &label,
+        );
         let url = WebviewUrl::App(url_str.into());
 
         // macOS: use overlay title bar to keep native traffic lights
@@ -133,6 +120,7 @@ impl WindowManager {
             .inner_size(1200.0, 800.0)
             .min_inner_size(400.0, 270.0)
             .decorations(false)
+            .visible(false)
             .title_bar_style(tauri::TitleBarStyle::Overlay)
             .hidden_title(true);
 
@@ -141,7 +129,8 @@ impl WindowManager {
             .title("VS Codeee")
             .inner_size(1200.0, 800.0)
             .min_inner_size(400.0, 270.0)
-            .decorations(false);
+            .decorations(false)
+            .visible(false);
 
         builder
             .build()
@@ -294,15 +283,6 @@ impl WindowManager {
         }
     }
 
-    /// Set the workspace URI for a window.
-    pub async fn set_workspace(&self, label: &str, workspace_uri: Option<String>) {
-        if let Some(id) = self.id_for_label(label).await {
-            if let Some(info) = self.windows.write().await.get_mut(&id) {
-                info.workspace_uri = workspace_uri;
-            }
-        }
-    }
-
     /// Consume the restored workspace URI for a window.
     ///
     /// Returns the workspace URI on the first call after app start, then marks
@@ -361,25 +341,7 @@ impl WindowManager {
 
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
 
-        // Build URL with workspace/folder query params
-        let mut url_str = String::from("vs/code/tauri-browser/workbench/workbench-tauri.html");
-        let mut has_param = false;
-
-        if let Some(folder) = folder_uri {
-            url_str.push_str("?folder=");
-            url_str.push_str(&encode_uri_component(folder));
-            has_param = true;
-        } else if let Some(workspace) = workspace_uri {
-            url_str.push_str("?workspace=");
-            url_str.push_str(&encode_uri_component(workspace));
-            has_param = true;
-        }
-
-        let separator = if has_param { '&' } else { '?' };
-        url_str.push(separator);
-        url_str.push_str("windowLabel=");
-        url_str.push_str(label);
-
+        let url_str = build_workbench_url(folder_uri, workspace_uri, label);
         let url = WebviewUrl::App(url_str.into());
 
         #[cfg(target_os = "macos")]
@@ -388,6 +350,7 @@ impl WindowManager {
             .inner_size(1200.0, 800.0)
             .min_inner_size(400.0, 270.0)
             .decorations(false)
+            .visible(false)
             .title_bar_style(tauri::TitleBarStyle::Overlay)
             .hidden_title(true)
             .fullscreen(is_fullscreen);
@@ -398,6 +361,7 @@ impl WindowManager {
             .inner_size(1200.0, 800.0)
             .min_inner_size(400.0, 270.0)
             .decorations(false)
+            .visible(false)
             .fullscreen(is_fullscreen);
 
         builder
@@ -430,6 +394,34 @@ impl WindowManager {
 
         Ok(id)
     }
+}
+
+/// Build the workbench HTML URL with optional workspace/folder query params
+/// and the `windowLabel` query parameter.
+fn build_workbench_url(
+    folder_uri: Option<&str>,
+    workspace_uri: Option<&str>,
+    label: &str,
+) -> String {
+    let mut url = String::from("vs/code/tauri-browser/workbench/workbench-tauri.html");
+    let mut has_param = false;
+
+    if let Some(folder) = folder_uri {
+        url.push_str("?folder=");
+        url.push_str(&encode_uri_component(folder));
+        has_param = true;
+    } else if let Some(workspace) = workspace_uri {
+        url.push_str("?workspace=");
+        url.push_str(&encode_uri_component(workspace));
+        has_param = true;
+    }
+
+    let separator = if has_param { '&' } else { '?' };
+    url.push(separator);
+    url.push_str("windowLabel=");
+    url.push_str(label);
+
+    url
 }
 
 /// Minimal percent-encoding for URI query strings.

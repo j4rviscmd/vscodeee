@@ -134,7 +134,14 @@
 	const windowConfig = await tauri.core.invoke<ITauriWindowConfig>('get_window_configuration');
 	const hostInfo = await tauri.core.invoke<ITauriHostInfo>('get_native_host_info');
 
-	const tauriConfig = {
+	/**
+ * Merged configuration object passed to `TauriDesktopMain`.
+ *
+ * Combines window-level settings (id, log level) from the Rust backend
+ * with host-level settings (home/tmp directories) to provide the
+ * workbench with all environment information it needs at startup.
+ */
+const tauriConfig = {
 		windowId: windowConfig.windowId,
 		logLevel: windowConfig.logLevel,
 		resourceDir: windowConfig.resourceDir,
@@ -283,6 +290,12 @@
 		const main = new desktopModule.TauriDesktopMain(tauriConfig, folderParam ?? undefined, workspaceParam ?? undefined);
 		await main.open();
 
+		// Notify the Rust backend that the workbench is ready to be shown.
+		// The window is created hidden (visible: false) and only becomes
+		// visible after this call, preventing the "stretching on restore"
+		// effect where the window resizes from default to saved geometry.
+		await tauri.core.invoke('notify_ready');
+
 		performance.mark('code/didStartWorkbench');
 	} catch (error) {
 		console.error('[Tauri Bootstrap] Failed to load workbench:', error);
@@ -293,6 +306,9 @@
 		errorEl.style.cssText = 'padding: 20px; font-family: monospace; white-space: pre-wrap;';
 		errorEl.textContent = `Failed to start workbench:\n\n${error instanceof Error ? error.stack || error.message : String(error)}`;
 		document.body.appendChild(errorEl);
+
+		// Show the window even on error so the user can see the error message
+		tauri.core.invoke('notify_ready').catch(() => { /* best-effort */ });
 	}
 
 	//#endregion

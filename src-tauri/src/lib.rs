@@ -65,33 +65,36 @@ pub fn run() {
     // Lifecycle — tracks pending close handshakes for safety-net timeouts
     let pending_closes = Arc::new(window::events::PendingCloses::new());
 
+    // Ready-to-show — tracks pending show handshakes so hidden windows
+    // are shown automatically if the TypeScript bootstrap crashes.
+    let pending_shows = Arc::new(window::events::PendingShows::new());
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::all()
+                        - tauri_plugin_window_state::StateFlags::VISIBLE,
+                )
+                .build(),
+        )
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(logging::build_plugin().build())
-        .manage({
-            let mgr = pty::manager::PtyManager::new();
-            // Initialize terminal state store with app data directory
-            // Note: The actual app_data_dir is only available inside setup(),
-            // so we initialize the store there. Here we just create the manager.
-            mgr
-        })
+        .manage(pty::manager::PtyManager::new())
         .manage(commands::file_watcher::FileWatcherState::new())
         .manage(commands::spawn_exthost::ExtHostState::new())
         .manage(Arc::clone(&channel_router))
         .manage(Arc::clone(&window_manager))
         .manage(Arc::clone(&pending_closes))
+        .manage(Arc::clone(&pending_shows))
         .manage(commands::updater::UpdaterState::default())
-        .manage({
-            let coordinator = shutdown::ShutdownCoordinator::new();
-            coordinator
-        })
+        .manage(shutdown::ShutdownCoordinator::new())
         .on_window_event(window::events::handle_window_event)
         .register_uri_scheme_protocol("vscode-file", move |ctx, request| {
             // On first call the state will have been initialized by setup().
@@ -405,7 +408,7 @@ pub fn run() {
                         .clone()
                         .or_else(|| entry.workspace_uri.clone());
                     if workspace.is_some() {
-                        wm.set_workspace("main", workspace).await;
+                        wm.set_workspace_uri("main", workspace).await;
                     }
                     if entry.is_fullscreen {
                         wm.set_fullscreen("main", true).await;
@@ -417,6 +420,16 @@ pub fn run() {
                     "Registered initial window: id={id}"
                 );
             });
+
+            // Register ready-to-show safety timeout for the main window.
+            // If the TypeScript bootstrap never calls `notify_ready`, the
+            // window is shown after 30 seconds to avoid a permanently
+            // invisible application.
+            {
+                let ps = app.state::<Arc<window::events::PendingShows>>();
+                let handle = app.handle().clone();
+                ps.spawn_safety_timeout(&handle, "main");
+            }
 
             // Apply fullscreen to the main window if restored
             if let Some(ref entry) = first_entry {
@@ -453,6 +466,10 @@ pub fn run() {
                                     entry.label,
                                     entry.folder_uri
                                 );
+
+                                // Register ready-to-show safety timeout
+                                let ps = handle.state::<Arc<window::events::PendingShows>>();
+                                ps.spawn_safety_timeout(&handle, &entry.label);
                             }
                             Err(e) => {
                                 log::error!(

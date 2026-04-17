@@ -12,6 +12,7 @@
 pub mod events;
 pub mod manager;
 pub mod restore;
+pub mod restore_geometry;
 pub mod session;
 pub mod settings;
 pub mod state;
