@@ -71,7 +71,6 @@ import { isFolderToOpen, isWorkspaceToOpen } from '../../platform/window/common/
 import { invoke, listen } from '../../platform/tauri/common/tauriApi.js';
 import { ITauriWindowService, TauriWindowService } from '../../platform/window/tauri-browser/windowService.js';
 import { TauriURLCallbackProvider } from './urlCallbackProvider.js';
-import { TauriSecretStorageProvider } from '../../platform/secrets/tauri-browser/tauriSecretStorageProvider.js';
 
 export class TauriDesktopMain extends Disposable {
 
@@ -184,14 +183,11 @@ export class TauriDesktopMain extends Disposable {
 		this._register(deepLinkDisposable);
 		this._register(urlCallbackProvider);
 
-		// Secret storage provider — uses OS Keychain via Rust keyring crate
-		// to persist authentication tokens across app restarts.
-		const secretStorageProvider = new TauriSecretStorageProvider();
-
+		// Secret storage now uses master-key encryption (TauriEncryptionService)
+		// registered via the singleton pattern, so no explicit provider is needed here.
 		const workbenchOptions: IWorkbenchConstructionOptions = {
 			workspaceProvider,
 			urlCallbackProvider,
-			secretStorageProvider,
 		};
 
 		const environmentService = new TauriWorkbenchEnvironmentService(
@@ -344,37 +340,32 @@ class TauriWorkspaceProvider implements IWorkspaceProvider {
 		}
 
 		const targetHref = this.createTargetUrl(workspace);
-		if (targetHref) {
-			if (options?.reuse) {
-				// Reuse current window: navigate to new URL
-				mainWindow.location.href = targetHref;
-				return true;
-			} else {
-				// Open a new Tauri window via Rust command
-				let folderUri: string | undefined;
-				let workspaceUri: string | undefined;
-				if (workspace && isFolderToOpen(workspace)) {
-					folderUri = workspace.folderUri.toString();
-				} else if (workspace && isWorkspaceToOpen(workspace)) {
-					workspaceUri = workspace.workspaceUri.toString();
-				}
-				try {
-					await invoke('open_new_window', {
-						options: {
-							folderUri,
-							workspaceUri,
-							forceNewWindow: true,
-						}
-					});
-					return true;
-				} catch (err) {
-					console.error('[TauriWorkspaceProvider] Failed to open new window:', err);
-					return false;
-				}
-			}
+		if (!targetHref) {
+			return false;
 		}
 
-		return false;
+		if (options?.reuse) {
+			// Reuse current window: navigate to new URL
+			mainWindow.location.href = targetHref;
+			return true;
+		}
+
+		// Open a new Tauri window via Rust command
+		const folderUri = workspace && isFolderToOpen(workspace) ? workspace.folderUri.toString() : undefined;
+		const workspaceUri = workspace && isWorkspaceToOpen(workspace) ? workspace.workspaceUri.toString() : undefined;
+		try {
+			await invoke('open_new_window', {
+				options: {
+					folderUri,
+					workspaceUri,
+					forceNewWindow: true,
+				}
+			});
+			return true;
+		} catch (err) {
+			console.error('[TauriWorkspaceProvider] Failed to open new window:', err);
+			return false;
+		}
 	}
 
 	private createTargetUrl(workspace: IWorkspace): string | undefined {
