@@ -235,6 +235,9 @@ pub fn run() {
             commands::filesystem::show_message_box,
             commands::filesystem::show_save_dialog,
             commands::filesystem::show_open_dialog,
+            // ── Storage commands (text-based, for TauriStorageService) ──
+            commands::filesystem::storage_read_text_file,
+            commands::filesystem::storage_write_atomic,
             // ── Window management commands ──
             commands::window::get_extended_window_configuration,
             commands::window::open_new_window,
