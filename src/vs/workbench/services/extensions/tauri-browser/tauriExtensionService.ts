@@ -241,10 +241,15 @@ export class TauriExtensionService extends AbstractExtensionService implements I
 	}
 
 	/**
-	 * Resolve a remote authority by delegating to the LocalWebWorker extension host.
+	 * Resolve a remote authority by delegating to the LocalProcess extension host.
+	 *
+	 * Uses LocalProcess (Node.js sidecar) instead of LocalWebWorker because
+	 * resolver extensions (e.g., Remote-SSH) require Node.js APIs such as
+	 * `child_process` and `net` that are unavailable in Web Workers.
+	 * This matches the behavior of VS Code Desktop (Electron).
 	 */
 	protected async _resolveAuthority(remoteAuthority: string): Promise<ResolverResult> {
-		return this._resolveAuthorityOnExtensionHosts(ExtensionHostKind.LocalWebWorker, remoteAuthority);
+		return this._resolveAuthorityOnExtensionHosts(ExtensionHostKind.LocalProcess, remoteAuthority);
 	}
 }
 
