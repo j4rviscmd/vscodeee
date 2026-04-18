@@ -518,8 +518,11 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		// Recreate gridwidget with descriptor
 		this.doApplyGridState(gridDescriptor, activeGroup.id, currentGroupViews);
 
-		// Restore focus as needed
-		if (restoreFocus) {
+		// Restore focus as needed.
+		// Also check post-rebuild focus state: during grid reconstruction,
+		// DOM elements are temporarily detached which can cause focus to
+		// shift to document.body (particularly in WKWebView/Tauri).
+		if (restoreFocus || this.shouldRestoreFocus(this.container)) {
 			this._activeGroup.focus();
 		}
 	}
