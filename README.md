@@ -250,7 +250,7 @@ The following Native Host Service features are deferred to post-MVP:
 | GPU info / content tracing | `openGPUInfoWindow`, `openContentTracingWindow`, `startTracing`, `stopTracing` are no-ops.                                         |
 | Screenshot capture         | `getScreenshot` returns `undefined`. Requires platform-specific screen capture APIs.                                               |
 
-> [!NOTE]
+> [!TIP]
 > These features may be revisited if Tauri adds CDP support in the future, or if alternative approaches become viable.
 
 ## Known Limitations
@@ -268,7 +268,7 @@ Architectural differences between Electron (bundled Chromium) and Tauri (native 
 
 ## Installation
 
-> [!NOTE]
+> [!IMPORTANT]
 > Installers will be available after the first release. Watch this repo (**Watch → Custom → Releases**) to get notified.
 
 | Platform              | Installer                                                                                                                                                                                                   |
