@@ -12,18 +12,6 @@
 > **MVP Release Target: Late April 2026**<br>
 > Want to get notified? Watch this repo (**Watch → Custom → Releases**) to stay updated.
 
-## Installation
-
-> [!NOTE]
-> Installers will be available after the first release. Watch this repo (**Watch → Custom → Releases**) to get notified.
-
-| Platform              | Installer                                                                                                                                                                                                   |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| macOS (Apple Silicon) | [`.dmg`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_macOS_arm64.dmg)                                                                                                           |
-| macOS (Intel)         | [`.dmg`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_macOS_x64.dmg)                                                                                                             |
-| Linux                 | [`.AppImage`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_Linux_x64.AppImage) / [`.deb`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_Linux_x64.deb) |
-| Windows               | [`.exe`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_Windows_x64-setup.exe)                                                                                                     |
-
 ## Purpose
 
 Maintain the current functionality of VSCode while achieving the following:
@@ -31,6 +19,7 @@ Maintain the current functionality of VSCode while achieving the following:
 - **Reduce memory usage**: Electron → Tauri 2.0 (native WebView instead of bundled Chromium)
 - **Reduce unnecessary metrics**: Stop sending telemetry to Microsoft
 - **Smaller binary size**: ~50% reduction expected without bundled Chromium
+- **Transparent background**: Native window transparency support (macOS/Linux) — see the desktop through your editor
 
 ---
 
@@ -64,7 +53,8 @@ Maintain the current functionality of VSCode while achieving the following:
 | **5B** | [**Terminal PTY**](#phase-5-process-model)                   | **Rust PTY → Tauri IPC → TauriTerminalBackend → Terminal UI** | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/105) |
 |   5C   | [Shared Process Elimination](#phase-5-process-model)         | Abolish Shared Process; services in WebView/Rust              |                          📋 Planned                           |
 |   5D   | [Extension ESM Fix](#phase-5-process-model)                  | Fix ESM module resolution for built-in extensions             | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/103) |
-|   6    | [Platform Features](#phase-6-platform-features)              | Auto-update, native menus, system tray                        |                          📋 Planned                           |
+|   5E   | [Remote-SSH](#phase-5-process-model)                         | SSH remote workspace support via Tauri                        |                          📋 Planned                           |
+|   6    | [Platform Features](#phase-6-platform-features)              | Editor transparency, native menus, system tray                |                          📋 Planned                           |
 |   7    | [Build & Packaging](#phase-7-build--packaging)               | Installers, code signing, CI/CD                               |                          📋 Planned                           |
 
 ---
@@ -260,7 +250,7 @@ The following Native Host Service features are deferred to post-MVP:
 | GPU info / content tracing | `openGPUInfoWindow`, `openContentTracingWindow`, `startTracing`, `stopTracing` are no-ops.                                         |
 | Screenshot capture         | `getScreenshot` returns `undefined`. Requires platform-specific screen capture APIs.                                               |
 
-> [!NOTE]
+> [!TIP]
 > These features may be revisited if Tauri adds CDP support in the future, or if alternative approaches become viable.
 
 ## Known Limitations
@@ -275,6 +265,15 @@ Architectural differences between Electron (bundled Chromium) and Tauri (native 
 
 > [!NOTE]
 > This list covers inherent platform limitations. Features that are simply not yet implemented are tracked in individual GitHub Issues.
+
+## Installation
+
+| Platform              | Installer                                                                                                                                                                                                   |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| macOS (Apple Silicon) | [`.dmg`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_macOS_arm64.dmg)                                                                                                           |
+| macOS (Intel)         | [`.dmg`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_macOS_x64.dmg)                                                                                                             |
+| Linux                 | [`.AppImage`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_Linux_x64.AppImage) / [`.deb`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_Linux_x64.deb) |
+| Windows               | [`.exe`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_Windows_x64-setup.exe)                                                                                                     |
 
 ## Contributing
 
