@@ -107,8 +107,7 @@
 		"@xterm/xterm",
 		"@xterm/headless",
 		"node-pty",
-		"vscode-notebook-renderer",
-		"src/vs/workbench/workbench.web.main.internal.ts"
+		"vscode-notebook-renderer"
 	],
 	// --- Languages ---
 	"json.schemas": [

@@ -29,7 +29,6 @@ import { promisify } from 'util';
 import rceditCallback from 'rcedit';
 import { compileBuildWithManglingTask } from './gulpfile.compile.ts';
 import { cleanExtensionsBuildTask, compileNonNativeExtensionsBuildTask, compileNativeExtensionsBuildTask, compileExtensionMediaBuildTask } from './gulpfile.extensions.ts';
-import { vscodeWebResourceIncludes, createVSCodeWebFileContentMapper } from './gulpfile.vscode.web.ts';
 import * as cp from 'child_process';
 import log from 'fancy-log';
 import buildfile from './buildfile.ts';
@@ -100,43 +99,7 @@ const serverResources = [
 	...serverResourceExcludes
 ];
 
-const serverWithWebResourceIncludes = [
-	...serverResourceIncludes,
-	'out-build/vs/code/browser/workbench/*.html',
-	...vscodeWebResourceIncludes
-];
-
-const serverWithWebResourceExcludes = [
-	...serverResourceExcludes,
-	'!out-build/vs/code/**/*-dev.html'
-];
-
-const serverWithWebResources = [
-	...serverWithWebResourceIncludes,
-	...serverWithWebResourceExcludes
-];
 const serverEntryPoints = buildfile.codeServer;
-
-const webEntryPoints = [
-	buildfile.workerEditor,
-	buildfile.workerExtensionHost,
-	buildfile.workerNotebook,
-	buildfile.workerLanguageDetection,
-	buildfile.workerLocalFileSearch,
-	buildfile.workerOutputLinks,
-	buildfile.workerBackgroundTokenization,
-	buildfile.keyboardMaps,
-	buildfile.codeWeb
-].flat();
-
-const serverWithWebEntryPoints = [
-
-	// Include all of server
-	...serverEntryPoints,
-
-	// Include all of web
-	...webEntryPoints,
-].flat();
 
 const bootstrapEntryPoints = [
 	'out-build/server-main.js',
@@ -257,7 +220,7 @@ function nodejs(platform: string, arch: string): NodeJS.ReadWriteStream | undefi
 	}
 }
 
-function packageTask(type: string, platform: string, arch: string, sourceFolderName: string, destinationFolderName: string) {
+function packageTask(_type: string, platform: string, arch: string, sourceFolderName: string, destinationFolderName: string) {
 	const destination = path.join(BUILD_ROOT, destinationFolderName);
 
 	return () => {
@@ -285,10 +248,6 @@ function packageTask(type: string, platform: string, arch: string, sourceFolderN
 		};
 		const localWorkspaceExtensions = glob.sync('extensions/*/package.json')
 			.filter((extensionPath) => {
-				if (type === 'reh-web') {
-					return true; // web: ship all extensions for now
-				}
-
 				// Skip shipping UI extensions because the client side will have them anyways
 				// and they'd just increase the download without being used
 				const manifest = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, extensionPath)).toString());
@@ -353,14 +312,6 @@ function packageTask(type: string, platform: string, arch: string, sourceFolderN
 		const node = gulp.src(`${nodePath}/**`, { base: nodePath, dot: true });
 
 		let web: NodeJS.ReadWriteStream[] = [];
-		if (type === 'reh-web') {
-			web = [
-				'resources/server/favicon.ico',
-				'resources/server/code-192.png',
-				'resources/server/code-512.png',
-				'resources/server/manifest.json'
-			].map(resource => gulp.src(resource, { base: '.' }).pipe(rename(resource)));
-		}
 
 		const all = es.merge(
 			packageJsonStream,
@@ -470,16 +421,8 @@ function copyCopilotNativeDepsTaskREH(platform: string, arch: string, destinatio
 	};
 }
 
-/**
- * @param product The parsed product.json file contents
- */
-function tweakProductForServerWeb(product: typeof import('../product.json')) {
-	const result: typeof product & { webEndpointUrlTemplate?: string } = { ...product };
-	delete result.webEndpointUrlTemplate;
-	return result;
-}
 
-['reh', 'reh-web'].forEach(type => {
+['reh'].forEach(type => {
 	const bundleTask = task.define(`bundle-vscode-${type}`, task.series(
 		util.rimraf(`out-vscode-${type}`),
 		optimize.bundleTask(
@@ -488,11 +431,11 @@ function tweakProductForServerWeb(product: typeof import('../product.json')) {
 				esm: {
 					src: 'out-build',
 					entryPoints: [
-						...(type === 'reh' ? serverEntryPoints : serverWithWebEntryPoints),
+						...serverEntryPoints,
 						...bootstrapEntryPoints
 					],
-					resources: type === 'reh' ? serverResources : serverWithWebResources,
-					fileContentMapper: createVSCodeWebFileContentMapper('.build/extensions', type === 'reh-web' ? tweakProductForServerWeb(product) : product)
+					resources: serverResources,
+					fileContentMapper: () => (contents: string) => contents
 				}
 			}
 		)
