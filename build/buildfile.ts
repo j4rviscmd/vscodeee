@@ -46,9 +46,6 @@ export const workbenchDesktop = [
 	createModuleDescription('vs/sessions/sessions.desktop.main')
 ];
 
-/** Entry point for the web workbench. */
-export const workbenchWeb = createModuleDescription('vs/workbench/workbench.web.main.internal');
-
 /**
  * Keyboard layout contribution entry points for Linux, macOS, and Windows.
  */
@@ -66,9 +63,6 @@ export const code = [
 	// 'vs/code/node/cli' is not included here because it comes in via ./src/cli.js
 	createModuleDescription('vs/code/node/cliProcessMain'),
 ];
-
-/** Entry point for the web-based code workbench. */
-export const codeWeb = createModuleDescription('vs/code/browser/workbench/workbench');
 
 /**
  * Server entry points including extension host, file watcher,
@@ -101,10 +95,8 @@ const buildfile = {
 	workerOutputLinks,
 	workerBackgroundTokenization,
 	workbenchDesktop,
-	workbenchWeb,
 	keyboardMaps,
 	code,
-	codeWeb,
 	codeServer,
 	entrypoint: createModuleDescription
 };
