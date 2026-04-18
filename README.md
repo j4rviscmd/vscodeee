@@ -268,9 +268,6 @@ Architectural differences between Electron (bundled Chromium) and Tauri (native 
 
 ## Installation
 
-> [!IMPORTANT]
-> Installers will be available after the first release. Watch this repo (**Watch → Custom → Releases**) to get notified.
-
 | Platform              | Installer                                                                                                                                                                                                   |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | macOS (Apple Silicon) | [`.dmg`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_macOS_arm64.dmg)                                                                                                           |
