@@ -14,7 +14,7 @@ import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.j
 import { EditorResourceAccessor, Verbosity, SideBySideEditor } from '../../../common/editor.js';
 import { IBrowserWorkbenchEnvironmentService } from '../../../services/environment/browser/environmentService.js';
 import { IWorkspaceContextService, WorkbenchState, IWorkspaceFolder } from '../../../../platform/workspace/common/workspace.js';
-import { isWindows, isWeb, isMacintosh, isNative } from '../../../../base/common/platform.js';
+import { isWindows, isWeb, isMacintosh, isNative, isTauri } from '../../../../base/common/platform.js';
 import { URI } from '../../../../base/common/uri.js';
 import { trim } from '../../../../base/common/strings.js';
 import { template } from '../../../../base/common/labels.js';
@@ -39,6 +39,11 @@ const enum WindowSettingNames {
 }
 
 export const defaultWindowTitle = (() => {
+	// TODO(Phase 2): Tauri custom titlebar handles dirty indicator and app name natively
+	if (isTauri) {
+		return '${activeEditorShort}${separator}${rootName}${separator}${profileName}';
+	}
+
 	if (isMacintosh && isNative) {
 		return '${activeEditorShort}${separator}${rootName}${separator}${profileName}'; // macOS has native dirty indicator
 	}
@@ -209,6 +214,20 @@ export class WindowTitle extends Disposable {
 			}
 
 			window.document.title = nativeTitle;
+
+			// Tauri: set the native window title separately for Cmd+Tab, Mission Control, etc.
+			// hiddenTitle:true prevents document.title from propagating to the native title.
+			// The native title intentionally differs from document.title (custom titlebar text)
+			// to show a concise "workspace - appName" format in the OS window switcher.
+			if (isTauri) {
+				const workspaceName = this.workspaceName;
+				const tauriNativeTitle = workspaceName
+					? `${workspaceName} - ${this.productService.nameLong}`
+					: this.productService.nameLong;
+				// TODO(Phase 2): extract __TAURI_INTERNALS__ usage into shared tauriInvoke helper
+				(window as any).__TAURI_INTERNALS__?.invoke('plugin:window|set_title', { value: tauriNativeTitle }).catch(() => { /* runtime error */ });
+			}
+
 			this.title = title;
 
 			this.onDidChangeEmitter.fire();
