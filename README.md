@@ -51,7 +51,7 @@ Maintain the current functionality of VSCode while achieving the following:
 | **4**  | [**Native Host Services**](#phase-4-native-host-services-)   | **Extension scanner, OS theme, native host modularization**   | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/48)  |
 |   5A   | [Extension Host](#phase-5-process-model)                     | Node.js sidecar + WebSocket ↔ Rust relay ↔ Unix Socket        | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/58)  |
 | **5B** | [**Terminal PTY**](#phase-5-process-model)                   | **Rust PTY → Tauri IPC → TauriTerminalBackend → Terminal UI** | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/105) |
-|   5C   | [Shared Process Elimination](#phase-5-process-model)         | Abolish Shared Process; services in WebView/Rust              |                          📋 Planned                           |
+|   5C   | [Shared Process Elimination](#phase-5-process-model)         | Abolish Shared Process; services in WebView/Rust              | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/117) |
 |   5D   | [Extension ESM Fix](#phase-5-process-model)                  | Fix ESM module resolution for built-in extensions             | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/103) |
 |   5E   | [Remote-SSH](#phase-5-process-model)                         | SSH remote workspace support via Tauri                        |                          📋 Planned                           |
 |   6    | [Platform Features](#phase-6-platform-features)              | Editor transparency, native menus, system tray                |                          📋 Planned                           |
@@ -202,7 +202,7 @@ Extension Host via Node.js sidecar + named pipe, Terminal via Rust `portable-pty
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | :--------: |
 | Extension Host (Node sidecar) | Node.js sidecar + WebSocket ↔ Rust relay ↔ Unix Socket full pipeline (PR [#58](https://github.com/j4rviscmd/vscodeee/pull/58))                   |     ✅     |
 | Terminal PTY integration      | Rust `portable-pty` → Tauri IPC → `TauriTerminalBackend` → VS Code Terminal UI (PR [#105](https://github.com/j4rviscmd/vscodeee/pull/105))       |     ✅     |
-| Shared Process elimination    | Abolish Shared Process sidecar; implement services directly in WebView/Rust ([#88](https://github.com/j4rviscmd/vscodeee/issues/88))             | 📋 Planned |
+| Shared Process elimination    | Abolish Shared Process sidecar; implement services directly in WebView/Rust (PR [#117](https://github.com/j4rviscmd/vscodeee/pull/117))          |     ✅     |
 | Extension ESM fix             | Fix ESM module resolution for built-in extensions in Extension Host (PR [#103](https://github.com/j4rviscmd/vscodeee/pull/103))                  |     ✅     |
 | OAuth authentication          | `tauri-plugin-deep-link` + `TauriURLCallbackProvider` for GitHub OAuth callback flow (PR [#112](https://github.com/j4rviscmd/vscodeee/pull/112)) |     ✅     |
 
