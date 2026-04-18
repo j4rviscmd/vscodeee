@@ -17,7 +17,7 @@ import { IPaneCompositePartService } from '../../services/panecomposite/browser/
 import { ViewContainerLocation } from '../../common/views.js';
 import { KeybindingWeight } from '../../../platform/keybinding/common/keybindingsRegistry.js';
 import { ServicesAccessor } from '../../../platform/instantiation/common/instantiation.js';
-import { getActiveWindow } from '../../../base/browser/dom.js';
+import { getActiveElement, getActiveWindow } from '../../../base/browser/dom.js';
 import { isAuxiliaryWindow } from '../../../base/browser/window.js';
 
 abstract class BaseNavigationAction extends Action2 {
@@ -39,8 +39,15 @@ abstract class BaseNavigationAction extends Action2 {
 		const isSidebarFocus = layoutService.hasFocus(Parts.SIDEBAR_PART);
 		const isAuxiliaryBarFocus = layoutService.hasFocus(Parts.AUXILIARYBAR_PART);
 
+		// When no part has focus (e.g., focus on document.body after layout
+		// changes in WKWebView/Tauri), default to editor navigation since
+		// the user most likely intends to navigate within the editor area.
+		const activeElement = getActiveElement();
+		const noPartHasFocus = !isEditorFocus && !isPanelFocus && !isSidebarFocus && !isAuxiliaryBarFocus;
+		const defaultToEditor = noPartHasFocus && activeElement === activeElement?.ownerDocument?.body;
+
 		let neighborPart: Parts | undefined;
-		if (isEditorFocus) {
+		if (isEditorFocus || defaultToEditor) {
 			const didNavigate = this.navigateAcrossEditorGroup(this.toGroupDirection(this.direction), editorGroupService);
 			if (didNavigate) {
 				return;
