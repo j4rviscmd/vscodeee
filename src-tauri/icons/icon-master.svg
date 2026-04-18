@@ -1,0 +1,8 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background: VS Code dark theme color -->
+  <rect width="1024" height="1024" fill="#1E1E2E"/>
+  <!-- <eee/> text centered -->
+  <text x="512" y="582" text-anchor="middle"
+    font-family="'SF Mono', 'Menlo', 'Consolas', 'Courier New', monospace"
+    font-size="250" font-weight="700" fill="white">&lt;eee/&gt;</text>
+</svg>
