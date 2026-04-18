@@ -14,7 +14,15 @@ import { IConfigurationService } from '../../../platform/configuration/common/co
 
 // #region Quit
 
-/** Quits the application, triggering the Rust-side close handshake for async veto support. */
+/**
+ * Quits the application by closing the current window through the lifecycle handshake.
+ *
+ * IMPORTANT: Must use `closeWindow()` instead of `quit()`.
+ * `quit()` calls Rust `quit_app` which bypasses the TypeScript lifecycle
+ * (handleShutdown → flush(SHUTDOWN) → CommandsHistory.saveState()), causing
+ * storage data that is only written during shutdown to be lost.
+ * `closeWindow()` triggers `CloseRequested` → lifecycle handshake → proper flush.
+ */
 class QuitAction extends Action2 {
 	constructor() {
 		super({
@@ -37,10 +45,12 @@ class QuitAction extends Action2 {
 	async run(accessor: ServicesAccessor): Promise<void> {
 		const nativeHostService = accessor.get(INativeHostService);
 
-		// Calling quit() triggers the Rust-side close handshake
-		// which goes through TauriLifecycleService.handleCloseRequested()
-		// for async veto support (dirty file save dialogs, etc.).
-		await nativeHostService.quit();
+		// Use closeWindow() to trigger the full lifecycle handshake:
+		// CloseRequested → handleCloseRequested() → handleShutdown()
+		// → flush(SHUTDOWN) → onDidShutdown → lifecycle_close_confirmed.
+		// Do NOT use quit() — it calls Rust quit_app which skips the
+		// TypeScript lifecycle and loses shutdown-only storage data.
+		await nativeHostService.closeWindow();
 	}
 }
 
