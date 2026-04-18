@@ -12,18 +12,6 @@
 > **MVP Release Target: Late April 2026**<br>
 > Want to get notified? Watch this repo (**Watch → Custom → Releases**) to stay updated.
 
-## Installation
-
-> [!NOTE]
-> Installers will be available after the first release. Watch this repo (**Watch → Custom → Releases**) to get notified.
-
-| Platform              | Installer                                                                                                                                                                                                   |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| macOS (Apple Silicon) | [`.dmg`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_macOS_arm64.dmg)                                                                                                           |
-| macOS (Intel)         | [`.dmg`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_macOS_x64.dmg)                                                                                                             |
-| Linux                 | [`.AppImage`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_Linux_x64.AppImage) / [`.deb`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_Linux_x64.deb) |
-| Windows               | [`.exe`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_Windows_x64-setup.exe)                                                                                                     |
-
 ## Purpose
 
 Maintain the current functionality of VSCode while achieving the following:
@@ -277,6 +265,18 @@ Architectural differences between Electron (bundled Chromium) and Tauri (native 
 
 > [!NOTE]
 > This list covers inherent platform limitations. Features that are simply not yet implemented are tracked in individual GitHub Issues.
+
+## Installation
+
+> [!NOTE]
+> Installers will be available after the first release. Watch this repo (**Watch → Custom → Releases**) to get notified.
+
+| Platform              | Installer                                                                                                                                                                                                   |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| macOS (Apple Silicon) | [`.dmg`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_macOS_arm64.dmg)                                                                                                           |
+| macOS (Intel)         | [`.dmg`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_macOS_x64.dmg)                                                                                                             |
+| Linux                 | [`.AppImage`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_Linux_x64.AppImage) / [`.deb`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_Linux_x64.deb) |
+| Windows               | [`.exe`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_Windows_x64-setup.exe)                                                                                                     |
 
 ## Contributing
 
