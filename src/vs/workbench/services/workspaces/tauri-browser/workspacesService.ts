@@ -1,5 +1,5 @@
 /*---------------------------------------------------------------------------------------------
- *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Copyright (c) VS Codeee Contributors. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
@@ -11,22 +11,31 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../platfo
 import { isTemporaryWorkspace, IWorkspaceContextService, IWorkspaceFoldersChangeEvent, IWorkspaceIdentifier, WorkbenchState, WORKSPACE_EXTENSION } from '../../../../platform/workspace/common/workspace.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { getWorkspaceIdentifier } from './workspaces.js';
+import { getWorkspaceIdentifier } from '../browser/workspaces.js';
 import { IFileService, FileOperationError, FileOperationResult } from '../../../../platform/files/common/files.js';
 import { IWorkbenchEnvironmentService } from '../../environment/common/environmentService.js';
 import { joinPath } from '../../../../base/common/resources.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uriIdentity.js';
 import { IWorkspaceBackupInfo, IFolderBackupInfo } from '../../../../platform/backup/common/backup.js';
-import { Schemas } from '../../../../base/common/network.js';
 
-export class BrowserWorkspacesService extends Disposable implements IWorkspacesService {
+/**
+ * Tauri-specific WorkspacesService.
+ *
+ * Unlike the browser version, this does NOT filter out `file://` scheme
+ * folders from the recently opened list because Tauri's
+ * TauriDiskFileSystemProvider handles local file access natively via
+ * Rust commands.
+ */
+export class TauriWorkspacesService extends Disposable implements IWorkspacesService {
 
+	/** Storage key used to persist the recently opened workspaces and files list. */
 	static readonly RECENTLY_OPENED_KEY = 'recently.opened';
 
 	declare readonly _serviceBrand: undefined;
 
 	private readonly _onRecentlyOpenedChange = this._register(new Emitter<void>());
+	/** An event that fires when the recently opened list changes. */
 	readonly onDidChangeRecentlyOpened = this._onRecentlyOpenedChange.event;
 
 	constructor(
@@ -46,28 +55,45 @@ export class BrowserWorkspacesService extends Disposable implements IWorkspacesS
 		this.registerListeners();
 	}
 
+	/**
+	 * Registers event listeners for storage changes and workspace folder changes.
+	 *
+	 * - Fires `onDidChangeRecentlyOpened` when the stored recently opened data
+	 *   is modified externally (e.g., by another window).
+	 * - Updates the recently opened list when workspace folders change within
+	 *   a temporary workspace.
+	 */
 	private registerListeners(): void {
 
 		// Storage
-		this._register(this.storageService.onDidChangeValue(StorageScope.APPLICATION, BrowserWorkspacesService.RECENTLY_OPENED_KEY, this._store)(() => this._onRecentlyOpenedChange.fire()));
+		this._register(this.storageService.onDidChangeValue(StorageScope.APPLICATION, TauriWorkspacesService.RECENTLY_OPENED_KEY, this._store)(() => this._onRecentlyOpenedChange.fire()));
 
 		// Workspace
 		this._register(this.contextService.onDidChangeWorkspaceFolders(e => this.onDidChangeWorkspaceFolders(e)));
 	}
 
+	/**
+	 * Handles workspace folder changes by adding newly added folders to the
+	 * recently opened list, but only when the current workspace is temporary.
+	 *
+	 * @param e - The workspace folders change event containing added and removed folders.
+	 */
 	private onDidChangeWorkspaceFolders(e: IWorkspaceFoldersChangeEvent): void {
 		if (!isTemporaryWorkspace(this.contextService.getWorkspace())) {
 			return;
 		}
-
-		// When in a temporary workspace, make sure to track folder changes
-		// in the history so that these can later be restored.
 
 		for (const folder of e.added) {
 			this.addRecentlyOpened([{ folderUri: folder.uri }]);
 		}
 	}
 
+	/**
+	 * Adds the current workspace to the recently opened history.
+	 *
+	 * Handles both single-folder workspaces and multi-root workspace files,
+	 * associating each entry with the current remote authority when present.
+	 */
 	private addWorkspaceToRecentlyOpened(): void {
 		const workspace = this.contextService.getWorkspace();
 		const remoteAuthority = this.environmentService.remoteAuthority;
@@ -83,19 +109,20 @@ export class BrowserWorkspacesService extends Disposable implements IWorkspacesS
 
 	//#region Workspaces History
 
+	/**
+	 * Retrieves the list of recently opened workspaces and files from storage.
+	 *
+	 * Filters out temporary workspaces from the history to prevent them from
+	 * appearing in the "Open Recent" menu.
+	 *
+	 * @returns A promise that resolves to the recently opened workspaces and files.
+	 *          Returns empty arrays if no data is stored.
+	 */
 	async getRecentlyOpened(): Promise<IRecentlyOpened> {
-		const recentlyOpenedRaw = this.storageService.get(BrowserWorkspacesService.RECENTLY_OPENED_KEY, StorageScope.APPLICATION);
+		const recentlyOpenedRaw = this.storageService.get(TauriWorkspacesService.RECENTLY_OPENED_KEY, StorageScope.APPLICATION);
 		if (recentlyOpenedRaw) {
 			const recentlyOpened = restoreRecentlyOpened(JSON.parse(recentlyOpenedRaw), this.logService);
 			recentlyOpened.workspaces = recentlyOpened.workspaces.filter(recent => {
-
-				// In web, unless we are in a temporary workspace, we cannot support
-				// to switch to local folders because this would require a window
-				// reload and local file access only works with explicit user gesture
-				// from the current session.
-				if (isRecentFolder(recent) && recent.folderUri.scheme === Schemas.file && !isTemporaryWorkspace(this.contextService.getWorkspace())) {
-					return false;
-				}
 
 				// Never offer temporary workspaces in the history
 				if (isRecentWorkspace(recent) && isTemporaryWorkspace(recent.workspace.configPath)) {
@@ -111,6 +138,16 @@ export class BrowserWorkspacesService extends Disposable implements IWorkspacesS
 		return { workspaces: [], files: [] };
 	}
 
+	/**
+	 * Adds entries to the recently opened list.
+	 *
+	 * Each entry is moved to the top of the list (most recent position) and
+	 * any existing duplicate entry is removed first to avoid duplicates.
+	 * Supports files, folders, and workspace configurations.
+	 *
+	 * @param recents - An array of recent entries (files, folders, or workspaces) to add.
+	 * @returns A promise that resolves when the updated list has been persisted.
+	 */
 	async addRecentlyOpened(recents: IRecent[]): Promise<void> {
 		const recentlyOpened = await this.getRecentlyOpened();
 
@@ -130,6 +167,12 @@ export class BrowserWorkspacesService extends Disposable implements IWorkspacesS
 		return this.saveRecentlyOpened(recentlyOpened);
 	}
 
+	/**
+	 * Removes entries from the recently opened list matching the given URIs.
+	 *
+	 * @param paths - An array of URIs identifying the entries to remove.
+	 * @returns A promise that resolves when the updated list has been persisted.
+	 */
 	async removeRecentlyOpened(paths: URI[]): Promise<void> {
 		const recentlyOpened = await this.getRecentlyOpened();
 
@@ -138,6 +181,16 @@ export class BrowserWorkspacesService extends Disposable implements IWorkspacesS
 		return this.saveRecentlyOpened(recentlyOpened);
 	}
 
+	/**
+	 * Removes entries matching the given URIs from the recently opened data in-place.
+	 *
+	 * Filters both the files and workspaces arrays. For workspace entries,
+	 * the comparison is performed against the config path (for workspace files)
+	 * or the folder URI (for single-folder entries).
+	 *
+	 * @param recentlyOpened - The recently opened data to filter.
+	 * @param paths - The URIs of the entries to remove.
+	 */
 	private doRemoveRecentlyOpened(recentlyOpened: IRecentlyOpened, paths: URI[]): void {
 		recentlyOpened.files = recentlyOpened.files.filter(file => {
 			return !paths.some(path => path.toString() === file.fileUri.toString());
@@ -148,22 +201,51 @@ export class BrowserWorkspacesService extends Disposable implements IWorkspacesS
 		});
 	}
 
+	/**
+	 * Persists the recently opened data to application-scoped storage.
+	 *
+	 * @param data - The recently opened workspaces and files to store.
+	 * @returns A promise that resolves when the data has been written.
+	 */
 	private async saveRecentlyOpened(data: IRecentlyOpened): Promise<void> {
-		return this.storageService.store(BrowserWorkspacesService.RECENTLY_OPENED_KEY, JSON.stringify(toStoreData(data)), StorageScope.APPLICATION, StorageTarget.USER);
+		return this.storageService.store(TauriWorkspacesService.RECENTLY_OPENED_KEY, JSON.stringify(toStoreData(data)), StorageScope.APPLICATION, StorageTarget.USER);
 	}
 
+	/**
+	 * Clears all entries from the recently opened list by removing
+	 * the stored data from application-scoped storage.
+	 */
 	async clearRecentlyOpened(): Promise<void> {
-		this.storageService.remove(BrowserWorkspacesService.RECENTLY_OPENED_KEY, StorageScope.APPLICATION);
+		this.storageService.remove(TauriWorkspacesService.RECENTLY_OPENED_KEY, StorageScope.APPLICATION);
 	}
 
 	//#endregion
 
 	//#region Workspace Management
 
+	/**
+	 * Opens a workspace file and returns the workspace identifier.
+	 *
+	 * @param workspaceUri - The URI of the workspace file to enter.
+	 * @returns A promise that resolves to the enter workspace result containing
+	 *          the workspace identifier, or `undefined` if the workspace cannot be entered.
+	 */
 	async enterWorkspace(workspaceUri: URI): Promise<IEnterWorkspaceResult | undefined> {
 		return { workspace: await this.getWorkspaceIdentifier(workspaceUri) };
 	}
 
+	/**
+	 * Creates a new untitled workspace file with the given folder configuration.
+	 *
+	 * Generates a unique filename using a timestamp-based random ID and writes
+	 * the workspace definition (folders and optional remote authority) as a JSON
+	 * file to the untitled workspaces home directory.
+	 *
+	 * @param folders - Optional array of workspace folder creation data to include
+	 *                  in the new workspace.
+	 * @param remoteAuthority - Optional remote authority to associate with the workspace.
+	 * @returns A promise that resolves to the identifier of the newly created workspace.
+	 */
 	async createUntitledWorkspace(folders?: IWorkspaceFolderCreationData[], remoteAuthority?: string): Promise<IWorkspaceIdentifier> {
 		const randomId = (Date.now() + Math.round(Math.random() * 1000)).toString();
 		const newUntitledWorkspacePath = joinPath(this.environmentService.untitledWorkspacesHome, `Untitled-${randomId}.${WORKSPACE_EXTENSION}`);
@@ -183,6 +265,16 @@ export class BrowserWorkspacesService extends Disposable implements IWorkspacesS
 		return this.getWorkspaceIdentifier(newUntitledWorkspacePath);
 	}
 
+	/**
+	 * Deletes an untitled workspace file from disk.
+	 *
+	 * Silently ignores "file not found" errors since the workspace may have
+	 * already been deleted or never existed. All other errors are re-thrown.
+	 *
+	 * @param workspace - The identifier of the untitled workspace to delete.
+	 * @throws {FileOperationError} When the deletion fails for reasons other than
+	 *         the file not being found.
+	 */
 	async deleteUntitledWorkspace(workspace: IWorkspaceIdentifier): Promise<void> {
 		try {
 			await this.fileService.del(workspace.configPath);
@@ -193,6 +285,12 @@ export class BrowserWorkspacesService extends Disposable implements IWorkspacesS
 		}
 	}
 
+	/**
+	 * Resolves a workspace configuration URI to a stable workspace identifier.
+	 *
+	 * @param workspaceUri - The URI of the workspace configuration file.
+	 * @returns A promise that resolves to the workspace identifier.
+	 */
 	async getWorkspaceIdentifier(workspaceUri: URI): Promise<IWorkspaceIdentifier> {
 		return getWorkspaceIdentifier(workspaceUri);
 	}
@@ -202,11 +300,19 @@ export class BrowserWorkspacesService extends Disposable implements IWorkspacesS
 
 	//#region Dirty Workspaces
 
+	/**
+	 * Returns workspaces that have unsaved changes (dirty state).
+	 *
+	 * Currently returns an empty array as dirty workspace detection
+	 * has not yet been implemented for the Tauri platform.
+	 *
+	 * @returns A promise that resolves to an empty array.
+	 */
 	async getDirtyWorkspaces(): Promise<Array<IWorkspaceBackupInfo | IFolderBackupInfo>> {
-		return []; // Currently not supported in web
+		return []; // TODO(Phase N): Implement dirty workspace detection for Tauri
 	}
 
 	//#endregion
 }
 
-registerSingleton(IWorkspacesService, BrowserWorkspacesService, InstantiationType.Delayed);
+registerSingleton(IWorkspacesService, TauriWorkspacesService, InstantiationType.Delayed);
