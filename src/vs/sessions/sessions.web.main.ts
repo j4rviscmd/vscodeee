@@ -47,7 +47,7 @@ import '../workbench/services/extensionManagement/browser/extensionGalleryManife
 import '../workbench/services/telemetry/browser/telemetryService.js';
 import '../workbench/services/url/browser/urlService.js';
 import '../workbench/services/update/browser/updateService.js';
-import '../workbench/services/workspaces/browser/workspacesService.js';
+import '../workbench/services/workspaces/tauri-browser/workspacesService.js';
 import '../workbench/services/workspaces/browser/workspaceEditingService.js';
 import '../workbench/services/dialogs/browser/fileDialogService.js';
 import '../workbench/services/host/browser/browserHostService.js';
