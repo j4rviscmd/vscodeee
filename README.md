@@ -48,19 +48,6 @@ Maintain the current functionality of VSCode while achieving the following:
 
 ## Roadmap
 
-### MVP Release Checklist
-
-Remaining tasks before the first public release. Ordered by implementation priority.
-
-- [ ] Remote-SSH support ([#185](https://github.com/j4rviscmd/vscodeee/issues/185))
-- [ ] Editor transparency effect ([#172](https://github.com/j4rviscmd/vscodeee/issues/172))
-- [ ] Shared Process elimination ([#88](https://github.com/j4rviscmd/vscodeee/issues/88))
-- [ ] ThirdPartyNotices.txt audit ([#27](https://github.com/j4rviscmd/vscodeee/issues/27))
-- [ ] Enable CI workflows ([#42](https://github.com/j4rviscmd/vscodeee/issues/42))
-
-<details>
-<summary>Full Roadmap (Phase 0–7)</summary>
-
 > **Current Phase: Phase 5 — Process Model** 📋
 
 | Phase  | Name                                                         | Goal                                                          |                            Status                             |
@@ -78,7 +65,8 @@ Remaining tasks before the first public release. Ordered by implementation prior
 | **5B** | [**Terminal PTY**](#phase-5-process-model)                   | **Rust PTY → Tauri IPC → TauriTerminalBackend → Terminal UI** | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/105) |
 |   5C   | [Shared Process Elimination](#phase-5-process-model)         | Abolish Shared Process; services in WebView/Rust              |                          📋 Planned                           |
 |   5D   | [Extension ESM Fix](#phase-5-process-model)                  | Fix ESM module resolution for built-in extensions             | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/103) |
-|   6    | [Platform Features](#phase-6-platform-features)              | Auto-update, native menus, system tray                        |                          📋 Planned                           |
+|   5E   | [Remote-SSH](#phase-5-process-model)                         | SSH remote workspace support via Tauri                        |                          📋 Planned                           |
+|   6    | [Platform Features](#phase-6-platform-features)              | Editor transparency, native menus, system tray                |                          📋 Planned                           |
 |   7    | [Build & Packaging](#phase-7-build--packaging)               | Installers, code signing, CI/CD                               |                          📋 Planned                           |
 
 ---
@@ -242,8 +230,6 @@ Tauri build pipeline, code signing (macOS/Windows), installers (.dmg, .msi, .App
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------- | :--------: |
 | ThirdPartyNotices.txt  | Remove Electron deps, add Tauri/Rust dependency licenses ([#27](https://github.com/j4rviscmd/vscodeee/issues/27)) | 📋 Planned |
 | LICENSES.chromium.html | Bundled with Electron — not needed for Tauri                                                                      | 📋 Planned |
-
-</details>
 
 </details>
 
