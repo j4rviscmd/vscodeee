@@ -68,7 +68,6 @@
 		"compile-extensions-build": "npm run gulp compile-extensions-build",
 		"minify-vscode": "npm run gulp minify-vscode",
 		"minify-vscode-reh": "npm run gulp minify-vscode-reh",
-		"minify-vscode-reh-web": "npm run gulp minify-vscode-reh-web",
 		"hygiene": "npm run gulp hygiene",
 		"core-ci": "npm run gulp core-ci",
 		"core-ci-pr": "npm run gulp core-ci-pr",
@@ -81,7 +80,7 @@
 		"install-latest-component-explorer": "npm install @vscode/component-explorer@next @vscode/component-explorer-cli@next && cd build/rspack && npm install @vscode/component-explorer-webpack-plugin@next @vscode/component-explorer@next && cd ../vite && npm install @vscode/component-explorer-vite-plugin@next @vscode/component-explorer@next",
 		"tauri": "tauri",
 		"tauri:dev": "npm install && bash scripts/check-csp-hash.sh && node build/next/index.ts transpile && node build/next/index.ts transpile-extensions && tauri dev",
-		"tauri:build": "tauri build"
+		"tauri:build": "npm install && bash scripts/check-csp-hash.sh && node build/next/index.ts transpile && node build/next/index.ts transpile-extensions && tauri build"
 	},
 	"dependencies": {
 		"@anthropic-ai/sandbox-runtime": "0.0.42",

@@ -690,7 +690,7 @@ export async function createServer(address: string | net.AddressInfo | null, arg
 		serverBasePath = `/${serverBasePath}`;
 	}
 
-	const hasWebClient = fs.existsSync(FileAccess.asFileUri(`vs/code/browser/workbench/workbench.html`).fsPath);
+	const hasWebClient = false; // Web client removed in Tauri migration (Issue #173)
 
 	if (hasWebClient && address && typeof address !== 'string') {
 		// ships the web ui!

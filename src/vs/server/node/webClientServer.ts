@@ -3,6 +3,10 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+// TODO(Phase N): This class references deleted HTML files (vs/code/browser/workbench/*).
+// It is currently never instantiated (hasWebClient=false in remoteExtensionHostAgentServer.ts).
+// Remove this file entirely when the server-web target is fully eliminated.
+
 import { createReadStream, promises } from 'fs';
 import type * as http from 'http';
 import * as url from 'url';
