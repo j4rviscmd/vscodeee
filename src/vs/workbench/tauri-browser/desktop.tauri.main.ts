@@ -30,7 +30,7 @@ import { IStorageService } from '../../platform/storage/common/storage.js';
 import { WorkspaceTrustEnablementService, WorkspaceTrustManagementService } from '../services/workspaces/common/workspaceTrust.js';
 import { IWorkspaceTrustEnablementService, IWorkspaceTrustManagementService } from '../../platform/workspace/common/workspaceTrust.js';
 import { INativeHostService } from '../../platform/native/common/native.js';
-import { BrowserStorageService } from '../services/storage/browser/storageService.js';
+import { TauriStorageService } from '../services/storage/tauri-browser/tauriStorageService.js';
 import { IRemoteAgentService } from '../services/remote/common/remoteAgentService.js';
 import { RemoteAgentService } from '../services/remote/browser/remoteAgentService.js';
 import { IRemoteAuthorityResolverService } from '../../platform/remote/common/remoteAuthorityResolver.js';
@@ -148,12 +148,16 @@ export class TauriDesktopMain extends Disposable {
 		});
 	}
 
-	private registerListeners(workbench: Workbench, storageService: BrowserStorageService): void {
-		this._register(workbench.onWillShutdown(() => storageService.close()));
+	private registerListeners(workbench: Workbench, storageService: TauriStorageService): void {
+		// Close storage AFTER flush — onWillShutdown fires BEFORE the lifecycle
+		// service's flush(SHUTDOWN), so closing there would dispose the Storage
+		// instances and cause the flush to be a no-op (data loss).
+		// onDidShutdown fires AFTER flush, so close() is safe here.
+		this._register(workbench.onDidShutdown(() => storageService.close()));
 		this._register(workbench.onDidShutdown(() => this.dispose()));
 	}
 
-	private async initServices(): Promise<{ serviceCollection: ServiceCollection; logService: ILogService; storageService: BrowserStorageService }> {
+	private async initServices(): Promise<{ serviceCollection: ServiceCollection; logService: ILogService; storageService: TauriStorageService }> {
 		const serviceCollection = new ServiceCollection();
 
 		// --- Product ---
@@ -290,7 +294,7 @@ export class TauriDesktopMain extends Disposable {
 		serviceCollection.set(IRequestService, requestService);
 
 		// --- Storage ---
-		const storageService = new BrowserStorageService(workspace, userDataProfileService, logService);
+		const storageService = new TauriStorageService(workspace, userDataProfileService, environmentService, logService);
 		await storageService.initialize();
 		serviceCollection.set(IStorageService, storageService);
 

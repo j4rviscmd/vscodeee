@@ -795,6 +795,53 @@ pub async fn show_open_dialog(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Storage commands (text-based, for TauriStorageService)
+// ---------------------------------------------------------------------------
+
+/// Read a file as a UTF-8 text string.
+///
+/// Unlike `fs_read_file` which returns base64-encoded binary data,
+/// this command returns the raw text content. Used by `TauriFileStorageDatabase`
+/// to read JSON state files.
+#[tauri::command]
+pub fn storage_read_text_file(path: String) -> Result<String, String> {
+    let p = Path::new(&path);
+    if p.is_dir() {
+        return Err("EntryIsADirectory".to_string());
+    }
+    std::fs::read_to_string(p).map_err(map_io_error)
+}
+
+/// Write a UTF-8 text string to a file atomically.
+///
+/// Atomic write pattern: write to a temporary file first, then rename.
+/// This prevents data corruption if the process crashes during write.
+/// On POSIX systems, `rename` is atomic, so the destination file will
+/// always contain either the old or the complete new content.
+#[tauri::command]
+pub fn storage_write_atomic(path: String, content: String) -> Result<(), String> {
+    let p = Path::new(&path);
+
+    // Ensure parent directory exists
+    if let Some(parent) = p.parent() {
+        if !parent.exists() {
+            std::fs::create_dir_all(parent).map_err(map_io_error)?;
+        }
+    }
+
+    // Write to temporary file
+    let tmp_path = p.with_extension("tmp");
+    {
+        let mut file = std::fs::File::create(&tmp_path).map_err(map_io_error)?;
+        file.write_all(content.as_bytes()).map_err(map_io_error)?;
+        file.sync_all().map_err(map_io_error)?;
+    }
+
+    // Atomic rename (on POSIX, rename is atomic)
+    std::fs::rename(&tmp_path, p).map_err(map_io_error)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
