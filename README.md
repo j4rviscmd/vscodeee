@@ -52,13 +52,11 @@ Maintain the current functionality of VSCode while achieving the following:
 
 Remaining tasks before the first public release. Ordered by implementation priority.
 
-| #   | Task                                                                                       | Category      | Status      |
-| --- | ------------------------------------------------------------------------------------------ | ------------- | ----------- |
-| 1   | Remote-SSH support ([#185](https://github.com/j4rviscmd/vscodeee/issues/185))              | Enhancement   | 📋 Planned |
-| 2   | Editor transparency effect ([#172](https://github.com/j4rviscmd/vscodeee/issues/172))      | Enhancement   | 📋 Planned |
-| 3   | Shared Process elimination ([#88](https://github.com/j4rviscmd/vscodeee/issues/88))        | Architecture  | 📋 Planned |
-| 4   | ThirdPartyNotices.txt audit ([#27](https://github.com/j4rviscmd/vscodeee/issues/27))       | Legal         | 📋 Planned |
-| 5   | Enable CI workflows ([#42](https://github.com/j4rviscmd/vscodeee/issues/42))               | Build & CI    | 📋 Planned |
+- [ ] Remote-SSH support ([#185](https://github.com/j4rviscmd/vscodeee/issues/185))
+- [ ] Editor transparency effect ([#172](https://github.com/j4rviscmd/vscodeee/issues/172))
+- [ ] Shared Process elimination ([#88](https://github.com/j4rviscmd/vscodeee/issues/88))
+- [ ] ThirdPartyNotices.txt audit ([#27](https://github.com/j4rviscmd/vscodeee/issues/27))
+- [ ] Enable CI workflows ([#42](https://github.com/j4rviscmd/vscodeee/issues/42))
 
 <details>
 <summary>Full Roadmap (Phase 0–7)</summary>
