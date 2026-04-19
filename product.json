@@ -234,6 +234,7 @@
   "reportIssueUrl": "https://github.com/j4rviscmd/vscodeee/issues/new",
   "serverApplicationName": "vscodeee-server",
   "serverDataFolderName": ".vscodeee-server",
+  "serverDownloadUrlTemplate": "https://github.com/j4rviscmd/vscodeee/releases/latest/download/vscodeee-reh-${os}-${arch}.tar.gz",
   "serverGreeting": [],
   "serverLicense": [],
   "serverLicensePrompt": "",

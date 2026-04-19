@@ -33,6 +33,9 @@ mod system_events;
 /// Phase 0-4: Uses portable-pty for direct Rust PTY management.
 mod pty;
 
+/// CLI argument handling for single-instance arg forwarding.
+mod cli;
+
 /// Build and run the Tauri application.
 ///
 /// Performs the following setup before entering the event loop:
@@ -70,6 +73,27 @@ pub fn run() {
     let pending_shows = Arc::new(window::events::PendingShows::new());
 
     tauri::Builder::default()
+        // IMPORTANT: single-instance plugin must be registered first so the
+        // second-process detection happens before any other plugin setup.
+        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            use tauri::Manager;
+            log::info!(
+                target: "vscodeee::single_instance",
+                "Received single-instance callback: args={args:?}, cwd={cwd}"
+            );
+            let wm = match app.try_state::<std::sync::Arc<window::manager::WindowManager>>() {
+                Some(wm) => wm.inner().clone(),
+                None => {
+                    log::error!(target: "vscodeee::single_instance", "WindowManager not available in single-instance callback");
+                    return;
+                }
+            };
+            let handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let parsed = cli::parser::parse_args(&args);
+                cli::router::route_cli(&handle, &wm, &parsed, &cwd).await;
+            });
+        }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
@@ -290,7 +314,6 @@ pub fn run() {
 
             // ── Register resources with ShutdownCoordinator ──
             {
-                use tauri::Manager;
                 use shutdown::ShutdownPhase;
 
                 let coordinator = app.state::<Arc<shutdown::ShutdownCoordinator>>();
