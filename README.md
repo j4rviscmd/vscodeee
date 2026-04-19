@@ -36,7 +36,7 @@ Maintain the current functionality of VSCode while achieving the following:
 
 ## Roadmap
 
-> **Current Phase: Phase 5 — Process Model** 📋
+> **Current Phase: Phase 6 — Platform Features** 🔄
 
 | Phase  | Name                                                         | Goal                                                          |                            Status                             |
 | :----: | ------------------------------------------------------------ | ------------------------------------------------------------- | :-----------------------------------------------------------: |
@@ -53,8 +53,8 @@ Maintain the current functionality of VSCode while achieving the following:
 | **5B** | [**Terminal PTY**](#phase-5-process-model)                   | **Rust PTY → Tauri IPC → TauriTerminalBackend → Terminal UI** | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/105) |
 |   5C   | [Shared Process Elimination](#phase-5-process-model)         | Abolish Shared Process; services in WebView/Rust              | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/117) |
 |   5D   | [Extension ESM Fix](#phase-5-process-model)                  | Fix ESM module resolution for built-in extensions             | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/103) |
-|   5E   | [Remote-SSH](#phase-5-process-model)                         | SSH remote workspace support via Tauri                        |                          📋 Planned                           |
-|   6    | [Platform Features](#phase-6-platform-features)              | Editor transparency, native menus, system tray                |                          📋 Planned                           |
+|   5E   | [Remote-SSH](#phase-5-process-model)                         | SSH remote workspace support via Tauri                        | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/193) |
+|   6    | [Platform Features](#phase-6-platform-features)              | Editor transparency, native menus, system tray                |                          🔄 In Progress                       |
 |   7    | [Build & Packaging](#phase-7-build--packaging)               | Installers, code signing, CI/CD                               |                          📋 Planned                           |
 
 ---
@@ -205,10 +205,19 @@ Extension Host via Node.js sidecar + named pipe, Terminal via Rust `portable-pty
 | Shared Process elimination    | Abolish Shared Process sidecar; implement services directly in WebView/Rust (PR [#117](https://github.com/j4rviscmd/vscodeee/pull/117))          |     ✅     |
 | Extension ESM fix             | Fix ESM module resolution for built-in extensions in Extension Host (PR [#103](https://github.com/j4rviscmd/vscodeee/pull/103))                  |     ✅     |
 | OAuth authentication          | `tauri-plugin-deep-link` + `TauriURLCallbackProvider` for GitHub OAuth callback flow (PR [#112](https://github.com/j4rviscmd/vscodeee/pull/112)) |     ✅     |
+| Remote-SSH                    | Delegate _resolveAuthority + REH server build pipeline + single-instance (PR [#193](https://github.com/j4rviscmd/vscodeee/pull/193), [#202](https://github.com/j4rviscmd/vscodeee/pull/202), [#203](https://github.com/j4rviscmd/vscodeee/pull/203)) |     ✅     |
 
-### Phase 6: Platform Features
+### Phase 6: Platform Features 🔄
 
-Auto-update (`tauri-plugin-updater`), native menus, system tray, drag & drop, platform-specific integrations.
+Auto-update, native menus, system tray, editor transparency, platform-specific integrations.
+
+| Sub-task               | Description                                                                                                                    | Status |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------ | :----: |
+| Auto-update            | `tauri-plugin-updater` + `TauriUpdateService` with GitHub releases endpoint (PR [#135](https://github.com/j4rviscmd/vscodeee/pull/135), [#145](https://github.com/j4rviscmd/vscodeee/pull/145)) |   ✅   |
+| Single-instance        | Process-level locking with CLI arg forwarding to existing instance (PR [#203](https://github.com/j4rviscmd/vscodeee/pull/203)) |   ✅   |
+| Editor transparency    | Native window transparency + CSS theming for see-through editor                                                                | 📋 Planned |
+| Native menus           | Application menu bar via Tauri native menu API                                                                                 | 📋 Planned |
+| System tray            | System tray icon and menu for background operation                                                                             | 📋 Planned |
 
 ### Phase 7: Build & Packaging
 
@@ -216,6 +225,8 @@ Tauri build pipeline, code signing (macOS/Windows), installers (.dmg, .msi, .App
 
 | Sub-task               | Description                                                                                                       |   Status   |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------- | :--------: |
+| CI/CD release pipeline | Cross-platform builds (macOS/Linux/Windows) with auto-release notes (PR [#135](https://github.com/j4rviscmd/vscodeee/pull/135)) | ✅ Complete |
+| Code signing (updater) | `TAURI_SIGNING_PRIVATE_KEY` for updater artifact signing                                                          | ✅ Complete |
 | ThirdPartyNotices.txt  | Remove Electron deps, add Tauri/Rust dependency licenses ([#27](https://github.com/j4rviscmd/vscodeee/issues/27)) | ✅ Complete |
 | LICENSES.chromium.html | Bundled with Electron — not needed for Tauri                                                                      | ✅ Removed |
 
