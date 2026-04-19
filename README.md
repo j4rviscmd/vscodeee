@@ -2,7 +2,7 @@
 
 # VS Codeee
 
-<img src="./docs/screenshots/workbench.png" alt="VS Codeee Phase 1">
+<img src="./docs/screenshots/workbench_frieren_background.png" alt="VS Codeee">
 
 ## A project to run VSCode with Tauri 2.0
 
@@ -20,6 +20,7 @@ Maintain the current functionality of VSCode while achieving the following:
 - **Reduce unnecessary metrics**: Stop sending telemetry to Microsoft
 - **Smaller binary size**: ~50% reduction expected without bundled Chromium
 - **Transparent background**: Native window transparency support (macOS/Linux) — see the desktop through your editor
+  - <img src="./docs/screenshots/settings_transparent.png" alt="Transparent Editor Settings" width="300">
 
 ---
 
@@ -54,7 +55,7 @@ Maintain the current functionality of VSCode while achieving the following:
 |   5C   | [Shared Process Elimination](#phase-5-process-model)         | Abolish Shared Process; services in WebView/Rust              | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/117) |
 |   5D   | [Extension ESM Fix](#phase-5-process-model)                  | Fix ESM module resolution for built-in extensions             | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/103) |
 |   5E   | [Remote-SSH](#phase-5-process-model)                         | SSH remote workspace support via Tauri                        | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/193) |
-|   6    | [Platform Features](#phase-6-platform-features)              | Editor transparency, native menus                             |                          🔄 In Progress                       |
+|   6    | [Platform Features](#phase-6-platform-features)              | Editor transparency, auto-update, single-instance            |                       ✅ Complete                        |
 |   7    | [Build & Packaging](#phase-7-build--packaging)               | Installers, code signing, CI/CD                               |                          📋 Planned                           |
 
 ---
@@ -207,16 +208,15 @@ Extension Host via Node.js sidecar + named pipe, Terminal via Rust `portable-pty
 | OAuth authentication          | `tauri-plugin-deep-link` + `TauriURLCallbackProvider` for GitHub OAuth callback flow (PR [#112](https://github.com/j4rviscmd/vscodeee/pull/112)) |     ✅     |
 | Remote-SSH                    | Delegate _resolveAuthority + REH server build pipeline + single-instance (PR [#193](https://github.com/j4rviscmd/vscodeee/pull/193), [#202](https://github.com/j4rviscmd/vscodeee/pull/202), [#203](https://github.com/j4rviscmd/vscodeee/pull/203)) |     ✅     |
 
-### Phase 6: Platform Features 🔄
+### Phase 6: Platform Features ✅
 
-Auto-update, native menus, editor transparency, platform-specific integrations.
+Auto-update, editor transparency, single-instance.
 
-| Sub-task               | Description                                                                                                                    | Status |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------ | :----: |
-| Auto-update            | `tauri-plugin-updater` + `TauriUpdateService` with GitHub releases endpoint (PR [#135](https://github.com/j4rviscmd/vscodeee/pull/135), [#145](https://github.com/j4rviscmd/vscodeee/pull/145)) |   ✅   |
-| Single-instance        | Process-level locking with CLI arg forwarding to existing instance (PR [#203](https://github.com/j4rviscmd/vscodeee/pull/203)) |   ✅   |
-| Editor transparency    | Native window transparency + CSS theming for see-through editor                                                                | 📋 Planned |
-| Native menus           | Application menu bar via Tauri native menu API                                                                                 | 📋 Planned |
+| Sub-task            | Description                                                                                                                                                                                     |   Status   |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------: |
+| Auto-update         | `tauri-plugin-updater` + `TauriUpdateService` with GitHub releases endpoint (PR [#135](https://github.com/j4rviscmd/vscodeee/pull/135), [#145](https://github.com/j4rviscmd/vscodeee/pull/145)) |     ✅     |
+| Single-instance     | Process-level locking with CLI arg forwarding to existing instance (PR [#203](https://github.com/j4rviscmd/vscodeee/pull/203))                                                                  |     ✅     |
+| Editor transparency | Native window transparency + CSS theming for see-through editor (PR [#212](https://github.com/j4rviscmd/vscodeee/pull/212))                                                                     |     ✅     |
 
 ### Phase 7: Build & Packaging
 
