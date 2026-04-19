@@ -256,7 +256,16 @@ const tauriConfig = {
 
 	// Remote authority for remote development scenarios (e.g., "ssh-remote+raspi").
 	// Passed via query parameter when Remote-SSH opens a new window.
-	const remoteAuthorityParam = query.get('remoteAuthority') ?? null;
+	// Fallback: extract from vscode-remote:// URI (session restore via restoredFolderUri).
+	let remoteAuthorityParam = query.get('remoteAuthority');
+	if (!remoteAuthorityParam) {
+		const remoteUri = folderParam ?? workspaceParam;
+		if (remoteUri?.startsWith('vscode-remote://')) {
+			const afterScheme = remoteUri.substring('vscode-remote://'.length);
+			const slashIdx = afterScheme.indexOf('/');
+			remoteAuthorityParam = slashIdx > 0 ? afterScheme.substring(0, slashIdx) : afterScheme || null;
+		}
+	}
 
 	// Notify the Rust backend of the current workspace URI so it can be
 	// persisted in sessions.json when the app quits.

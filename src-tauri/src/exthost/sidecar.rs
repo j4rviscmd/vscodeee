@@ -158,7 +158,12 @@ fn augment_product_json(app_root: &Path) -> Option<(std::path::PathBuf, String)>
     let mut modified = false;
 
     // Inject commit hash from git if not already set
-    if product.get("commit").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+    if product
+        .get("commit")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .is_empty()
+    {
         if let Ok(output) = std::process::Command::new("git")
             .args(["rev-parse", "HEAD"])
             .current_dir(app_root)
@@ -167,7 +172,10 @@ fn augment_product_json(app_root: &Path) -> Option<(std::path::PathBuf, String)>
             if output.status.success() {
                 let commit = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 if let Some(obj) = product.as_object_mut() {
-                    obj.insert("commit".to_string(), serde_json::Value::String(commit.clone()));
+                    obj.insert(
+                        "commit".to_string(),
+                        serde_json::Value::String(commit.clone()),
+                    );
                     modified = true;
                     log::info!(
                         target: "vscodeee::exthost::sidecar",
@@ -179,13 +187,21 @@ fn augment_product_json(app_root: &Path) -> Option<(std::path::PathBuf, String)>
     }
 
     // Inject version from package.json if not already set
-    if product.get("version").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+    if product
+        .get("version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .is_empty()
+    {
         let package_path = app_root.join("package.json");
         if let Ok(pkg_str) = std::fs::read_to_string(&package_path) {
             if let Ok(pkg) = serde_json::from_str::<serde_json::Value>(&pkg_str) {
                 if let Some(ver) = pkg.get("version").and_then(|v| v.as_str()) {
                     if let Some(obj) = product.as_object_mut() {
-                        obj.insert("version".to_string(), serde_json::Value::String(ver.to_string()));
+                        obj.insert(
+                            "version".to_string(),
+                            serde_json::Value::String(ver.to_string()),
+                        );
                         modified = true;
                         log::info!(
                             target: "vscodeee::exthost::sidecar",
@@ -295,8 +311,7 @@ async fn spawn_and_connect(
     // (e.g., Node.js v22 has a TCP routing bug on macOS causing EHOSTUNREACH
     // for LAN connections) and a different version needs to be used for the
     // Extension Host process.
-    let node_bin = std::env::var("VSCODEEE_NODE_PATH")
-        .unwrap_or_else(|_| "node".to_string());
+    let node_bin = std::env::var("VSCODEEE_NODE_PATH").unwrap_or_else(|_| "node".to_string());
 
     // Enrich PATH so child processes (e.g., `git` extension calling `which git`)
     // can find tools installed in non-default locations. This is critical on
