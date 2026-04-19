@@ -103,7 +103,8 @@ pub fn run() {
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(
                     tauri_plugin_window_state::StateFlags::all()
-                        - tauri_plugin_window_state::StateFlags::VISIBLE,
+                        - tauri_plugin_window_state::StateFlags::VISIBLE
+                        - tauri_plugin_window_state::StateFlags::DECORATIONS,
                 )
                 .build(),
         )
@@ -370,13 +371,15 @@ pub fn run() {
                 settings.restore_windows
             );
 
-            // On Windows/Linux, disable decorations at runtime so we use our custom
-            // title bar. On macOS, we keep decorations=true + titleBarStyle=Overlay
-            // to preserve the native traffic lights and rounded corners.
-            #[cfg(not(target_os = "macos"))]
+            // Apply platform-specific window chrome to the initial window.
+            // On macOS, decorations=true + Overlay title bar preserves traffic lights.
+            // On Windows/Linux, decorations=false enables the custom HTML title bar.
+            // This is now centralized in WindowChromeConfig — the same logic used
+            // for dynamic windows (open_window) and restored windows.
             {
+                let chrome = window::chrome::WindowChromeConfig::for_platform();
                 if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.set_decorations(false);
+                    let _ = window.set_decorations(chrome.decorations);
                 }
             }
 

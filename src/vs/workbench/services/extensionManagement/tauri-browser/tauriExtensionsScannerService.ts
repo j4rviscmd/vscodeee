@@ -53,7 +53,7 @@ interface IStoredWebExtension {
 export class TauriExtensionsScannerService extends WebExtensionsScannerService {
 
 	constructor(
-		@IBrowserWorkbenchEnvironmentService environmentService: IBrowserWorkbenchEnvironmentService,
+		@IBrowserWorkbenchEnvironmentService tauriEnvironmentService: IBrowserWorkbenchEnvironmentService,
 		@IBuiltinExtensionsScannerService builtinExtensionsScannerService: IBuiltinExtensionsScannerService,
 		@IFileService private readonly tauriFileService: IFileService,
 		@ILogService private readonly tauriLogService: ILogService,
@@ -68,7 +68,7 @@ export class TauriExtensionsScannerService extends WebExtensionsScannerService {
 		@ILifecycleService lifecycleService: ILifecycleService,
 	) {
 		super(
-			environmentService, builtinExtensionsScannerService, tauriFileService, tauriLogService,
+			tauriEnvironmentService, builtinExtensionsScannerService, tauriFileService, tauriLogService,
 			galleryService, extensionManifestPropertiesService, extensionResourceLoaderService,
 			extensionStorageService, storageService, productService, userDataProfilesService,
 			uriIdentityService, lifecycleService,
@@ -227,28 +227,52 @@ export class TauriExtensionsScannerService extends WebExtensionsScannerService {
 	}
 
 	/**
-	 * Override gallery add to extract via Rust first, then register locally.
+	 * Override gallery add with disk-based fallback for non-web extensions.
 	 *
 	 * The stock implementation stores CDN URLs. For Tauri we prefer real files
-	 * on disk so the Node.js extension host can load them.
+	 * on disk so the Node.js extension host can load them. When the web flow
+	 * fails (non-web extension or network error), we fall back to looking up
+	 * the extension on disk and re-registering it from there.
 	 */
 	override async addExtensionFromGallery(galleryExtension: IGalleryExtension, metadata: Metadata, profileLocation: URI): Promise<IScannedExtension> {
 		// Try the web (CDN) flow first — works for pure-web extensions.
 		try {
 			return await super.addExtensionFromGallery(galleryExtension, metadata, profileLocation);
 		} catch (e) {
-			if (!(e instanceof Error && e.message.includes('not a web extension'))) {
+			const isWebRejection = e instanceof Error && e.message.includes('not a web extension');
+			const isNetworkError = e instanceof Error && (
+				e.message.includes('Failed to fetch') ||
+				e.message.includes('NetworkError') ||
+				e.message.includes('net::ERR')
+			);
+			if (!isWebRejection && !isNetworkError) {
 				throw e;
 			}
+
+			this.tauriLogService.info(
+				`[TauriExtScanner] Gallery add failed for '${galleryExtension.identifier.id}' (${isWebRejection ? 'non-web' : 'network error'}), trying disk fallback`
+			);
 		}
 
-		// Non-web extension: delegate to addExtension with a placeholder.
-		// The TauriInstallExtensionTask in the management service handles
-		// the actual VSIX download + extraction before this path is reached,
-		// so this is a safety net for direct calls.
+		// Fallback: find the extension on disk from a previous installation.
+		// The TauriInstallExtensionTask extracts VSIX files to the extensions
+		// directory before calling addExtension(), so the files should exist.
+		const existing = await this.scanUserExtensions(profileLocation, { skipInvalidExtensions: true });
+		const extensionId = galleryExtension.identifier.id.toLowerCase();
+		const match = existing.find(e => e.identifier.id.toLowerCase() === extensionId);
+
+		if (match && match.location.scheme === 'file') {
+			this.tauriLogService.info(
+				`[TauriExtScanner] Disk fallback: re-registering '${extensionId}' from ${match.location.toString()}`
+			);
+			return this.addExtension(match.location, metadata, profileLocation);
+		}
+
+		// No on-disk installation found — the install flow must extract first.
 		throw new Error(
-			`Cannot install '${galleryExtension.identifier.id}' directly from gallery. ` +
-			`Use the extension management service install flow instead.`
+			`Cannot register '${galleryExtension.identifier.id}' from gallery: ` +
+			`not a web extension and no on-disk extraction found. ` +
+			`Use the extension management service install flow for first-time installation.`
 		);
 	}
 

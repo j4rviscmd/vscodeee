@@ -160,6 +160,17 @@ struct FullscreenPayload {
     fullscreen: bool,
 }
 
+/// Payload for the close-requested event.
+///
+/// Includes the window label so each TypeScript window can filter
+/// events not intended for it (Tauri 2's `listen` delivers to all
+/// windows by default).
+#[derive(Clone, serde::Serialize)]
+struct CloseRequestedPayload {
+    window_id: u32,
+    label: String,
+}
+
 /// Event name constants emitted to the WebView.
 ///
 /// These string constants define the Tauri event channels used to communicate
@@ -264,8 +275,16 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
 
             tauri::async_runtime::spawn(async move {
                 if let Some(id) = wm.id_for_label(&label_c).await {
-                    // Notify the TypeScript lifecycle service.
-                    let _ = handle_c.emit_to(&label_c, event_names::LIFECYCLE_CLOSE_REQUESTED, id);
+                    // Notify the TypeScript lifecycle service with both ID and label
+                    // so each window can filter events not intended for it.
+                    let _ = handle_c.emit_to(
+                        &label_c,
+                        event_names::LIFECYCLE_CLOSE_REQUESTED,
+                        CloseRequestedPayload {
+                            window_id: id,
+                            label: label_c.clone(),
+                        },
+                    );
                 } else {
                     // Unknown window — force-destroy immediately.
                     log::warn!(

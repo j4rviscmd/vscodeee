@@ -114,28 +114,26 @@ impl WindowManager {
         );
         let url = WebviewUrl::App(url_str.into());
 
-        // macOS: use overlay title bar to keep native traffic lights
-        #[cfg(target_os = "macos")]
+        let chrome = super::chrome::WindowChromeConfig::for_platform();
         let builder = WebviewWindowBuilder::new(app_handle, &label, url)
             .title("VS Codeee")
             .inner_size(1200.0, 800.0)
             .min_inner_size(400.0, 270.0)
-            .decorations(false)
-            .visible(false)
-            .title_bar_style(tauri::TitleBarStyle::Overlay)
-            .hidden_title(true);
-
-        #[cfg(not(target_os = "macos"))]
-        let builder = WebviewWindowBuilder::new(app_handle, &label, url)
-            .title("VS Codeee")
-            .inner_size(1200.0, 800.0)
-            .min_inner_size(400.0, 270.0)
-            .decorations(false)
             .visible(false);
 
-        builder
+        let builder = chrome.apply_to_builder(builder);
+
+        let window = builder
             .build()
             .map_err(|e| format!("Failed to create window: {e}"))?;
+
+        // Ensure decorations are applied at runtime in case the builder
+        // settings were overridden by tauri-plugin-window-state or other
+        // post-creation hooks.
+        #[cfg(target_os = "macos")]
+        {
+            let _ = window.set_decorations(true);
+        }
 
         // Register in state
         let workspace_uri = options
@@ -342,32 +340,36 @@ impl WindowManager {
 
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
 
-        let url_str = build_workbench_url(folder_uri, workspace_uri, None, label);
+        let remote_authority = folder_uri
+            .or(workspace_uri)
+            .and_then(extract_remote_authority);
+        let url_str = build_workbench_url(
+            folder_uri,
+            workspace_uri,
+            remote_authority.as_deref(),
+            label,
+        );
         let url = WebviewUrl::App(url_str.into());
 
-        #[cfg(target_os = "macos")]
+        let chrome = super::chrome::WindowChromeConfig::for_platform();
         let builder = WebviewWindowBuilder::new(app_handle, label, url)
             .title("VS Codeee")
             .inner_size(1200.0, 800.0)
             .min_inner_size(400.0, 270.0)
-            .decorations(false)
-            .visible(false)
-            .title_bar_style(tauri::TitleBarStyle::Overlay)
-            .hidden_title(true)
-            .fullscreen(is_fullscreen);
-
-        #[cfg(not(target_os = "macos"))]
-        let builder = WebviewWindowBuilder::new(app_handle, label, url)
-            .title("VS Codeee")
-            .inner_size(1200.0, 800.0)
-            .min_inner_size(400.0, 270.0)
-            .decorations(false)
             .visible(false)
             .fullscreen(is_fullscreen);
 
-        builder
+        let builder = chrome.apply_to_builder(builder);
+
+        let window = builder
             .build()
             .map_err(|e| format!("Failed to create restored window '{label}': {e}"))?;
+
+        // Ensure decorations are applied at runtime (same as open_window).
+        #[cfg(target_os = "macos")]
+        {
+            let _ = window.set_decorations(true);
+        }
 
         let effective_uri = folder_uri
             .map(String::from)
@@ -436,6 +438,21 @@ fn build_workbench_url(
     url.push_str(label);
 
     url
+}
+
+/// Extract the remote authority from a `vscode-remote://` URI.
+///
+/// For URIs like `vscode-remote://ssh-remote+raspi/home/user/project`,
+/// returns `Some("ssh-remote+raspi")`. Returns `None` for non-remote URIs.
+fn extract_remote_authority(uri: &str) -> Option<String> {
+    let prefix = "vscode-remote://";
+    if let Some(rest) = uri.strip_prefix(prefix) {
+        let authority = rest.split('/').next().unwrap_or("");
+        if !authority.is_empty() {
+            return Some(authority.to_string());
+        }
+    }
+    None
 }
 
 /// Minimal percent-encoding for URI query strings.

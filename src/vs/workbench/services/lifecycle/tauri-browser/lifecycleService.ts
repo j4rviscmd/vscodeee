@@ -80,8 +80,17 @@ export class TauriLifecycleService extends AbstractLifecycleService {
 		// Listen for Tauri close-requested event from the Rust backend.
 		// This is the primary close path — Rust has already called
 		// api.prevent_close() and is waiting for our decision.
-		listen<number>('vscodeee:lifecycle:close-requested', (event) => {
-			this.logService.info(`[lifecycle] Tauri close-requested received (window_id: ${event.payload})`);
+		//
+		// Filter by window label: Tauri 2's listen() delivers events to all
+		// windows by default, but each window should only act on its own
+		// close request (e.g., closing an SSH window must not cascade to
+		// the main window).
+		const currentLabel = new URL(document.location.href).searchParams.get('windowLabel') ?? 'main';
+		listen<{ window_id: number; label: string }>('vscodeee:lifecycle:close-requested', (event) => {
+			if (event.payload.label !== currentLabel) {
+				return; // Not our window — ignore
+			}
+			this.logService.info(`[lifecycle] Tauri close-requested received (window_id: ${event.payload.window_id}, label: ${event.payload.label})`);
 			this.handleCloseRequested();
 		}).then(unlisten => {
 			this.tauriCloseListener = unlisten;
