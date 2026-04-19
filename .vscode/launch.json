@@ -715,7 +715,6 @@
 				"Attach to Extension Host",
 				"Attach to Agent Host Process"
 			],
-			"preLaunchTask": "Ensure Prelaunch Dependencies",
 			"presentation": {
 				"group": "0_vscode",
 				"order": 1
@@ -729,7 +728,6 @@
 				"Attach to Main Process",
 				"Attach to Extension Host"
 			],
-			"preLaunchTask": "Ensure Prelaunch Dependencies",
 			"presentation": {
 				"group": "0_vscode",
 				"order": 1
@@ -743,7 +741,6 @@
 				"Attach to Main Process",
 				"Attach to Extension Host"
 			],
-			"preLaunchTask": "Ensure Prelaunch Dependencies",
 			"presentation": {
 				"group": "0_vscode",
 				"order": 1
@@ -802,7 +799,6 @@
 				"Launch VS Code Internal",
 				"Attach to Main Process"
 			],
-			"preLaunchTask": "Ensure Prelaunch Dependencies"
 		},
 	]
 }
