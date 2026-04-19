@@ -289,6 +289,8 @@ pub fn run() {
             commands::updater::updater_download_and_install,
             commands::updater::updater_restart_and_update,
             commands::updater::updater_get_current_version,
+            // ── Transparency commands ──
+            commands::transparency::set_native_transparency,
         ])
         .setup(move |app| {
             use tauri::Manager;

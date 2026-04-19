@@ -11,6 +11,7 @@
   },
   "app": {
     "withGlobalTauri": true,
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
@@ -24,6 +25,7 @@
         "fullscreen": false,
         "visible": false,
         "decorations": true,
+        "transparent": true,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true
       }
