@@ -53,7 +53,7 @@ export class TauriHostService extends BrowserHostService {
 		@IBrowserWorkbenchEnvironmentService environmentService: IBrowserWorkbenchEnvironmentService,
 		@IInstantiationService instantiationService: IInstantiationService,
 		@ILifecycleService lifecycleService: ILifecycleService,
-		@ILogService logService: ILogService,
+		@ILogService private readonly _logService: ILogService,
 		@IDialogService dialogService: IDialogService,
 		@IWorkspaceContextService contextService: IWorkspaceContextService,
 		@IUserDataProfilesService userDataProfilesService: IUserDataProfilesService,
@@ -62,7 +62,7 @@ export class TauriHostService extends BrowserHostService {
 		super(
 			layoutService, configurationService, fileService, labelService,
 			environmentService, instantiationService, lifecycleService as unknown as BrowserLifecycleService,
-			logService, dialogService, contextService, userDataProfilesService
+			_logService, dialogService, contextService, userDataProfilesService
 		);
 	}
 
@@ -128,7 +128,7 @@ export class TauriHostService extends BrowserHostService {
 					});
 					return;
 				} catch (err) {
-					console.error('[TauriHostService] Failed to open remote window:', err);
+					this._logService.error('[TauriHostService] Failed to open remote empty window:', err);
 				}
 			}
 		}
@@ -164,7 +164,7 @@ export class TauriHostService extends BrowserHostService {
 					});
 					return;
 				} catch (err) {
-					console.error('[TauriHostService] Failed to open remote window:', err);
+					this._logService.error('[TauriHostService] Failed to open remote folder/workspace window:', err);
 				}
 			}
 		}
