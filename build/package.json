@@ -79,5 +79,8 @@
     "path-scurry": {
       "lru-cache": "11.2.1"
     }
+  },
+  "dependencies": {
+    "rcedit": "^5.0.2"
   }
 }

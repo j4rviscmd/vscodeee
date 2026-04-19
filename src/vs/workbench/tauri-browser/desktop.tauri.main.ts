@@ -79,7 +79,8 @@ export class TauriDesktopMain extends Disposable {
 	constructor(
 		private readonly tauriConfig: ITauriWindowConfiguration,
 		folderUri?: string,
-		workspaceUri?: string
+		workspaceUri?: string,
+		private readonly remoteAuthority?: string
 	) {
 		super();
 
@@ -190,6 +191,7 @@ export class TauriDesktopMain extends Disposable {
 		// Secret storage now uses master-key encryption (TauriEncryptionService)
 		// registered via the singleton pattern, so no explicit provider is needed here.
 		const workbenchOptions: IWorkbenchConstructionOptions = {
+			remoteAuthority: this.remoteAuthority,
 			workspaceProvider,
 			urlCallbackProvider,
 		};
@@ -357,11 +359,23 @@ class TauriWorkspaceProvider implements IWorkspaceProvider {
 		// Open a new Tauri window via Rust command
 		const folderUri = workspace && isFolderToOpen(workspace) ? workspace.folderUri.toString() : undefined;
 		const workspaceUri = workspace && isWorkspaceToOpen(workspace) ? workspace.workspaceUri.toString() : undefined;
+
+		// Extract remoteAuthority from vscode-remote:// URIs so the new window
+		// can initialize its extension host with the correct remote resolver.
+		// e.g., vscode-remote://ssh-remote+raspi/home/user → "ssh-remote+raspi"
+		let remoteAuthority: string | undefined;
+		if (workspace && isFolderToOpen(workspace) && workspace.folderUri.scheme === Schemas.vscodeRemote) {
+			remoteAuthority = workspace.folderUri.authority;
+		} else if (workspace && isWorkspaceToOpen(workspace) && workspace.workspaceUri.scheme === Schemas.vscodeRemote) {
+			remoteAuthority = workspace.workspaceUri.authority;
+		}
+
 		try {
 			await invoke('open_new_window', {
 				options: {
 					folderUri,
 					workspaceUri,
+					remoteAuthority,
 					forceNewWindow: true,
 				}
 			});
