@@ -3,6 +3,10 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+// TODO(Phase 5C): Retained because remoteTunnelService.ts depends on ISharedProcessLifecycleService
+// for shutdown coordination. Should be refactored to use a generic lifecycle mechanism if
+// Remote Tunnels support is dropped or reimplemented.
+
 import { Emitter, Event } from '../../../base/common/event.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
 import { createDecorator } from '../../instantiation/common/instantiation.js';
