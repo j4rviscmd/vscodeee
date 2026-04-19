@@ -254,6 +254,10 @@ const tauriConfig = {
 	const folderParam = query.get('folder') ?? windowConfig.restoredFolderUri ?? null;
 	const workspaceParam = query.get('workspace') ?? windowConfig.restoredWorkspaceUri ?? null;
 
+	// Remote authority for remote development scenarios (e.g., "ssh-remote+raspi").
+	// Passed via query parameter when Remote-SSH opens a new window.
+	const remoteAuthorityParam = query.get('remoteAuthority') ?? null;
+
 	// Notify the Rust backend of the current workspace URI so it can be
 	// persisted in sessions.json when the app quits.
 	const effectiveUri = folderParam ?? workspaceParam ?? null;
@@ -287,7 +291,7 @@ const tauriConfig = {
 
 		performance.mark('code/didLoadWorkbenchMain');
 
-		const main = new desktopModule.TauriDesktopMain(tauriConfig, folderParam ?? undefined, workspaceParam ?? undefined);
+		const main = new desktopModule.TauriDesktopMain(tauriConfig, folderParam ?? undefined, workspaceParam ?? undefined, remoteAuthorityParam ?? undefined);
 		await main.open();
 
 		// Notify the Rust backend that the workbench is ready to be shown.

@@ -19,6 +19,10 @@ import { ILogService } from '../../../../platform/log/common/log.js';
 import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { IUserDataProfilesService } from '../../../../platform/userDataProfile/common/userDataProfile.js';
+import { IOpenEmptyWindowOptions, IOpenWindowOptions, IWindowOpenable } from '../../../../platform/window/common/window.js';
+import { invoke } from '../../../../platform/tauri/common/tauriApi.js';
+import { Schemas } from '../../../../base/common/network.js';
+import { isFolderToOpen, isWorkspaceToOpen } from '../../../../platform/window/common/window.js';
 
 // NOTE: This import MUST come after `workbench.common.main.js` which
 // transitively registers `BrowserHostService`. The last registration
@@ -49,7 +53,7 @@ export class TauriHostService extends BrowserHostService {
 		@IBrowserWorkbenchEnvironmentService environmentService: IBrowserWorkbenchEnvironmentService,
 		@IInstantiationService instantiationService: IInstantiationService,
 		@ILifecycleService lifecycleService: ILifecycleService,
-		@ILogService logService: ILogService,
+		@ILogService private readonly _logService: ILogService,
 		@IDialogService dialogService: IDialogService,
 		@IWorkspaceContextService contextService: IWorkspaceContextService,
 		@IUserDataProfilesService userDataProfilesService: IUserDataProfilesService,
@@ -58,7 +62,7 @@ export class TauriHostService extends BrowserHostService {
 		super(
 			layoutService, configurationService, fileService, labelService,
 			environmentService, instantiationService, lifecycleService as unknown as BrowserLifecycleService,
-			logService, dialogService, contextService, userDataProfilesService
+			_logService, dialogService, contextService, userDataProfilesService
 		);
 	}
 
@@ -93,6 +97,83 @@ export class TauriHostService extends BrowserHostService {
 	 */
 	override async restart(): Promise<void> {
 		return this.nativeHostService.relaunch();
+	}
+
+	/**
+	 * Opens a new window, with special handling for remote authority.
+	 *
+	 * The browser implementation's `doOpenEmptyWindow` drops the
+	 * `remoteAuthority` from `IOpenEmptyWindowOptions`. This override
+	 * intercepts the empty-window case and passes `remoteAuthority`
+	 * directly to the Rust backend so that the new window's extension
+	 * host can call `_resolveAuthority` and establish the remote connection
+	 * (e.g., Remote-SSH).
+	 *
+	 * For non-empty windows (folder/workspace openables), it also extracts
+	 * `remoteAuthority` from `vscode-remote://` URIs.
+	 */
+	override openWindow(options?: IOpenEmptyWindowOptions): Promise<void>;
+	override openWindow(toOpen: IWindowOpenable[], options?: IOpenWindowOptions): Promise<void>;
+	override async openWindow(arg1?: IOpenEmptyWindowOptions | IWindowOpenable[], arg2?: IOpenWindowOptions): Promise<void> {
+		// Empty window with remoteAuthority — Remote-SSH uses this path
+		if (!Array.isArray(arg1)) {
+			const emptyOptions = arg1 as IOpenEmptyWindowOptions | undefined;
+			if (emptyOptions?.remoteAuthority) {
+				try {
+					await invoke('open_new_window', {
+						options: {
+							remoteAuthority: emptyOptions.remoteAuthority,
+							forceNewWindow: !emptyOptions.forceReuseWindow,
+						}
+					});
+					return;
+				} catch (err) {
+					this._logService.error('[TauriHostService] Failed to open remote empty window:', err);
+				}
+			}
+		}
+
+		// Folder/workspace openables with vscode-remote:// URIs
+		if (Array.isArray(arg1) && arg1.length > 0) {
+			const openable = arg1[0];
+			let remoteAuthority: string | undefined;
+			let folderUri: string | undefined;
+			let workspaceUri: string | undefined;
+
+			if (isFolderToOpen(openable)) {
+				folderUri = openable.folderUri.toString();
+				if (openable.folderUri.scheme === Schemas.vscodeRemote) {
+					remoteAuthority = openable.folderUri.authority;
+				}
+			} else if (isWorkspaceToOpen(openable)) {
+				workspaceUri = openable.workspaceUri.toString();
+				if (openable.workspaceUri.scheme === Schemas.vscodeRemote) {
+					remoteAuthority = openable.workspaceUri.authority;
+				}
+			}
+
+			if (remoteAuthority) {
+				try {
+					await invoke('open_new_window', {
+						options: {
+							folderUri,
+							workspaceUri,
+							remoteAuthority,
+							forceNewWindow: !arg2?.forceReuseWindow,
+						}
+					});
+					return;
+				} catch (err) {
+					this._logService.error('[TauriHostService] Failed to open remote folder/workspace window:', err);
+				}
+			}
+		}
+
+		// Fall back to browser implementation for local windows
+		if (Array.isArray(arg1)) {
+			return super.openWindow(arg1, arg2);
+		}
+		return super.openWindow(arg1);
 	}
 }
 

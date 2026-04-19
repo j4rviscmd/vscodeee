@@ -229,10 +229,36 @@ pub fn get_product_json() -> Result<ProductPackageJson, String> {
         )
     })?;
 
-    let product: serde_json::Value = serde_json::from_str(&product_str)
+    let mut product: serde_json::Value = serde_json::from_str(&product_str)
         .map_err(|e| format!("Failed to parse product.json: {e}"))?;
     let package: serde_json::Value = serde_json::from_str(&package_str)
         .map_err(|e| format!("Failed to parse package.json: {e}"))?;
+
+    // Inject commit hash from git at runtime if not already set in product.json.
+    // This ensures the client's commit matches the REH server built from the same tree.
+    if product.get("commit").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+        if let Ok(output) = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&project_root)
+            .output()
+        {
+            if output.status.success() {
+                let commit = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if let Some(obj) = product.as_object_mut() {
+                    obj.insert("commit".to_string(), serde_json::Value::String(commit));
+                }
+            }
+        }
+    }
+
+    // Inject version from package.json if not already set.
+    if product.get("version").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+        if let Some(ver) = package.get("version").and_then(|v| v.as_str()) {
+            if let Some(obj) = product.as_object_mut() {
+                obj.insert("version".to_string(), serde_json::Value::String(ver.to_string()));
+            }
+        }
+    }
 
     Ok(ProductPackageJson { product, package })
 }
