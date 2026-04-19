@@ -36,7 +36,6 @@ export const unicodeFilter = Object.freeze<string[]>([
 	'!**/ThirdPartyNotices.txt',
 	'!**/ThirdPartyNotices.cli.txt',
 	'!**/LICENSE.{txt,rtf}',
-	'!LICENSES.chromium.html',
 	'!**/LICENSE',
 
 	'!**/*.{dll,exe,png,bmp,jpg,scpt,cur,ttf,woff,eot,template,ico,icns,opus,wasm}',
@@ -75,7 +74,6 @@ export const indentationFilter = Object.freeze<string[]>([
 	'!**/ThirdPartyNotices.txt',
 	'!**/ThirdPartyNotices.cli.txt',
 	'!**/LICENSE.{txt,rtf}',
-	'!LICENSES.chromium.html',
 	'!**/LICENSE',
 	'!**/*.mp3',
 	'!src/vs/base/browser/dompurify/*',

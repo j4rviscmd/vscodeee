@@ -216,8 +216,8 @@ Tauri build pipeline, code signing (macOS/Windows), installers (.dmg, .msi, .App
 
 | Sub-task               | Description                                                                                                       |   Status   |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------- | :--------: |
-| ThirdPartyNotices.txt  | Remove Electron deps, add Tauri/Rust dependency licenses ([#27](https://github.com/j4rviscmd/vscodeee/issues/27)) | 📋 Planned |
-| LICENSES.chromium.html | Bundled with Electron — not needed for Tauri                                                                      | 📋 Planned |
+| ThirdPartyNotices.txt  | Remove Electron deps, add Tauri/Rust dependency licenses ([#27](https://github.com/j4rviscmd/vscodeee/issues/27)) | ✅ Complete |
+| LICENSES.chromium.html | Bundled with Electron — not needed for Tauri                                                                      | ✅ Removed |
 
 </details>
 
