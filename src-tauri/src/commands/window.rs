@@ -106,6 +106,10 @@ pub struct OpenWindowOptions {
     /// URI of the folder to open in the new window, if any.
     #[serde(default)]
     pub folder_uri: Option<String>,
+    /// Remote authority string for remote development scenarios (e.g., `"ssh-remote+raspi"`).
+    /// Extracted from `vscode-remote://` URIs on the TypeScript side.
+    #[serde(default)]
+    pub remote_authority: Option<String>,
     /// When `true`, always create a new window even if the workspace is already open.
     #[serde(default)]
     pub force_new_window: bool,
@@ -127,6 +131,7 @@ pub async fn open_new_window(
     let wm_opts = WmOptions {
         folder_uri: options.folder_uri.clone(),
         workspace_uri: None,
+        remote_authority: options.remote_authority.clone(),
         force_new_window: options.force_new_window,
         force_reuse_window: false,
     };
@@ -139,10 +144,11 @@ pub async fn open_new_window(
 
     log::info!(
         target: "vscodeee::commands::window",
-        "Opened new window: {} (id={}, folder: {:?})",
+        "Opened new window: {} (id={}, folder: {:?}, remoteAuthority: {:?})",
         label,
         window_id,
-        options.folder_uri
+        options.folder_uri,
+        options.remote_authority
     );
 
     Ok(())

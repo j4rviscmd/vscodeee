@@ -368,8 +368,14 @@ export abstract class AbstractExtHostExtensionService extends Disposable impleme
 		// const tst = TernarySearchTree.forUris<IExtensionDescription>(key => true);
 		await Promise.all(extensions.map(async (ext) => {
 			if (this._getEntryPoint(ext)) {
-				const uri = await this._realPathExtensionUri(ext.extensionLocation);
-				tst.set(uri, ext);
+				try {
+					const uri = await this._realPathExtensionUri(ext.extensionLocation);
+					tst.set(uri, ext);
+				} catch (err) {
+					// Extension path may not exist (e.g. extension was uninstalled/moved)
+					// Skip it gracefully instead of failing the entire index creation
+					this._logService.warn(`Failed to resolve extension path for ${ext.identifier.value}: ${err}`);
+				}
 			}
 		}));
 		return tst;

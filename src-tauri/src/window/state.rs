@@ -66,6 +66,11 @@ pub struct OpenWindowOptions {
     /// URI of a `.code-workspace` file to open, if any.
     #[serde(default)]
     pub workspace_uri: Option<String>,
+    /// Remote authority string for remote development (e.g., `"ssh-remote+raspi"`).
+    /// Passed as a query parameter to the new window's workbench URL so the
+    /// extension host can resolve the remote connection.
+    #[serde(default)]
+    pub remote_authority: Option<String>,
     /// When `true`, always create a new window even if the workspace is already open.
     #[serde(default)]
     pub force_new_window: bool,
