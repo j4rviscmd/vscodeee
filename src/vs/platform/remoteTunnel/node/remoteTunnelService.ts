@@ -3,6 +3,10 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+// TODO(Phase 5C): This service depends on Microsoft's Azure Dev Tunnels infrastructure,
+// which is not accessible from third-party builds. Remote Tunnels is listed as unavailable
+// in README Known Limitations. Retained for potential future compatibility.
+
 import { CONFIGURATION_KEY_HOST_NAME, CONFIGURATION_KEY_PREVENT_SLEEP, ConnectionInfo, IRemoteTunnelSession, IRemoteTunnelService, LOGGER_NAME, LOG_ID, TunnelStates, TunnelStatus, TunnelMode, INACTIVE_TUNNEL_MODE, ActiveTunnelMode } from '../common/remoteTunnel.js';
 import { Emitter } from '../../../base/common/event.js';
 import { ITelemetryService } from '../../telemetry/common/telemetry.js';
