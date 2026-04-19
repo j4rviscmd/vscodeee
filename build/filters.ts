@@ -45,7 +45,6 @@ export const unicodeFilter = Object.freeze<string[]>([
 	'!**/*.mp3',
 	'!**/*.tiff',
 
-	'!build/win32/**',
 	'!extensions/markdown-language-features/notebook-out/*.js',
 	'!extensions/markdown-math/notebook-out/**',
 	'!extensions/mermaid-chat-features/chat-webview-out/**',
@@ -84,9 +83,7 @@ export const indentationFilter = Object.freeze<string[]>([
 	'!src/vs/editor/common/languages/highlights/*.scm',
 	'!src/vs/editor/common/languages/injections/*.scm',
 	'!test/unit/assert.js',
-	'!resources/linux/snap/electron-launch',
 	'!build/ext.js',
-	'!build/darwin/patch-dmg.py',
 	'!build/npm/gyp/patches/gyp_spectre_mitigation_support.patch',
 	'!product.overrides.json',
 
@@ -105,7 +102,6 @@ export const indentationFilter = Object.freeze<string[]>([
 	'!extensions/vscode-api-tests/testWorkspace/**',
 	'!extensions/vscode-api-tests/testWorkspace2/**',
 	'!build/monaco/**',
-	'!build/win32/**',
 	'!build/checker/**',
 	'!src/vs/workbench/contrib/terminal/common/scripts/psreadline/**',
 
@@ -129,7 +125,7 @@ export const indentationFilter = Object.freeze<string[]>([
 	'!src/typings/**/*.d.ts',
 	'!extensions/**/*.d.ts',
 	'!**/*.{svg,exe,png,bmp,jpg,scpt,bat,cmd,cur,ttf,woff,eot,md,ps1,psm1,template,yaml,yml,d.ts.recipe,ico,icns,plist,opus,admx,adml,wasm}',
-	'!build/{lib,download,linux,darwin}/**/*.js',
+	'!build/{lib,download}/**/*.js',
 	'!build/**/*.sh',
 	'!build/npm/gyp/custom-headers/*.patch',
 	'!**/Dockerfile',
@@ -174,8 +170,6 @@ export const copyrightFilter = Object.freeze<string[]>([
 	'!**/*.wasm',
 	'!**/*.tiff',
 	'!build/**/*.init',
-	'!build/darwin/patch-dmg.py',
-	'!build/linux/libcxx-fetcher.*',
 	'!build/npm/gyp/custom-headers/*.patch',
 	'!resources/linux/snap/snapcraft.yaml',
 	'!resources/win32/bin/code.js',

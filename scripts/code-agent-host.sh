@@ -10,10 +10,6 @@ fi
 function code() {
 	pushd $ROOT
 
-	# Get electron, compile, built-in extensions
-	if [[ -z "${VSCODE_SKIP_PRELAUNCH}" ]]; then
-		node build/lib/preLaunch.ts
-	fi
 
 	NODE=$(node build/lib/node.ts)
 	if [ ! -e $NODE ];then

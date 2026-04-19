@@ -249,14 +249,20 @@
 		},
 		{
 			"label": "Run and Compile Agents - OSS",
-			"dependsOn": ["Transpile Client", "Run Dev Agents"],
+			"dependsOn": [
+				"Transpile Client",
+				"Run Dev Agents"
+			],
 			"dependsOrder": "sequence",
 			"inSessions": true,
 			"problemMatcher": []
 		},
 		{
 			"label": "Run and Compile Code - OSS",
-			"dependsOn": ["Transpile Client", "Run Dev"],
+			"dependsOn": [
+				"Transpile Client",
+				"Run Dev"
+			],
 			"dependsOrder": "sequence",
 			"inSessions": true,
 			"problemMatcher": []
@@ -332,15 +338,6 @@
 			"problemMatcher": {
 				"source": "eslint",
 				"base": "$eslint-stylish"
-			}
-		},
-		{
-			"type": "shell",
-			"command": "node build/lib/preLaunch.ts",
-			"label": "Ensure Prelaunch Dependencies",
-			"presentation": {
-				"reveal": "silent",
-				"close": true
 			}
 		},
 		{
