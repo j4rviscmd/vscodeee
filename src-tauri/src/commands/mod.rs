@@ -236,7 +236,12 @@ pub fn get_product_json() -> Result<ProductPackageJson, String> {
 
     // Inject commit hash from git at runtime if not already set in product.json.
     // This ensures the client's commit matches the REH server built from the same tree.
-    if product.get("commit").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+    if product
+        .get("commit")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .is_empty()
+    {
         if let Ok(output) = std::process::Command::new("git")
             .args(["rev-parse", "HEAD"])
             .current_dir(&project_root)
@@ -252,10 +257,18 @@ pub fn get_product_json() -> Result<ProductPackageJson, String> {
     }
 
     // Inject version from package.json if not already set.
-    if product.get("version").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+    if product
+        .get("version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .is_empty()
+    {
         if let Some(ver) = package.get("version").and_then(|v| v.as_str()) {
             if let Some(obj) = product.as_object_mut() {
-                obj.insert("version".to_string(), serde_json::Value::String(ver.to_string()));
+                obj.insert(
+                    "version".to_string(),
+                    serde_json::Value::String(ver.to_string()),
+                );
             }
         }
     }

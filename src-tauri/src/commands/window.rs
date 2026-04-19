@@ -106,6 +106,9 @@ pub struct OpenWindowOptions {
     /// URI of the folder to open in the new window, if any.
     #[serde(default)]
     pub folder_uri: Option<String>,
+    /// URI of a `.code-workspace` file to open, if any.
+    #[serde(default)]
+    pub workspace_uri: Option<String>,
     /// Remote authority string for remote development scenarios (e.g., `"ssh-remote+raspi"`).
     /// Extracted from `vscode-remote://` URIs on the TypeScript side.
     #[serde(default)]
@@ -126,11 +129,9 @@ pub async fn open_new_window(
     options: OpenWindowOptions,
     window_manager: tauri::State<'_, std::sync::Arc<crate::window::manager::WindowManager>>,
 ) -> Result<(), String> {
-    use crate::window::state::OpenWindowOptions as WmOptions;
-
-    let wm_opts = WmOptions {
+    let wm_opts = crate::window::state::OpenWindowOptions {
         folder_uri: options.folder_uri.clone(),
-        workspace_uri: None,
+        workspace_uri: options.workspace_uri.clone(),
         remote_authority: options.remote_authority.clone(),
         force_new_window: options.force_new_window,
         force_reuse_window: false,
