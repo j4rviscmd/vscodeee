@@ -2,7 +2,7 @@
 
 # VS Codeee
 
-<img src="./docs/screenshots/workbench.png" alt="VS Codeee Phase 1">
+<img src="./docs/screenshots/workbench_frieren_background.png" alt="VS Codeee">
 
 ## A project to run VSCode with Tauri 2.0
 
@@ -20,6 +20,7 @@ Maintain the current functionality of VSCode while achieving the following:
 - **Reduce unnecessary metrics**: Stop sending telemetry to Microsoft
 - **Smaller binary size**: ~50% reduction expected without bundled Chromium
 - **Transparent background**: Native window transparency support (macOS/Linux) — see the desktop through your editor
+  - <img src="./docs/screenshots/settings_transparent.png" alt="Transparent Settings" width="300">
 
 ---
 
@@ -54,7 +55,7 @@ Maintain the current functionality of VSCode while achieving the following:
 |   5C   | [Shared Process Elimination](#phase-5-process-model)         | Abolish Shared Process; services in WebView/Rust              | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/117) |
 |   5D   | [Extension ESM Fix](#phase-5-process-model)                  | Fix ESM module resolution for built-in extensions             | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/103) |
 |   5E   | [Remote-SSH](#phase-5-process-model)                         | SSH remote workspace support via Tauri                        | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/193) |
-|   6    | [Platform Features](#phase-6-platform-features)              | Editor transparency, native menus                             |                          🔄 In Progress                       |
+|   6    | [Platform Features](#phase-6-platform-features)              | Editor transparency, auto-update, single-instance            |                       ✅ Complete                        |
 |   7    | [Build & Packaging](#phase-7-build--packaging)               | Installers, code signing, CI/CD                               |                          📋 Planned                           |
 
 ---
@@ -198,36 +199,35 @@ Built-in extension scanning and OS theme detection for the Tauri backend. Modula
 
 Extension Host via Node.js sidecar + named pipe, Terminal via Rust `portable-pty`, Shared Process elimination.
 
-| Sub-task                      | Description                                                                                                                                      |   Status   |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | :--------: |
-| Extension Host (Node sidecar) | Node.js sidecar + WebSocket ↔ Rust relay ↔ Unix Socket full pipeline (PR [#58](https://github.com/j4rviscmd/vscodeee/pull/58))                   |     ✅     |
-| Terminal PTY integration      | Rust `portable-pty` → Tauri IPC → `TauriTerminalBackend` → VS Code Terminal UI (PR [#105](https://github.com/j4rviscmd/vscodeee/pull/105))       |     ✅     |
-| Shared Process elimination    | Abolish Shared Process sidecar; implement services directly in WebView/Rust (PR [#117](https://github.com/j4rviscmd/vscodeee/pull/117))          |     ✅     |
-| Extension ESM fix             | Fix ESM module resolution for built-in extensions in Extension Host (PR [#103](https://github.com/j4rviscmd/vscodeee/pull/103))                  |     ✅     |
-| OAuth authentication          | `tauri-plugin-deep-link` + `TauriURLCallbackProvider` for GitHub OAuth callback flow (PR [#112](https://github.com/j4rviscmd/vscodeee/pull/112)) |     ✅     |
-| Remote-SSH                    | Delegate _resolveAuthority + REH server build pipeline + single-instance (PR [#193](https://github.com/j4rviscmd/vscodeee/pull/193), [#202](https://github.com/j4rviscmd/vscodeee/pull/202), [#203](https://github.com/j4rviscmd/vscodeee/pull/203)) |     ✅     |
+| Sub-task                      | Description                                                                                                                                                                                                                                           | Status |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----: |
+| Extension Host (Node sidecar) | Node.js sidecar + WebSocket ↔ Rust relay ↔ Unix Socket full pipeline (PR [#58](https://github.com/j4rviscmd/vscodeee/pull/58))                                                                                                                        |   ✅   |
+| Terminal PTY integration      | Rust `portable-pty` → Tauri IPC → `TauriTerminalBackend` → VS Code Terminal UI (PR [#105](https://github.com/j4rviscmd/vscodeee/pull/105))                                                                                                            |   ✅   |
+| Shared Process elimination    | Abolish Shared Process sidecar; implement services directly in WebView/Rust (PR [#117](https://github.com/j4rviscmd/vscodeee/pull/117))                                                                                                               |   ✅   |
+| Extension ESM fix             | Fix ESM module resolution for built-in extensions in Extension Host (PR [#103](https://github.com/j4rviscmd/vscodeee/pull/103))                                                                                                                       |   ✅   |
+| OAuth authentication          | `tauri-plugin-deep-link` + `TauriURLCallbackProvider` for GitHub OAuth callback flow (PR [#112](https://github.com/j4rviscmd/vscodeee/pull/112))                                                                                                      |   ✅   |
+| Remote-SSH                    | Delegate \_resolveAuthority + REH server build pipeline + single-instance (PR [#193](https://github.com/j4rviscmd/vscodeee/pull/193), [#202](https://github.com/j4rviscmd/vscodeee/pull/202), [#203](https://github.com/j4rviscmd/vscodeee/pull/203)) |   ✅   |
 
-### Phase 6: Platform Features 🔄
+### Phase 6: Platform Features ✅
 
-Auto-update, native menus, editor transparency, platform-specific integrations.
+Auto-update, editor transparency, single-instance.
 
-| Sub-task               | Description                                                                                                                    | Status |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------ | :----: |
-| Auto-update            | `tauri-plugin-updater` + `TauriUpdateService` with GitHub releases endpoint (PR [#135](https://github.com/j4rviscmd/vscodeee/pull/135), [#145](https://github.com/j4rviscmd/vscodeee/pull/145)) |   ✅   |
-| Single-instance        | Process-level locking with CLI arg forwarding to existing instance (PR [#203](https://github.com/j4rviscmd/vscodeee/pull/203)) |   ✅   |
-| Editor transparency    | Native window transparency + CSS theming for see-through editor                                                                | 📋 Planned |
-| Native menus           | Application menu bar via Tauri native menu API                                                                                 | 📋 Planned |
+| Sub-task            | Description                                                                                                                                                                                     |   Status   |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------: |
+| Auto-update         | `tauri-plugin-updater` + `TauriUpdateService` with GitHub releases endpoint (PR [#135](https://github.com/j4rviscmd/vscodeee/pull/135), [#145](https://github.com/j4rviscmd/vscodeee/pull/145)) |     ✅     |
+| Single-instance     | Process-level locking with CLI arg forwarding to existing instance (PR [#203](https://github.com/j4rviscmd/vscodeee/pull/203))                                                                  |     ✅     |
+| Editor transparency | Native window transparency + CSS theming for see-through editor (PR [#212](https://github.com/j4rviscmd/vscodeee/pull/212))                                                                     |     ✅     |
 
 ### Phase 7: Build & Packaging
 
 Tauri build pipeline, code signing (macOS/Windows), installers (.dmg, .msi, .AppImage, .deb), CI/CD.
 
-| Sub-task               | Description                                                                                                       |   Status   |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------- | :--------: |
+| Sub-task               | Description                                                                                                                     |   Status    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------- | :---------: |
 | CI/CD release pipeline | Cross-platform builds (macOS/Linux/Windows) with auto-release notes (PR [#135](https://github.com/j4rviscmd/vscodeee/pull/135)) | ✅ Complete |
-| Code signing (updater) | `TAURI_SIGNING_PRIVATE_KEY` for updater artifact signing                                                          | ✅ Complete |
-| ThirdPartyNotices.txt  | Remove Electron deps, add Tauri/Rust dependency licenses ([#27](https://github.com/j4rviscmd/vscodeee/issues/27)) | ✅ Complete |
-| LICENSES.chromium.html | Bundled with Electron — not needed for Tauri                                                                      | ✅ Removed |
+| Code signing (updater) | `TAURI_SIGNING_PRIVATE_KEY` for updater artifact signing                                                                        | ✅ Complete |
+| ThirdPartyNotices.txt  | Remove Electron deps, add Tauri/Rust dependency licenses ([#27](https://github.com/j4rviscmd/vscodeee/issues/27))               | ✅ Complete |
+| LICENSES.chromium.html | Bundled with Electron — not needed for Tauri                                                                                    | ✅ Removed  |
 
 </details>
 
@@ -267,11 +267,11 @@ The following Native Host Service features are deferred to post-MVP:
 
 Architectural differences between Electron (bundled Chromium) and Tauri (native system WebView) introduce permanent or platform-specific limitations.
 
-| Feature                   | Limitation                                                                                                            | Platform Details                                                                                                                                                                             |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `setBackgroundThrottling` | WebView internal JS timer/animation throttling cannot be controlled externally                                        | All platforms — `NSProcessInfo.beginActivity()` (macOS) can prevent OS-level throttling, but WebView-internal behavior remains uncontrollable.                                               |
-| Settings Sync             | Built-in Settings Sync is unavailable. The upstream sync service is licensed exclusively for official VS Code builds. | All platforms — use third-party extensions (e.g., [Settings Sync](https://marketplace.visualstudio.com/items?itemName=Shan.code-settings-sync)) that sync via GitHub Gist as an alternative. |
-| Remote Tunnels            | Built-in Remote Tunnels is unavailable. The tunnel relay infrastructure is hosted by Microsoft (Azure Dev Tunnels) and is not accessible from third-party builds. Use Remote-SSH for remote development instead. | All platforms — see [#100](https://github.com/j4rviscmd/vscodeee/issues/100) for details. Remote-SSH support is tracked in [#185](https://github.com/j4rviscmd/vscodeee/issues/185). |
+| Feature                   | Limitation                                                                                                                                                                                                       | Platform Details                                                                                                                                                                             |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `setBackgroundThrottling` | WebView internal JS timer/animation throttling cannot be controlled externally                                                                                                                                   | All platforms — `NSProcessInfo.beginActivity()` (macOS) can prevent OS-level throttling, but WebView-internal behavior remains uncontrollable.                                               |
+| Settings Sync             | Built-in Settings Sync is unavailable. The upstream sync service is licensed exclusively for official VS Code builds.                                                                                            | All platforms — use third-party extensions (e.g., [Settings Sync](https://marketplace.visualstudio.com/items?itemName=Shan.code-settings-sync)) that sync via GitHub Gist as an alternative. |
+| Remote Tunnels            | Built-in Remote Tunnels is unavailable. The tunnel relay infrastructure is hosted by Microsoft (Azure Dev Tunnels) and is not accessible from third-party builds. Use Remote-SSH for remote development instead. | All platforms — see [#100](https://github.com/j4rviscmd/vscodeee/issues/100) for details. Remote-SSH support is tracked in [#185](https://github.com/j4rviscmd/vscodeee/issues/185).         |
 
 > [!NOTE]
 > This list covers inherent platform limitations. Features that are simply not yet implemented are tracked in individual GitHub Issues.
