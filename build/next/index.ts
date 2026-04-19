@@ -107,7 +107,6 @@ const desktopEntryPoints = [
 
 const codeEntryPoints = [
 	'vs/code/node/cliProcessMain',
-	'vs/code/electron-utility/sharedProcess/sharedProcessMain',
 	'vs/code/electron-browser/workbench/workbench',
 	'vs/sessions/electron-browser/sessions',
 ];
