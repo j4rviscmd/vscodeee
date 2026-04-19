@@ -15,6 +15,7 @@ pub mod native_host;
 pub mod secret_storage;
 pub mod spawn_exthost;
 pub mod terminal;
+pub mod transparency;
 pub mod updater;
 pub mod window;
 

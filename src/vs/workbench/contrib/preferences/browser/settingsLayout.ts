@@ -127,13 +127,18 @@ export const tocData: ITOCEntry<string> = {
 			label: localize('workbench', "Workbench"),
 			settings: ['workbench.*'],
 			children: [
-				{
-					id: 'workbench/appearance',
-					label: localize('appearance', "Appearance"),
-					settings: ['workbench.activityBar.*', 'workbench.*color*', 'workbench.fontAliasing', 'workbench.iconTheme', 'workbench.sidebar.location', 'workbench.*.visible', 'workbench.tips.enabled', 'workbench.tree.*', 'workbench.view.*']
-				},
-				{
-					id: 'workbench/breadcrumbs',
+			{
+				id: 'workbench/appearance',
+				label: localize('appearance', "Appearance"),
+				settings: ['workbench.activityBar.*', 'workbench.*color*', 'workbench.fontAliasing', 'workbench.iconTheme', 'workbench.sidebar.location', 'workbench.*.visible', 'workbench.tips.enabled', 'workbench.tree.*', 'workbench.view.*']
+			},
+			{
+				id: 'workbench/transparency',
+				label: localize('transparency', "Transparency"),
+				settings: ['vscodeee.transparency.*']
+			},
+			{
+				id: 'workbench/breadcrumbs',
 					label: localize('breadcrumbs', "Breadcrumbs"),
 					settings: ['breadcrumbs.*']
 				},
