@@ -8,7 +8,8 @@
 #   1. preflight           — deduplication gate
 #   2. generate-notes      — auto-generate release notes via GitHub API
 #   3. publish-tauri       — cross-platform build matrix (macOS arm64/x64, Linux, Windows)
-#   4. upload-stable-assets — upload fixed-name copies for stable README download links
+#   4. build-reh           — build REH (Remote Extension Host) server for SSH remotes
+#   5. upload-stable-assets — upload fixed-name copies for stable README download links
 name: Release
 
 on:
@@ -193,9 +194,141 @@ jobs:
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
 
+  build-reh:
+    name: Build REH Server (${{ matrix.os }}-${{ matrix.arch }})
+    needs: [preflight, publish-tauri]
+    if: needs.preflight.outputs.skip != 'true'
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: x64
+            runner: ubuntu-22.04
+          - os: linux
+            arch: arm64
+            runner: ubuntu-22.04
+          - os: linux
+            arch: armhf
+            runner: ubuntu-22.04
+          - os: darwin
+            arch: arm64
+            runner: macos-latest
+          - os: darwin
+            arch: x64
+            runner: macos-13
+
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbfile-dev pkg-config libkrb5-dev libsecret-1-dev
+
+      - name: Set up QEMU (Linux ARM cross-compilation)
+        if: matrix.os == 'linux' && matrix.arch != 'x64'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Install dependencies
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+        run: |
+          # Create placeholder to prevent postinstall symlink error
+          touch .github/copilot-instructions.md
+          npm ci
+
+      - name: Build REH server
+        run: npm run gulp -- vscode-reh-${{ matrix.os }}-${{ matrix.arch }}-min
+
+      # For Linux ARM, replace host-compiled native modules with target-arch ones
+      - name: Cross-compile remote dependencies (Linux ARM)
+        if: matrix.os == 'linux' && matrix.arch != 'x64'
+        run: |
+          DEST="../vscode-reh-${{ matrix.os }}-${{ matrix.arch }}"
+          DOCKER_PLATFORM="linux/${{ matrix.arch == 'armhf' && 'arm/v7' || matrix.arch }}"
+
+          # Remove host-compiled native modules from the packaged output
+          rm -rf "$DEST/node_modules"
+
+          # Reinstall for target arch via Docker + QEMU
+          docker run --rm \
+            --platform "$DOCKER_PLATFORM" \
+            -v "$PWD/remote:/workspace" \
+            -w /workspace \
+            node:22 \
+            bash -c "
+              apt-get update && \
+              apt-get install -y --no-install-recommends \
+                libxkbfile-dev libkrb5-dev libsecret-1-dev python3 make g++ && \
+              rm -rf node_modules && \
+              npm install --production
+            "
+
+          # Copy cross-compiled modules into the package
+          cp -r remote/node_modules "$DEST/"
+
+      - name: Create tarball
+        run: |
+          cd ..
+          tar -czf vscodeee-reh-${{ matrix.os }}-${{ matrix.arch }}.tar.gz \
+            -C vscode-reh-${{ matrix.os }}-${{ matrix.arch }} .
+
+      - name: Upload REH server to release
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const cfg = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+            const tag = `v${cfg.version}`;
+
+            const { data: release } = await github.rest.repos.getReleaseByTag({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag,
+            });
+
+            const assetName = `vscodeee-reh-${{ matrix.os }}-${{ matrix.arch }}.tar.gz`;
+            const filePath = path.join('..', assetName);
+            const data = fs.readFileSync(filePath);
+
+            // Delete existing asset if re-running
+            const existing = release.assets.find(a => a.name === assetName);
+            if (existing) {
+              await github.rest.repos.deleteReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                asset_id: existing.id,
+              });
+              core.info(`Deleted old asset: ${assetName}`);
+            }
+
+            await github.rest.repos.uploadReleaseAsset({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.id,
+              name: assetName,
+              data,
+            });
+            core.info(`Uploaded ${assetName} to release ${tag}`);
+
   upload-stable-assets:
     name: Upload fixed-name assets for README links
-    needs: publish-tauri
+    needs: [publish-tauri, build-reh]
     permissions:
       contents: write
     runs-on: ubuntu-latest
