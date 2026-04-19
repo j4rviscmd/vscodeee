@@ -41,7 +41,7 @@ const enum WindowSettingNames {
 export const defaultWindowTitle = (() => {
 	// TODO(Phase 2): Tauri custom titlebar handles dirty indicator and app name natively
 	if (isTauri) {
-		return '${activeEditorShort}${separator}${rootName}${separator}${profileName}';
+		return '${activeEditorShort}${separator}${rootName}${separator}${profileName}${separator}${remoteName}';
 	}
 
 	if (isMacintosh && isNative) {
@@ -357,6 +357,17 @@ export class WindowTitle extends Disposable {
 		let remoteName: string | undefined = undefined;
 		if (this.environmentService.remoteAuthority && !isWeb) {
 			remoteName = this.labelService.getHostLabel(Schemas.vscodeRemote, this.environmentService.remoteAuthority);
+			// Tauri: append hostname parsed from authority (e.g. "ssh-remote+raspi" → "raspi")
+			// so the title shows "SSH raspi" instead of just "SSH".
+			if (isTauri && remoteName && this.environmentService.remoteAuthority) {
+				const plusIdx = this.environmentService.remoteAuthority.indexOf('+');
+				if (plusIdx !== -1) {
+					const host = this.environmentService.remoteAuthority.substring(plusIdx + 1);
+					if (host) {
+						remoteName = `${remoteName} ${host}`;
+					}
+				}
+			}
 		} else {
 			const virtualWorkspaceLocation = getVirtualWorkspaceLocation(workspace);
 			if (virtualWorkspaceLocation) {

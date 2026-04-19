@@ -70,6 +70,10 @@ export class TauriWorkspacesService extends Disposable implements IWorkspacesSer
 
 		// Workspace
 		this._register(this.contextService.onDidChangeWorkspaceFolders(e => this.onDidChangeWorkspaceFolders(e)));
+
+		// Re-add workspace to recently opened when workbench state changes
+		// (e.g., EMPTY → FOLDER after remote SSH resolver connects and opens a folder).
+		this._register(this.contextService.onDidChangeWorkbenchState(() => this.addWorkspaceToRecentlyOpened()));
 	}
 
 	/**

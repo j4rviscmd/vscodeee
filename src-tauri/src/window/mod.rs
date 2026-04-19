@@ -9,6 +9,7 @@
 //! Each WebviewWindow gets a unique monotonic ID that never collides, even across
 //! open/close cycles.
 
+pub mod chrome;
 pub mod events;
 pub mod manager;
 pub mod restore;
