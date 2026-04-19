@@ -72,19 +72,38 @@ fn build_exthost_path() -> String {
 /// A running Extension Host sidecar process with its named pipe path.
 ///
 /// Owns the child process handle and the socket path. When dropped,
-/// the Unix socket file is cleaned up via [`Drop`].
+/// the Unix socket file and any augmented product.json are cleaned up.
 pub struct ExtHostSidecar {
     /// Handle to the spawned Node.js child process.
     pub child: Child,
     /// Path to the Unix domain socket used for IPC with the Extension Host.
     pub pipe_path: String,
+    /// Original content of `product.json` before augmentation, if modified.
+    /// Used by [`Drop`] to restore the file when the sidecar is cleaned up.
+    original_product_json: Option<(std::path::PathBuf, String)>,
 }
 
-/// Best-effort cleanup: removes the Unix socket file when the sidecar is dropped.
+/// Best-effort cleanup: removes the Unix socket file and restores the
+/// original `product.json` when the sidecar is dropped.
 impl Drop for ExtHostSidecar {
     fn drop(&mut self) {
         // Best-effort cleanup of the socket file
         let _ = std::fs::remove_file(&self.pipe_path);
+
+        // Restore original product.json if we augmented it
+        if let Some((ref path, ref original)) = self.original_product_json {
+            if let Err(e) = std::fs::write(path, original) {
+                log::warn!(
+                    target: "vscodeee::exthost::sidecar",
+                    "Failed to restore original product.json: {e}"
+                );
+            } else {
+                log::info!(
+                    target: "vscodeee::exthost::sidecar",
+                    "Restored original product.json"
+                );
+            }
+        }
     }
 }
 
@@ -102,12 +121,121 @@ fn create_random_ipc_handle() -> String {
     }
 }
 
+/// Augment `product.json` with `commit` and `version` fields at runtime.
+///
+/// Extensions like `open-remote-ssh` read `product.json` directly from disk
+/// (via `fs.readFile(path.join(vscode.env.appRoot, "product.json"))`), so the
+/// file must contain `commit` and `version` fields that match the running
+/// instance. The Rust `get_product_json()` command injects these at runtime
+/// for the webview, but extensions bypass that and read the file directly.
+///
+/// Returns `Some((path, original_content))` if the file was modified, or
+/// `None` if no modification was needed.
+fn augment_product_json(app_root: &Path) -> Option<(std::path::PathBuf, String)> {
+    let product_path = app_root.join("product.json");
+    let original = match std::fs::read_to_string(&product_path) {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!(
+                target: "vscodeee::exthost::sidecar",
+                "Cannot read product.json for augmentation: {e}"
+            );
+            return None;
+        }
+    };
+
+    let mut product: serde_json::Value = match serde_json::from_str(&original) {
+        Ok(v) => v,
+        Err(e) => {
+            log::warn!(
+                target: "vscodeee::exthost::sidecar",
+                "Cannot parse product.json: {e}"
+            );
+            return None;
+        }
+    };
+
+    let mut modified = false;
+
+    // Inject commit hash from git if not already set
+    if product.get("commit").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+        if let Ok(output) = std::process::Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(app_root)
+            .output()
+        {
+            if output.status.success() {
+                let commit = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if let Some(obj) = product.as_object_mut() {
+                    obj.insert("commit".to_string(), serde_json::Value::String(commit.clone()));
+                    modified = true;
+                    log::info!(
+                        target: "vscodeee::exthost::sidecar",
+                        "Injected commit={commit} into product.json"
+                    );
+                }
+            }
+        }
+    }
+
+    // Inject version from package.json if not already set
+    if product.get("version").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+        let package_path = app_root.join("package.json");
+        if let Ok(pkg_str) = std::fs::read_to_string(&package_path) {
+            if let Ok(pkg) = serde_json::from_str::<serde_json::Value>(&pkg_str) {
+                if let Some(ver) = pkg.get("version").and_then(|v| v.as_str()) {
+                    if let Some(obj) = product.as_object_mut() {
+                        obj.insert("version".to_string(), serde_json::Value::String(ver.to_string()));
+                        modified = true;
+                        log::info!(
+                            target: "vscodeee::exthost::sidecar",
+                            "Injected version={ver} into product.json"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    if !modified {
+        return None;
+    }
+
+    // Write augmented product.json (pretty-printed to preserve readability)
+    match serde_json::to_string_pretty(&product) {
+        Ok(augmented) => {
+            // Add trailing newline to match typical JSON formatting
+            let augmented = augmented + "\n";
+            if let Err(e) = std::fs::write(&product_path, &augmented) {
+                log::warn!(
+                    target: "vscodeee::exthost::sidecar",
+                    "Failed to write augmented product.json: {e}"
+                );
+                return None;
+            }
+            log::info!(
+                target: "vscodeee::exthost::sidecar",
+                "Wrote augmented product.json with commit and version"
+            );
+            Some((product_path, original))
+        }
+        Err(e) => {
+            log::warn!(
+                target: "vscodeee::exthost::sidecar",
+                "Failed to serialize augmented product.json: {e}"
+            );
+            None
+        }
+    }
+}
+
 /// Spawn the Extension Host as a Node.js sidecar, returning the connected stream.
 ///
 /// This replicates the pattern from `extensionHostConnection.ts:247-327`:
-/// 1. Create Unix domain socket server
-/// 2. Spawn `node out/bootstrap-fork.js --type=extensionHost`
-/// 3. Wait for the ExtHost to connect back to our socket (30s timeout)
+/// 1. Augment `product.json` with `commit`/`version` for extensions
+/// 2. Create Unix domain socket server
+/// 3. Spawn `node out/bootstrap-fork.js --type=extensionHost`
+/// 4. Wait for the ExtHost to connect back to our socket (30s timeout)
 ///
 /// # Arguments
 /// * `app_root` — Repository root containing `out/bootstrap-fork.js` and `product.json`
@@ -117,6 +245,10 @@ fn create_random_ipc_handle() -> String {
 pub async fn spawn(
     app_root: &Path,
 ) -> Result<(ExtHostSidecar, tokio::net::UnixStream), ExtHostError> {
+    // Augment product.json with commit/version before spawning the ExtHost.
+    // Extensions (e.g., open-remote-ssh) read this file directly from disk.
+    let augmented = augment_product_json(app_root);
+
     let pipe_path = create_random_ipc_handle();
 
     // Step 1: Create the Unix domain socket server
@@ -127,7 +259,7 @@ pub async fn spawn(
 
     // Step 2: Spawn the Node.js process
     // If spawn or accept fails, clean up the socket file before returning.
-    let result = spawn_and_connect(app_root, &pipe_path, &listener).await;
+    let result = spawn_and_connect(app_root, &pipe_path, &listener, augmented).await;
     if result.is_err() {
         let _ = std::fs::remove_file(&pipe_path);
     }
@@ -150,13 +282,21 @@ pub async fn spawn(
 /// * `app_root` — Repository root containing `out/bootstrap-fork.js`
 /// * `pipe_path` — Path to the Unix domain socket the ExtHost should connect to
 /// * `listener` — The bound Unix listener awaiting the ExtHost connection
+/// * `augmented` — Original product.json content if the file was augmented
 async fn spawn_and_connect(
     app_root: &Path,
     pipe_path: &str,
     listener: &UnixListener,
+    augmented: Option<(std::path::PathBuf, String)>,
 ) -> Result<(ExtHostSidecar, tokio::net::UnixStream), ExtHostError> {
     // Mirrors extensionHostConnection.ts:272-288
-    let node_bin = "node"; // PoC: use system node
+    // Allow overriding the Node.js binary via VSCODEEE_NODE_PATH env var.
+    // This is useful when the system default `node` version has issues
+    // (e.g., Node.js v22 has a TCP routing bug on macOS causing EHOSTUNREACH
+    // for LAN connections) and a different version needs to be used for the
+    // Extension Host process.
+    let node_bin = std::env::var("VSCODEEE_NODE_PATH")
+        .unwrap_or_else(|_| "node".to_string());
 
     // Enrich PATH so child processes (e.g., `git` extension calling `which git`)
     // can find tools installed in non-default locations. This is critical on
@@ -239,6 +379,7 @@ async fn spawn_and_connect(
     let sidecar = ExtHostSidecar {
         child,
         pipe_path: pipe_path.to_owned(),
+        original_product_json: augmented,
     };
     Ok((sidecar, stream))
 }

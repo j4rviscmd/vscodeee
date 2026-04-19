@@ -109,6 +109,7 @@ impl WindowManager {
         let url_str = build_workbench_url(
             options.folder_uri.as_deref(),
             options.workspace_uri.as_deref(),
+            options.remote_authority.as_deref(),
             &label,
         );
         let url = WebviewUrl::App(url_str.into());
@@ -341,7 +342,7 @@ impl WindowManager {
 
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
 
-        let url_str = build_workbench_url(folder_uri, workspace_uri, label);
+        let url_str = build_workbench_url(folder_uri, workspace_uri, None, label);
         let url = WebviewUrl::App(url_str.into());
 
         #[cfg(target_os = "macos")]
@@ -396,11 +397,13 @@ impl WindowManager {
     }
 }
 
-/// Build the workbench HTML URL with optional workspace/folder query params
-/// and the `windowLabel` query parameter.
+/// Build the workbench HTML URL with optional workspace/folder query params,
+/// an optional `remoteAuthority` for remote development, and the `windowLabel`
+/// query parameter.
 fn build_workbench_url(
     folder_uri: Option<&str>,
     workspace_uri: Option<&str>,
+    remote_authority: Option<&str>,
     label: &str,
 ) -> String {
     let mut url = String::from("vs/code/tauri-browser/workbench/workbench-tauri.html");
@@ -416,6 +419,17 @@ fn build_workbench_url(
         has_param = true;
     }
 
+    // Remote authority for remote development (e.g., "ssh-remote+raspi").
+    // This tells the new window's extension host to call _resolveAuthority
+    // and establish the remote connection.
+    if let Some(authority) = remote_authority {
+        let separator = if has_param { '&' } else { '?' };
+        url.push(separator);
+        url.push_str("remoteAuthority=");
+        url.push_str(&encode_uri_component(authority));
+        has_param = true;
+    }
+
     let separator = if has_param { '&' } else { '?' };
     url.push(separator);
     url.push_str("windowLabel=");
@@ -427,14 +441,17 @@ fn build_workbench_url(
 /// Minimal percent-encoding for URI query strings.
 ///
 /// Encodes only the characters that would break URL parsing (space, `#`, `&`,
-/// `=`, `?`). This is intentionally minimal — a full percent-encoder is not
-/// needed because folder/workspace URIs are already well-formed.
+/// `+`, `=`, `?`). This is intentionally minimal — a full percent-encoder is
+/// not needed because folder/workspace URIs are already well-formed.
+/// `+` is encoded because it is interpreted as a space in query strings,
+/// which breaks values like `ssh-remote+raspi`.
 fn encode_uri_component(s: &str) -> String {
     s.chars()
         .map(|c| match c {
             ' ' => "%20".to_string(),
             '#' => "%23".to_string(),
             '&' => "%26".to_string(),
+            '+' => "%2B".to_string(),
             '=' => "%3D".to_string(),
             '?' => "%3F".to_string(),
             _ => c.to_string(),
