@@ -54,7 +54,7 @@ Maintain the current functionality of VSCode while achieving the following:
 |   5C   | [Shared Process Elimination](#phase-5-process-model)         | Abolish Shared Process; services in WebView/Rust              | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/117) |
 |   5D   | [Extension ESM Fix](#phase-5-process-model)                  | Fix ESM module resolution for built-in extensions             | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/103) |
 |   5E   | [Remote-SSH](#phase-5-process-model)                         | SSH remote workspace support via Tauri                        | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/193) |
-|   6    | [Platform Features](#phase-6-platform-features)              | Editor transparency, native menus, system tray                |                          🔄 In Progress                       |
+|   6    | [Platform Features](#phase-6-platform-features)              | Editor transparency, native menus                             |                          🔄 In Progress                       |
 |   7    | [Build & Packaging](#phase-7-build--packaging)               | Installers, code signing, CI/CD                               |                          📋 Planned                           |
 
 ---
@@ -209,7 +209,7 @@ Extension Host via Node.js sidecar + named pipe, Terminal via Rust `portable-pty
 
 ### Phase 6: Platform Features 🔄
 
-Auto-update, native menus, system tray, editor transparency, platform-specific integrations.
+Auto-update, native menus, editor transparency, platform-specific integrations.
 
 | Sub-task               | Description                                                                                                                    | Status |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------ | :----: |
@@ -217,7 +217,6 @@ Auto-update, native menus, system tray, editor transparency, platform-specific i
 | Single-instance        | Process-level locking with CLI arg forwarding to existing instance (PR [#203](https://github.com/j4rviscmd/vscodeee/pull/203)) |   ✅   |
 | Editor transparency    | Native window transparency + CSS theming for see-through editor                                                                | 📋 Planned |
 | Native menus           | Application menu bar via Tauri native menu API                                                                                 | 📋 Planned |
-| System tray            | System tray icon and menu for background operation                                                                             | 📋 Planned |
 
 ### Phase 7: Build & Packaging
 
