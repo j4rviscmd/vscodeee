@@ -55,7 +55,8 @@
       "icons/128x128@2x.png"
     ],
     "macOS": {
-      "bundleName": "VS Codeee"
+      "bundleName": "VS Codeee",
+      "signingIdentity": "-"
     }
   }
 }
