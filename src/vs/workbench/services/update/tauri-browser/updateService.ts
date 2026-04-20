@@ -11,7 +11,7 @@ import { IConfigurationService } from '../../../../platform/configuration/common
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { invoke, createChannel } from '../../../../platform/tauri/common/tauriApi.js';
 
-// ── Types matching the Rust `commands/updater/commands.rs` structs ─────────
+// -- Types matching the Rust `commands/updater/commands.rs` structs ---------
 
 interface UpdateInfo {
 	version: string;
@@ -26,7 +26,7 @@ interface DownloadProgress {
 	totalBytes?: number;
 }
 
-// ── Service ────────────────────────────────────────────────────────────────
+// -- Service ----------------------------------------------------------------
 
 /**
  * Tauri-native implementation of [`IUpdateService`].
@@ -185,7 +185,7 @@ export class TauriUpdateService extends Disposable implements IUpdateService {
 		}
 	}
 
-	// ── IUpdateService methods ──────────────────────────────────────────
+	// -- IUpdateService methods ------------------------------------------
 
 	/**
 	 * Check the configured endpoint for an available update.
@@ -344,7 +344,7 @@ export class TauriUpdateService extends Disposable implements IUpdateService {
 		// Not applicable in Tauri.
 	}
 
-	// ── Helpers ─────────────────────────────────────────────────────────
+	// -- Helpers ---------------------------------------------------------
 
 	/** Read the current `update.mode` configuration value. */
 	private getUpdateMode(): 'none' | 'manual' | 'start' | 'default' {

@@ -225,7 +225,7 @@ export class WindowTitle extends Disposable {
 					? `${workspaceName} - ${this.productService.nameLong}`
 					: this.productService.nameLong;
 				// TODO(Phase 2): extract __TAURI_INTERNALS__ usage into shared tauriInvoke helper
-				(window as any).__TAURI_INTERNALS__?.invoke('plugin:window|set_title', { value: tauriNativeTitle }).catch(() => { /* runtime error */ });
+				(window as unknown as Record<string, { invoke: (cmd: string, args: Record<string, unknown>) => Promise<void> }>).__TAURI_INTERNALS__?.invoke('plugin:window|set_title', { value: tauriNativeTitle }).catch(() => { /* runtime error */ });
 			}
 
 			this.title = title;

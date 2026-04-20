@@ -455,6 +455,10 @@
 			"project": "vscode-workbench"
 		},
 		{
+			"name": "vs/workbench/services/transparency",
+			"project": "vscode-workbench"
+		},
+		{
 			"name": "vs/workbench/services/textMate",
 			"project": "vscode-workbench"
 		},

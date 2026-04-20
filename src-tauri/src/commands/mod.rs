@@ -181,7 +181,7 @@ fn collect_css_files(dir: &Path, root: &Path, result: &mut Vec<String>) {
         let path = entry.path();
         if path.is_dir() {
             collect_css_files(&path, root, result);
-        } else if path.extension().map_or(false, |ext| ext == "css") {
+        } else if path.extension().is_some_and(|ext| ext == "css") {
             if let Ok(rel) = path.strip_prefix(root) {
                 result.push(rel.to_string_lossy().to_string());
             }

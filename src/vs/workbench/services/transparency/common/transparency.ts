@@ -6,7 +6,7 @@
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { Event } from '../../../../base/common/event.js';
 
-// ── Setting IDs ──
+// -- Setting IDs --
 
 export const TRANSPARENCY_SETTING_PREFIX = 'vscodeee.transparency';
 export const TRANSPARENCY_OPACITY_SETTING = 'vscodeee.transparency.opacity';
@@ -17,7 +17,7 @@ export const TRANSPARENCY_BACKGROUND_IMAGE_BLUR_SETTING = 'vscodeee.transparency
 export const TRANSPARENCY_NATIVE_SETTING = 'vscodeee.transparency.nativeTransparency';
 export const TRANSPARENCY_NATIVE_EFFECT_SETTING = 'vscodeee.transparency.nativeEffect';
 
-// ── Enums ──
+// -- Enums --
 
 export const enum NativeEffect {
 	Auto = 'auto',
@@ -27,18 +27,18 @@ export const enum NativeEffect {
 	None = 'none'
 }
 
-// ── Configuration model (Domain) ──
+// -- Configuration model (Domain) --
 
 export interface ITransparencyConfiguration {
-	/** Part background opacity (0–100, 100 = fully opaque) */
+	/** Part background opacity (0-100, 100 = fully opaque) */
 	readonly opacity: number;
-	/** Backdrop-filter blur radius in px (0–50) */
+	/** Backdrop-filter blur radius in px (0-50) */
 	readonly blur: number;
 	/** Background image path (empty = none) */
 	readonly backgroundImage: string;
-	/** Background image opacity (0–100) */
+	/** Background image opacity (0-100) */
 	readonly backgroundImageOpacity: number;
-	/** Background image blur in px (0–50) */
+	/** Background image blur in px (0-50) */
 	readonly backgroundImageBlur: number;
 	/** Enable OS-native window transparency (requires restart) */
 	readonly nativeTransparency: boolean;
@@ -46,7 +46,7 @@ export interface ITransparencyConfiguration {
 	readonly nativeEffect: NativeEffect;
 }
 
-// ── Default configuration ──
+// -- Default configuration --
 
 export const DEFAULT_TRANSPARENCY_CONFIG: ITransparencyConfiguration = {
 	opacity: 100,
@@ -58,7 +58,7 @@ export const DEFAULT_TRANSPARENCY_CONFIG: ITransparencyConfiguration = {
 	nativeEffect: NativeEffect.Auto,
 };
 
-// ── CSS Selectors for transparent parts ──
+// -- CSS Selectors for transparent parts --
 
 /** All workbench part selectors that should be made transparent */
 export const TRANSPARENT_PART_SELECTORS = [
@@ -72,7 +72,7 @@ export const TRANSPARENT_PART_SELECTORS = [
 	'.monaco-workbench .part.auxiliarybar',
 ] as const;
 
-// ── Service interface ──
+// -- Service interface --
 
 export const ITransparencyService = createDecorator<ITransparencyService>('transparencyService');
 

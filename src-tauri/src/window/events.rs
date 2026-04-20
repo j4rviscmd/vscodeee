@@ -193,6 +193,8 @@ pub mod event_names {
     /// Unified fullscreen change event with `{ window_id, fullscreen }` payload.
     pub const WINDOW_FULLSCREEN: &str = "vscodeee:window:fullscreen";
     /// Emitted when a window is about to close (close requested).
+    // TODO(Phase 3): Remove allow(dead_code) when this is wired up
+    #[allow(dead_code)]
     pub const WINDOW_CLOSE: &str = "vscodeee:window:close";
     /// Emitted when a new window has been opened and registered.
     pub const WINDOW_OPENED: &str = "vscodeee:window:opened";
@@ -326,8 +328,8 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
             let handle_c = handle.clone();
             tauri::async_runtime::spawn(async move {
                 let old_info = wm.get_by_label(&label_c).await;
-                let was_maximized = old_info.as_ref().map_or(false, |i| i.is_maximized);
-                let was_fullscreen = old_info.as_ref().map_or(false, |i| i.is_fullscreen);
+                let was_maximized = old_info.as_ref().is_some_and(|i| i.is_maximized);
+                let was_fullscreen = old_info.as_ref().is_some_and(|i| i.is_fullscreen);
                 wm.set_maximized(&label_c, is_maximized).await;
                 wm.set_fullscreen(&label_c, is_fullscreen).await;
 

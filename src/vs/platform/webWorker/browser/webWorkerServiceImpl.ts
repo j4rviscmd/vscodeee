@@ -107,7 +107,7 @@ function getWorkerBootstrapUrl(label: string, workerScriptUrl: string, workerLoa
 		// platform.isTauri is correctly detected. This enables
 		// FileAccess.uriToBrowserUri() to convert file:// URIs to
 		// vscode-file:// which is required by Tauri's CSP.
-		typeof (globalThis as any).__TAURI_INTERNALS__ !== 'undefined'
+		typeof (globalThis as Record<string, unknown>).__TAURI_INTERNALS__ !== 'undefined'
 			? `globalThis.__TAURI_INTERNALS__ = globalThis.__TAURI_INTERNALS__ || {};`
 			: '',
 		`const ttPolicy = globalThis.trustedTypes?.createPolicy('defaultWorkerFactory', { createScriptURL: value => value });`,

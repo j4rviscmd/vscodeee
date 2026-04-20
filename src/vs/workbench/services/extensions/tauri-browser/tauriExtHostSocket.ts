@@ -89,7 +89,7 @@ export class TauriExtHostSocket implements ISocket {
 		return Promise.resolve();
 	}
 
-	public traceSocketEvent(type: SocketDiagnosticsEventType, data?: VSBuffer | Uint8Array | ArrayBuffer | ArrayBufferView | any): void {
+	public traceSocketEvent(type: SocketDiagnosticsEventType, data?: VSBuffer | Uint8Array | ArrayBuffer | ArrayBufferView | unknown): void {
 		SocketDiagnostics.traceSocketEvent(this._socket, this.debugLabel, type, data);
 	}
 }

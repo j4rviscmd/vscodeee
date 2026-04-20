@@ -5,6 +5,8 @@
 
 import { URI } from '../../../../base/common/uri.js';
 import { isLinux } from '../../../../base/common/platform.js';
+import { CancellationToken } from '../../../../base/common/cancellation.js';
+import { newWriteableStream, ReadableStreamEvents } from '../../../../base/common/stream.js';
 import {
 	FileSystemProviderCapabilities,
 	FileSystemProviderErrorCode,
@@ -13,10 +15,18 @@ import {
 	IFileDeleteOptions,
 	IFileOverwriteOptions,
 	IFileSystemProviderWithFileReadWriteCapability,
+	IFileSystemProviderWithOpenReadWriteCloseCapability,
+	IFileSystemProviderWithFileReadStreamCapability,
 	IFileSystemProviderWithFileFolderCopyCapability,
+	IFileSystemProviderWithFileAtomicReadCapability,
+	IFileSystemProviderWithFileAtomicWriteCapability,
+	IFileSystemProviderWithFileAtomicDeleteCapability,
 	IFileWriteOptions,
+	IFileReadStreamOptions,
+	IFileOpenOptions,
 	IStat,
 	IFileChange,
+	isFileOpenForWriteOptions,
 } from '../../../../platform/files/common/files.js';
 import { AbstractDiskFileSystemProvider } from '../../../../platform/files/common/diskFileSystemProvider.js';
 import { AbstractNonRecursiveWatcherClient, AbstractUniversalWatcherClient, ILogMessage } from '../../../../platform/files/common/watcher.js';
@@ -39,14 +49,34 @@ interface RustDirEntry {
 }
 
 /**
+ * Tracks an open file handle for the open/read/write/close API.
+ *
+ * For Phase 2A the entire file content is buffered in-memory on `open()` and
+ * flushed back on `close()` when opened for writing. This is sufficient for
+ * settings, profiles, and other small user-data files. A streaming approach
+ * via chunked Rust commands should be added in a future phase.
+ */
+interface OpenFileHandle {
+	readonly resource: URI;
+	readonly isWrite: boolean;
+	readonly isAppend: boolean;
+	data: Uint8Array;
+	pos: number;
+	dirty: boolean;
+}
+
+/**
  * File system provider that delegates to Rust Tauri commands for real disk I/O.
  *
  * Extends `AbstractDiskFileSystemProvider` with `forceUniversal: true` to route
  * all watch requests through a single universal watcher backed by the Rust
  * `notify` crate.
  *
- * Implements `IFileSystemProviderWithFileReadWriteCapability` (whole-file read/write)
- * and `IFileSystemProviderWithFileFolderCopyCapability` (native copy).
+ * Implements `IFileSystemProviderWithFileReadWriteCapability` (whole-file read/write),
+ * `IFileSystemProviderWithOpenReadWriteCloseCapability` (fd-based read/write),
+ * `IFileSystemProviderWithFileReadStreamCapability` (streaming read),
+ * `IFileSystemProviderWithFileFolderCopyCapability` (native copy),
+ * and atomic read/write/delete capabilities.
  *
  * File content is transferred as base64 strings over `invoke()`. This is
  * acceptable for Phase 2A (settings, source files). For large binary files,
@@ -54,10 +84,20 @@ interface RustDirEntry {
  */
 export class TauriDiskFileSystemProvider extends AbstractDiskFileSystemProvider implements
 	IFileSystemProviderWithFileReadWriteCapability,
-	IFileSystemProviderWithFileFolderCopyCapability {
+	IFileSystemProviderWithOpenReadWriteCloseCapability,
+	IFileSystemProviderWithFileReadStreamCapability,
+	IFileSystemProviderWithFileFolderCopyCapability,
+	IFileSystemProviderWithFileAtomicReadCapability,
+	IFileSystemProviderWithFileAtomicWriteCapability,
+	IFileSystemProviderWithFileAtomicDeleteCapability {
 
 	private readonly _onDidChangeCapabilities = this._register(new Emitter<void>());
 	readonly onDidChangeCapabilities: Event<void> = this._onDidChangeCapabilities.event;
+
+	// TODO(Phase 3): Replace in-memory fd map with Rust-side fd management for
+	// better large-file support and reduced IPC overhead.
+	private nextFd = 1;
+	private readonly openFiles = new Map<number, OpenFileHandle>();
 
 	constructor(logService: ILogService) {
 		super(logService, { watcher: { forceUniversal: true } });
@@ -66,9 +106,14 @@ export class TauriDiskFileSystemProvider extends AbstractDiskFileSystemProvider 
 	get capabilities(): FileSystemProviderCapabilities {
 		let caps =
 			FileSystemProviderCapabilities.FileReadWrite |
+			FileSystemProviderCapabilities.FileOpenReadWriteClose |
+			FileSystemProviderCapabilities.FileReadStream |
 			FileSystemProviderCapabilities.FileFolderCopy |
 			FileSystemProviderCapabilities.Trash |
-			FileSystemProviderCapabilities.FileAppend;
+			FileSystemProviderCapabilities.FileAppend |
+			FileSystemProviderCapabilities.FileAtomicRead |
+			FileSystemProviderCapabilities.FileAtomicWrite |
+			FileSystemProviderCapabilities.FileAtomicDelete;
 		if (isLinux) {
 			caps |= FileSystemProviderCapabilities.PathCaseSensitive;
 		}
@@ -133,6 +178,183 @@ export class TauriDiskFileSystemProvider extends AbstractDiskFileSystemProvider 
 			overwrite: opts.overwrite,
 			append: opts.append ?? false,
 		});
+	}
+
+	// --- open / read / write / close (fd-based) ---
+
+	/**
+	 * Opens a file and returns a file descriptor (fd). The entire file content is
+	 * loaded into memory. For write mode, changes are flushed on `close()`.
+	 */
+	async open(resource: URI, opts: IFileOpenOptions): Promise<number> {
+		const isWrite = isFileOpenForWriteOptions(opts);
+		const isAppend = isWrite && (opts.append ?? false);
+
+		let data: Uint8Array;
+		if (isWrite && !isAppend) {
+			// Write (truncate): start with empty buffer
+			data = new Uint8Array(0);
+		} else {
+			try {
+				data = await this.readFile(resource);
+			} catch {
+				if (isWrite) {
+					// File does not exist yet; create with empty buffer
+					data = new Uint8Array(0);
+				} else {
+					throw createFileSystemProviderError(
+						`File not found: ${resource.fsPath}`,
+						FileSystemProviderErrorCode.FileNotFound
+					);
+				}
+			}
+		}
+
+		const fd = this.nextFd++;
+		this.openFiles.set(fd, {
+			resource,
+			isWrite,
+			isAppend,
+			data,
+			pos: isAppend ? data.length : 0,
+			dirty: false,
+		});
+		return fd;
+	}
+
+	/**
+	 * Reads bytes from an open file descriptor into the provided buffer.
+	 */
+	async read(fd: number, pos: number, data: Uint8Array, offset: number, length: number): Promise<number> {
+		const handle = this.openFiles.get(fd);
+		if (!handle) {
+			throw createFileSystemProviderError(
+				`Invalid file descriptor: ${fd}`,
+				FileSystemProviderErrorCode.Unavailable
+			);
+		}
+
+		const available = handle.data.length - pos;
+		if (available <= 0) {
+			return 0;
+		}
+
+		const bytesToRead = Math.min(length, available);
+		data.set(handle.data.subarray(pos, pos + bytesToRead), offset);
+		return bytesToRead;
+	}
+
+	/**
+	 * Writes bytes from the provided buffer into the open file descriptor.
+	 */
+	async write(fd: number, pos: number, data: Uint8Array, offset: number, length: number): Promise<number> {
+		const handle = this.openFiles.get(fd);
+		if (!handle) {
+			throw createFileSystemProviderError(
+				`Invalid file descriptor: ${fd}`,
+				FileSystemProviderErrorCode.Unavailable
+			);
+		}
+
+		const chunk = data.subarray(offset, offset + length);
+
+		if (handle.isAppend) {
+			// Append: always add to end
+			const newData = new Uint8Array(handle.data.length + chunk.length);
+			newData.set(handle.data);
+			newData.set(chunk, handle.data.length);
+			handle.data = newData;
+		} else {
+			// Random write: ensure buffer is large enough
+			const requiredLength = pos + chunk.length;
+			if (requiredLength > handle.data.length) {
+				const newData = new Uint8Array(requiredLength);
+				newData.set(handle.data);
+				handle.data = newData;
+			}
+			handle.data.set(chunk, pos);
+		}
+
+		handle.dirty = true;
+		return chunk.length;
+	}
+
+	/**
+	 * Closes the file descriptor. If it was opened for writing and has pending
+	 * changes, the buffer is flushed to disk.
+	 */
+	async close(fd: number): Promise<void> {
+		const handle = this.openFiles.get(fd);
+		if (!handle) {
+			throw createFileSystemProviderError(
+				`Invalid file descriptor: ${fd}`,
+				FileSystemProviderErrorCode.Unavailable
+			);
+		}
+
+		try {
+			if (handle.isWrite && handle.dirty) {
+				await this.writeFile(handle.resource, handle.data, {
+					create: true,
+					overwrite: true,
+					unlock: false,
+					atomic: false,
+				});
+			}
+		} finally {
+			this.openFiles.delete(fd);
+		}
+	}
+
+	// --- readFileStream ---
+
+	/**
+	 * Creates a readable stream from the file content. Reads the entire file
+	 * and pushes it as a single chunk (or sliced by position/length options).
+	 *
+	 * TODO(Phase 3): Implement Rust-side chunked streaming for large files.
+	 */
+	readFileStream(resource: URI, opts: IFileReadStreamOptions, token: CancellationToken): ReadableStreamEvents<Uint8Array> {
+		const stream = newWriteableStream<Uint8Array>(data => {
+			// Reducer: concatenate Uint8Array chunks
+			const totalLength = data.reduce((sum, chunk) => sum + chunk.length, 0);
+			const result = new Uint8Array(totalLength);
+			let offset = 0;
+			for (const chunk of data) {
+				result.set(chunk, offset);
+				offset += chunk.length;
+			}
+			return result;
+		});
+
+		// Read asynchronously and push to stream
+		(async () => {
+			try {
+				if (token.isCancellationRequested) {
+					stream.end();
+					return;
+				}
+
+				const data = await this.readFile(resource);
+				if (token.isCancellationRequested) {
+					stream.end();
+					return;
+				}
+
+				// Apply position and length options
+				const start = opts.position ?? 0;
+				const end = opts.length !== undefined ? start + opts.length : data.length;
+				const slice = data.subarray(start, Math.min(end, data.length));
+
+				stream.write(slice);
+				stream.end();
+			} catch (err) {
+				stream.error(this.toFileSystemProviderError(err));
+				stream.end();
+			}
+		})();
+
+		return stream;
 	}
 
 	// --- mkdir ---

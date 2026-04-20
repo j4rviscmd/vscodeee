@@ -46,6 +46,7 @@
 
 		const style = document.createElement('style');
 		style.className = 'initialShellColors';
+		// eslint-disable-next-line no-restricted-syntax
 		document.head.appendChild(style);
 		style.textContent = `
 			body {
@@ -56,6 +57,7 @@
 			}
 		`;
 
+		// eslint-disable-next-line no-restricted-syntax
 		document.body.className = `monaco-workbench ${baseTheme}`;
 
 		performance.mark('code/didShowPartsSplash');
@@ -87,7 +89,7 @@
 	 * @throws {Error} If the Tauri API is not available (e.g., running outside a Tauri WebView).
 	 */
 	function getTauri(): ITauriGlobal {
-		const tauri = (window as any).__TAURI__;
+		const tauri = (globalThis as Record<string, unknown>).__TAURI__;
 		if (!tauri) {
 			throw new Error('Tauri API not available. Ensure withGlobalTauri is true.');
 		}
@@ -141,7 +143,7 @@
  * with host-level settings (home/tmp directories) to provide the
  * workbench with all environment information it needs at startup.
  */
-const tauriConfig = {
+	const tauriConfig = {
 		windowId: windowConfig.windowId,
 		logLevel: windowConfig.logLevel,
 		resourceDir: windowConfig.resourceDir,
@@ -156,8 +158,9 @@ const tauriConfig = {
 
 	//#region NLS — must be set before importing any workbench modules
 
-	(globalThis as any)._VSCODE_NLS_MESSAGES = [];
-	(globalThis as any)._VSCODE_NLS_LANGUAGE = 'en';
+	(globalThis as Record<string, unknown>)._VSCODE_NLS_MESSAGES = [];
+	(globalThis as Record<string, unknown>)._VSCODE_NLS_LANGUAGE = 'en';
+	// eslint-disable-next-line no-restricted-syntax
 	document.documentElement.setAttribute('lang', 'en');
 
 	//#endregion
@@ -178,7 +181,7 @@ const tauriConfig = {
 	// Module IDs like `vs/../../node_modules/vscode-oniguruma/release/main.js`
 	// resolve correctly relative to this path.
 	const baseUrl = `${window.location.origin}/`;
-	(globalThis as any)._VSCODE_FILE_ROOT = windowConfig.frontendDist;
+	(globalThis as Record<string, unknown>)._VSCODE_FILE_ROOT = windowConfig.frontendDist;
 
 	//#endregion
 
@@ -213,11 +216,12 @@ const tauriConfig = {
 		}
 
 		// Install CSS loader function
-		(globalThis as any)._VSCODE_CSS_LOAD = function (url: string): void {
+		(globalThis as Record<string, unknown>)._VSCODE_CSS_LOAD = function (url: string): void {
 			const link = document.createElement('link');
 			link.setAttribute('rel', 'stylesheet');
 			link.setAttribute('type', 'text/css');
 			link.setAttribute('href', url);
+			// eslint-disable-next-line no-restricted-syntax
 			document.head.appendChild(link);
 		};
 
@@ -235,6 +239,7 @@ const tauriConfig = {
 		const importMapScript = document.createElement('script');
 		importMapScript.type = 'importmap';
 		importMapScript.textContent = importMapSrc;
+		// eslint-disable-next-line no-restricted-syntax
 		document.head.appendChild(importMapScript);
 
 		console.log(`[Tauri Bootstrap] CSS import map installed with ${cssModules.length} modules`);
@@ -281,8 +286,8 @@ const tauriConfig = {
 	// Without this, the fallback path provides a hardcoded default without extensionsGallery.
 	try {
 		const productPackage = await tauri.core.invoke<{ product: object; package: object }>('get_product_json');
-		(globalThis as any)._VSCODE_PRODUCT_JSON = productPackage.product;
-		(globalThis as any)._VSCODE_PACKAGE_JSON = productPackage.package;
+		(globalThis as Record<string, unknown>)._VSCODE_PRODUCT_JSON = productPackage.product;
+		(globalThis as Record<string, unknown>)._VSCODE_PACKAGE_JSON = productPackage.package;
 	} catch (err) {
 		console.warn('[Tauri Bootstrap] Failed to load product.json, using defaults:', err);
 	}
@@ -314,10 +319,12 @@ const tauriConfig = {
 		console.error('[Tauri Bootstrap] Failed to load workbench:', error);
 
 		// Show error in the body so the user sees something
+		// eslint-disable-next-line no-restricted-syntax
 		document.body.textContent = '';
 		const errorEl = document.createElement('div');
 		errorEl.style.cssText = 'padding: 20px; font-family: monospace; white-space: pre-wrap;';
 		errorEl.textContent = `Failed to start workbench:\n\n${error instanceof Error ? error.stack || error.message : String(error)}`;
+		// eslint-disable-next-line no-restricted-syntax
 		document.body.appendChild(errorEl);
 
 		// Show the window even on error so the user can see the error message

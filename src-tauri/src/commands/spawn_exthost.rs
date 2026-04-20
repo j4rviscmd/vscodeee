@@ -95,6 +95,8 @@ impl ExtHostState {
     ///
     /// Same logic as the `kill_all_exthosts` command, but callable from
     /// non-command contexts (e.g., shutdown coordinator).
+    // TODO(Phase 3): Remove allow(dead_code) when this is wired up
+    #[allow(dead_code)]
     #[cfg(unix)]
     pub async fn shutdown_all(&self) {
         let mut instances = self.instances.lock().await;
@@ -125,8 +127,8 @@ impl ExtHostState {
     pub fn sync_kill_all(&self) {
         let pids: Vec<u32> = match self.instances.try_lock() {
             Ok(instances) => instances
-                .iter()
-                .filter_map(|(_, inst)| inst.sidecar.child.id())
+                .values()
+                .filter_map(|inst| inst.sidecar.child.id())
                 .collect(),
             Err(_) => {
                 log::warn!(

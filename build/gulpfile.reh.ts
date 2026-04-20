@@ -26,7 +26,7 @@ import File from 'vinyl';
 import * as fs from 'fs';
 import glob from 'glob';
 import { promisify } from 'util';
-import rceditCallback from 'rcedit';
+import { rcedit } from 'rcedit';
 import { compileBuildWithManglingTask } from './gulpfile.compile.ts';
 import { cleanExtensionsBuildTask, compileNonNativeExtensionsBuildTask, compileNativeExtensionsBuildTask, compileExtensionMediaBuildTask } from './gulpfile.extensions.ts';
 import * as cp from 'child_process';
@@ -35,9 +35,6 @@ import buildfile from './buildfile.ts';
 import { fetchUrls, fetchGithub } from './lib/fetch.ts';
 import { getCopilotExcludeFilter, copyCopilotNativeDeps } from './lib/copilot.ts';
 import jsonEditor from 'gulp-json-editor';
-
-
-const rcedit = promisify(rceditCallback);
 
 const REPO_ROOT = path.dirname(import.meta.dirname);
 const commit = getVersion(REPO_ROOT);
@@ -311,7 +308,7 @@ function packageTask(_type: string, platform: string, arch: string, sourceFolder
 		const nodePath = `.build/node/v${nodeVersion}/${platform}-${arch}`;
 		const node = gulp.src(`${nodePath}/**`, { base: nodePath, dot: true });
 
-		let web: NodeJS.ReadWriteStream[] = [];
+		const web: NodeJS.ReadWriteStream[] = [];
 
 		const all = es.merge(
 			packageJsonStream,

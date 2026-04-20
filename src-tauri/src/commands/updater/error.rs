@@ -28,6 +28,8 @@ pub enum UpdateError {
     DownloadFailed(String),
 
     #[error("{0}")]
+    // TODO(Phase 3): Remove allow(dead_code) when this is wired up
+    #[allow(dead_code)]
     Other(String),
 }
 

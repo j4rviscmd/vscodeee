@@ -93,14 +93,11 @@ impl Drop for PtyInstance {
                 // Give the process a moment, then SIGKILL if still alive
                 std::thread::sleep(std::time::Duration::from_millis(100));
                 if let Ok(mut child) = self.child.lock() {
-                    match child.try_wait() {
-                        Ok(None) => {
-                            // Still running — force kill
-                            unsafe {
-                                libc::kill(self.pid as i32, libc::SIGKILL);
-                            }
+                    if let Ok(None) = child.try_wait() {
+                        // Still running — force kill
+                        unsafe {
+                            libc::kill(self.pid as i32, libc::SIGKILL);
                         }
-                        _ => {}
                     }
                 }
             }
@@ -177,7 +174,7 @@ impl PtyInstance {
             .map_err(|e| format!("Failed to spawn shell '{}': {e}", config.shell))?;
 
         // Get the child PID before dropping the slave
-        let pid = child.process_id().map(|p| p as u32).unwrap_or(0);
+        let pid = child.process_id().unwrap_or(0);
 
         // Drop the slave — we only interact through the master
         drop(pair.slave);

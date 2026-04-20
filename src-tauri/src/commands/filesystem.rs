@@ -46,6 +46,8 @@ pub struct FsDirEntry {
 }
 
 /// Options for write operations.
+// TODO(Phase 3): Remove allow(dead_code) when this is wired up
+#[allow(dead_code)]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FsWriteOptions {
@@ -452,6 +454,8 @@ pub fn fs_show_item_in_folder(path: String) -> Result<(), String> {
 pub struct MessageBoxOptions {
     pub message: String,
     #[serde(default)]
+    // TODO(Phase 3): Remove allow(dead_code) when this is wired up
+    #[allow(dead_code)]
     pub r#type: Option<String>,
     #[serde(default)]
     pub buttons: Option<Vec<String>>,
@@ -593,6 +597,8 @@ pub struct SaveDialogOptions {
     #[serde(default)]
     pub default_path: Option<String>,
     #[serde(default)]
+    // TODO(Phase 3): Remove allow(dead_code) when this is wired up
+    #[allow(dead_code)]
     pub button_label: Option<String>,
     #[serde(default)]
     pub filters: Option<Vec<FileFilterOption>>,
@@ -669,6 +675,8 @@ pub struct OpenDialogOptions {
     #[serde(default)]
     pub default_path: Option<String>,
     #[serde(default)]
+    // TODO(Phase 3): Remove allow(dead_code) when this is wired up
+    #[allow(dead_code)]
     pub button_label: Option<String>,
     #[serde(default)]
     pub filters: Option<Vec<FileFilterOption>>,

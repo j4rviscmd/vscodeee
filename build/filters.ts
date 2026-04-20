@@ -64,6 +64,8 @@ export const unicodeFilter = Object.freeze<string[]>([
 	'!src/vs/base/browser/dompurify/**',
 	'!src/vs/workbench/services/keybinding/browser/keyboardLayouts/**',
 	'!src/vs/workbench/contrib/terminal/common/scripts/psreadline/**',
+	// Tauri workbench HTML uses intentional unicode in UI elements and debug logs
+	'!src/vs/code/tauri-browser/workbench/index.html',
 ]);
 
 export const indentationFilter = Object.freeze<string[]>([
@@ -75,6 +77,7 @@ export const indentationFilter = Object.freeze<string[]>([
 	'!**/LICENSE.{txt,rtf}',
 	'!**/LICENSE',
 	'!**/*.mp3',
+	'!product.json',
 	'!src/vs/base/browser/dompurify/*',
 	'!src/vs/base/common/marked/marked.js',
 	'!src/vs/base/common/semver/semver.js',
@@ -105,6 +108,12 @@ export const indentationFilter = Object.freeze<string[]>([
 	'!build/checker/**',
 	'!src/vs/workbench/contrib/terminal/common/scripts/psreadline/**',
 
+	// except fork-specific sub-projects (use their own tsconfig with space indentation)
+	'!src/vs/code/tauri-browser/workbench/pty-poc/**',
+	'!src/vs/code/tauri-browser/workbench/console-interceptor/tsconfig.json',
+	// contains embedded python snippet with space indentation
+	'!src/vs/workbench/contrib/webview/browser/pre/index.html',
+
 	// except multiple specific files
 	'!**/package.json',
 	'!**/package-lock.json',
@@ -127,6 +136,7 @@ export const indentationFilter = Object.freeze<string[]>([
 	'!**/*.{svg,exe,png,bmp,jpg,scpt,bat,cmd,cur,ttf,woff,eot,md,ps1,psm1,template,yaml,yml,d.ts.recipe,ico,icns,plist,opus,admx,adml,wasm}',
 	'!build/{lib,download}/**/*.js',
 	'!build/**/*.sh',
+	'!scripts/**/*.sh',
 	'!build/npm/gyp/custom-headers/*.patch',
 	'!**/Dockerfile',
 	'!**/Dockerfile.*',

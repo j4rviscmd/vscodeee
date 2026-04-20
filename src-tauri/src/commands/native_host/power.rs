@@ -10,6 +10,8 @@ use serde::Serialize;
 
 /// System idle state returned to TypeScript.
 /// Matches the `SystemIdleState` type in VS Code.
+// TODO(Phase 3): Remove allow(dead_code) when all variants are wired up
+#[allow(dead_code)]
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SystemIdleState {
@@ -21,6 +23,8 @@ pub enum SystemIdleState {
 
 /// Thermal state returned to TypeScript.
 /// Matches the `ThermalState` type in VS Code.
+// TODO(Phase 3): Remove allow(dead_code) when all variants are wired up
+#[allow(dead_code)]
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ThermalState {

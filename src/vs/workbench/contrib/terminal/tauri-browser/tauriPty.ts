@@ -24,8 +24,7 @@
 
 import { Emitter } from '../../../../base/common/event.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { FlowControlConstants, ProcessPropertyType, type IProcessDataEvent, type IProcessProperty, type IProcessPropertyMap, type IProcessReadyEvent, type ITerminalChildProcess, type ITerminalLaunchError, type ITerminalLaunchResult } from '../../../../platform/terminal/common/terminal.js';
-import { ITerminalLogService } from '../../../../platform/terminal/common/terminal.js';
+import { FlowControlConstants, ProcessPropertyType, ITerminalLogService, type IProcessDataEvent, type IProcessProperty, type IProcessPropertyMap, type IProcessReadyEvent, type ITerminalChildProcess, type ITerminalLaunchError, type ITerminalLaunchResult } from '../../../../platform/terminal/common/terminal.js';
 
 import { tauriInvoke } from './tauriIpc.js';
 
@@ -52,7 +51,7 @@ function tauriListen(event: string, handler: (payload: unknown) => void): Promis
 		const eventId = w.__TAURI_INTERNALS__.invoke('plugin:event|listen', {
 			event,
 			target: { kind: 'Any' },
-			handler: (window as unknown as { __TAURI_INTERNALS__: { transformCallback: (cb: (event: { payload: unknown }) => void) => number } }).__TAURI_INTERNALS__.transformCallback(
+			handler: (globalThis as unknown as { __TAURI_INTERNALS__: { transformCallback: (cb: (event: { payload: unknown }) => void) => number } }).__TAURI_INTERNALS__.transformCallback(
 				(ev: { payload: unknown }) => handler(ev.payload)
 			),
 		});

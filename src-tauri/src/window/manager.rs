@@ -29,6 +29,12 @@ pub struct WindowManager {
     last_active: RwLock<Option<WindowId>>,
 }
 
+impl Default for WindowManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WindowManager {
     /// Create a new, empty `WindowManager` with the ID counter starting at 1.
     pub fn new() -> Self {
@@ -123,7 +129,7 @@ impl WindowManager {
 
         let builder = chrome.apply_to_builder(builder);
 
-        let window = builder
+        let _window = builder
             .build()
             .map_err(|e| format!("Failed to create window: {e}"))?;
 
@@ -132,7 +138,7 @@ impl WindowManager {
         // post-creation hooks.
         #[cfg(target_os = "macos")]
         {
-            let _ = window.set_decorations(true);
+            let _ = _window.set_decorations(true);
         }
 
         // Register in state
@@ -361,14 +367,14 @@ impl WindowManager {
 
         let builder = chrome.apply_to_builder(builder);
 
-        let window = builder
+        let _window = builder
             .build()
             .map_err(|e| format!("Failed to create restored window '{label}': {e}"))?;
 
         // Ensure decorations are applied at runtime (same as open_window).
         #[cfg(target_os = "macos")]
         {
-            let _ = window.set_decorations(true);
+            let _ = _window.set_decorations(true);
         }
 
         let effective_uri = folder_uri

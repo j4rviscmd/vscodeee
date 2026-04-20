@@ -17,6 +17,8 @@ use std::sync::Mutex;
 use tauri::Emitter;
 
 /// File change type matching VS Code's `FileChangeType` enum.
+// TODO(Phase 3): Remove allow(dead_code) when this is wired up
+#[allow(dead_code)]
 #[derive(Serialize, Clone, Debug)]
 pub enum FileChangeType {
     Updated = 0,
@@ -57,6 +59,8 @@ struct WatcherHandle {
     /// When `WatcherHandle` is dropped, the sender is dropped, causing the
     /// batching thread's `rx.recv()` to return `Err(Disconnected)` and exit.
     _event_tx: std::sync::mpsc::Sender<NotifyEvent>,
+    // TODO(Phase 3): Remove allow(dead_code) when this is wired up
+    #[allow(dead_code)]
     correlation_id: Option<i32>,
 }
 
@@ -180,13 +184,7 @@ pub fn fs_watch_start(
     // Spawn a thread that batches events every 100ms
     let cid = correlation_id;
     std::thread::spawn(move || {
-        loop {
-            // Wait for the first event
-            let first = match rx.recv() {
-                Ok(e) => e,
-                Err(_) => break, // channel closed
-            };
-
+        while let Ok(first) = rx.recv() {
             // Collect more events for 100ms
             let mut events = vec![first];
             let deadline = std::time::Instant::now() + std::time::Duration::from_millis(100);

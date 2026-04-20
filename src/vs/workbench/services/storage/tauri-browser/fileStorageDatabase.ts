@@ -104,7 +104,7 @@ export class TauriFileStorageDatabase extends Disposable implements IStorageData
 			for (const key of request.delete) {
 				if (cache.delete(key)) {
 					hasChanges = true;
-					}
+				}
 			}
 		}
 

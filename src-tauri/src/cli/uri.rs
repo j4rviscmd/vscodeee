@@ -22,9 +22,9 @@ pub fn path_to_file_uri(path: &str, cwd: &str) -> Option<String> {
 
     let resolved = if path == "~" {
         dirs::home_dir()?
-    } else if path.starts_with("~/") {
+    } else if let Some(stripped) = path.strip_prefix("~/") {
         let home = dirs::home_dir()?;
-        home.join(&path[2..])
+        home.join(stripped)
     } else if Path::new(path).is_absolute() {
         Path::new(path).to_path_buf()
     } else {

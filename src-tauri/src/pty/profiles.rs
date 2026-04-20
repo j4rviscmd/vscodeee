@@ -59,18 +59,19 @@ pub fn detect_available_shells() -> Vec<DetectedShell> {
     }
 
     // Ensure the default shell is always present even if not in candidate list
-    if !default_shell.is_empty() && !detected.iter().any(|s| s.path == default_shell) {
-        if is_executable(&default_shell) {
-            let basename = Path::new(&default_shell)
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| default_shell.clone());
-            detected.push(DetectedShell {
-                profile_name: capitalize(&basename),
-                path: default_shell.clone(),
-                is_default: true,
-            });
-        }
+    if !default_shell.is_empty()
+        && !detected.iter().any(|s| s.path == default_shell)
+        && is_executable(&default_shell)
+    {
+        let basename = Path::new(&default_shell)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| default_shell.clone());
+        detected.push(DetectedShell {
+            profile_name: capitalize(&basename),
+            path: default_shell.clone(),
+            is_default: true,
+        });
     }
 
     // Sort: default first, then alphabetically

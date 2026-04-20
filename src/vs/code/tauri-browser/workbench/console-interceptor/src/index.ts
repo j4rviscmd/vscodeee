@@ -146,4 +146,5 @@ export function installConsoleInterceptor(
 }
 
 // Expose to global scope for inline <script> usage
+// eslint-disable-next-line no-restricted-globals
 (window as unknown as Record<string, unknown>).installConsoleInterceptor = installConsoleInterceptor;

@@ -43,12 +43,9 @@ pub struct WsRelayHandle {
 pub async fn start_ws_relay(unix_stream: UnixStream) -> Result<WsRelayHandle, ExtHostError> {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
-        .map_err(|e| ExtHostError::Io(e))?;
+        .map_err(ExtHostError::Io)?;
 
-    let port = listener
-        .local_addr()
-        .map_err(|e| ExtHostError::Io(e))?
-        .port();
+    let port = listener.local_addr().map_err(ExtHostError::Io)?.port();
 
     log::info!(
         target: "vscodeee::exthost::ws_relay",
@@ -103,7 +100,7 @@ async fn relay_loop(
             match msg {
                 Ok(tokio_tungstenite::tungstenite::Message::Binary(data)) => {
                     count += 1;
-                    if count <= 20 || count % 100 == 0 {
+                    if count <= 20 || count.is_multiple_of(100) {
                         log::debug!(
                             target: "vscodeee::exthost::ws_relay",
                             "WS→pipe #{count}: {len} bytes, first4={first4:?}",
@@ -142,7 +139,7 @@ async fn relay_loop(
                 }
                 Ok(n) => {
                     count += 1;
-                    if count <= 20 || count % 100 == 0 {
+                    if count <= 20 || count.is_multiple_of(100) {
                         log::debug!(
                             target: "vscodeee::exthost::ws_relay",
                             "pipe→WS #{count}: {n} bytes, first4={first4:?}",

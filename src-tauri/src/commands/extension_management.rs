@@ -289,7 +289,7 @@ pub fn ext_extract_vsix(vsix_path: String, target_dir: String) -> Result<Extract
                 None => continue,
             };
             let _ = fs::create_dir_all(parent);
-            if let Some(resolved_parent) = parent.canonicalize().ok() {
+            if let Ok(resolved_parent) = parent.canonicalize() {
                 if !resolved_parent.starts_with(&canonical_ext_dir) {
                     return Err(format!(
                         "Zip-slip detected: entry {:?} escapes target directory",
@@ -398,7 +398,7 @@ pub fn ext_delete_extension(extension_path: String, extensions_base: String) -> 
     // or fall back to allowing deletion from the system temp directory.
     let is_within_base = validate_path_within(base_path, ext_path).is_ok();
     let is_temp = (ext_path.is_absolute() && ext_path.starts_with("/tmp/"))
-        || ext_path.starts_with(&std::env::temp_dir());
+        || ext_path.starts_with(std::env::temp_dir());
 
     if !is_within_base && !is_temp {
         return Err(format!(

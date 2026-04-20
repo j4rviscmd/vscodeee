@@ -35,6 +35,7 @@ import { AuthInfo, Credentials } from '../../request/common/request.js';
 import { IPartsSplash } from '../../theme/common/themeService.js';
 import { IColorScheme, IOpenedAuxiliaryWindow, IOpenedMainWindow, IOpenEmptyWindowOptions, IOpenWindowOptions, IPoint, IRectangle, IWindowOpenable } from '../../window/common/window.js';
 import { invoke, listen } from '../../tauri/common/tauriApi.js';
+import { mainWindow } from '../../../base/browser/window.js';
 
 export class TauriNativeHostService extends Disposable implements INativeHostService {
 
@@ -195,8 +196,8 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 	 * system theme changes (light/dark, high contrast).
 	 */
 	private _wireColorSchemeEvents(): void {
-		const darkQuery = window.matchMedia?.('(prefers-color-scheme: dark)');
-		const hcQuery = window.matchMedia?.('(forced-colors: active)');
+		const darkQuery = mainWindow.matchMedia?.('(prefers-color-scheme: dark)');
+		const hcQuery = mainWindow.matchMedia?.('(forced-colors: active)');
 
 		const fireChange = () => {
 			const dark = darkQuery?.matches ?? true;
@@ -285,12 +286,12 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 			const options = arg2 as IOpenWindowOptions | undefined;
 			for (const item of toOpen) {
 				let folderUri: string | undefined;
-				if ('folderUri' in item && item.folderUri) {
-					folderUri = item.folderUri.toString();
-				} else if ('workspaceUri' in item && item.workspaceUri) {
-					folderUri = item.workspaceUri.toString();
-				} else if ('fileUri' in item && item.fileUri) {
-					folderUri = item.fileUri.toString();
+				if ('folderUri' in item && (item as { folderUri?: URI }).folderUri) { // eslint-disable-line local/code-no-in-operator
+					folderUri = (item as { folderUri: URI }).folderUri.toString();
+				} else if ('workspaceUri' in item && (item as { workspaceUri?: URI }).workspaceUri) { // eslint-disable-line local/code-no-in-operator
+					folderUri = (item as { workspaceUri: URI }).workspaceUri.toString();
+				} else if ('fileUri' in item && (item as { fileUri?: URI }).fileUri) { // eslint-disable-line local/code-no-in-operator
+					folderUri = (item as { fileUri: URI }).fileUri.toString();
 				}
 				await invoke('open_new_window', {
 					options: {
@@ -531,8 +532,8 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 
 	/** Returns the OS color scheme using matchMedia with Rust fallback. */
 	async getOSColorScheme(): Promise<IColorScheme> {
-		const dark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true;
-		const highContrast = window.matchMedia?.('(forced-colors: active)').matches ?? false;
+		const dark = mainWindow.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true;
+		const highContrast = mainWindow.matchMedia?.('(forced-colors: active)').matches ?? false;
 		return { dark, highContrast };
 	}
 
@@ -672,7 +673,7 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 
 	/** Reloads the current window by navigating the WebView. */
 	async reload(_options?: { disableExtensions?: boolean }): Promise<void> {
-		window.location.reload();
+		mainWindow.location.reload();
 	}
 
 	/** Closes the current window via the Tauri backend. */

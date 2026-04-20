@@ -53,6 +53,8 @@ pub struct ToastOptions {
     pub title: Option<String>,
     pub body: String,
     #[serde(default)]
+    // TODO(Phase 3): Remove allow(dead_code) when this is wired up
+    #[allow(dead_code)]
     pub id: Option<String>,
 }
 

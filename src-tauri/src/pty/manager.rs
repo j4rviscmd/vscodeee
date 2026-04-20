@@ -50,6 +50,8 @@ impl PtyManager {
         }
     }
 
+    // TODO(Phase 3): Remove allow(dead_code) when this is wired up
+    #[allow(dead_code)]
     /// Get a reference to the auto-reply interceptor.
     pub fn auto_reply(&self) -> Arc<AutoReplyInterceptor> {
         Arc::clone(&self.auto_reply)

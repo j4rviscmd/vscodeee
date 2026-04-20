@@ -21,7 +21,7 @@
 import { URI } from '../../../../base/common/uri.js';
 import { extCommands } from '../../../../platform/tauri/common/tauriExtensionCommands.js';
 import { WebExtensionManagementService } from '../common/webExtensionManagementService.js';
-import { IExtensionGalleryService, ILocalExtension, IGalleryExtension, InstallOperation, InstallOptions, Metadata, IProductVersion } from '../../../../platform/extensionManagement/common/extensionManagement.js';
+import { IExtensionGalleryService, ILocalExtension, IGalleryExtension, InstallOperation, InstallOptions, Metadata, IProductVersion, IAllowedExtensionsService } from '../../../../platform/extensionManagement/common/extensionManagement.js';
 import { TargetPlatform, IExtensionManifest, IExtension, IExtensionIdentifier } from '../../../../platform/extensions/common/extensions.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
@@ -29,7 +29,6 @@ import { IWebExtensionsScannerService, IScannedExtension } from '../common/exten
 import { IExtensionManifestPropertiesService } from '../../extensions/common/extensionManifestPropertiesService.js';
 import { IUserDataProfileService } from '../../userDataProfile/common/userDataProfile.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
-import { IAllowedExtensionsService } from '../../../../platform/extensionManagement/common/extensionManagement.js';
 import { IUserDataProfilesService } from '../../../../platform/userDataProfile/common/userDataProfile.js';
 import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uriIdentity.js';
 import { IBrowserWorkbenchEnvironmentService } from '../../environment/browser/environmentService.js';
@@ -239,7 +238,7 @@ export class TauriExtensionManagementService extends WebExtensionManagementServi
 	 * `TauriWorkbenchEnvironmentService` provides this at runtime.
 	 */
 	private getExtensionsPath(): string {
-		return (this.tauriEnvironmentService as any).extensionsPath as string;
+		return (this.tauriEnvironmentService as unknown as { extensionsPath: string }).extensionsPath;
 	}
 
 	/**
@@ -304,7 +303,7 @@ class TauriInstallExtensionTask extends AbstractExtensionTask<ILocalExtension> i
 	}
 
 	protected async doRun(_token: CancellationToken): Promise<ILocalExtension> {
-		const extensionsDir = (this.envService as any).extensionsPath as string;
+		const extensionsDir = (this.envService as unknown as { extensionsPath: string }).extensionsPath;
 		let extractedPath: string;
 
 		if (URI.isUri(this.extension)) {

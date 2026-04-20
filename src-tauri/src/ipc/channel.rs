@@ -31,6 +31,8 @@ pub type ChannelHandler = Arc<
 ///
 /// In Phase 1, most channels return "not implemented" responses.
 /// As services are migrated to Rust, handlers are registered here.
+// TODO(Phase 3): Remove allow(dead_code) when IPC channel routing is implemented
+#[allow(dead_code)]
 pub struct ChannelRouter {
     handlers: RwLock<HashMap<String, ChannelHandler>>,
     event_bus: Arc<EventBus>,
@@ -44,6 +46,8 @@ impl ChannelRouter {
         }
     }
 
+    // TODO(Phase 3): Remove allow(dead_code) when IPC channel routing is implemented
+    #[allow(dead_code)]
     /// Register a handler for a named channel.
     pub async fn register(&self, channel_name: &str, handler: ChannelHandler) {
         self.handlers
@@ -84,12 +88,16 @@ impl ChannelRouter {
         );
     }
 
+    // TODO(Phase 3): Remove allow(dead_code) when IPC channel routing is implemented
+    #[allow(dead_code)]
     pub fn event_bus(&self) -> &Arc<EventBus> {
         &self.event_bus
     }
 }
 
 /// Metadata about an IPC message exchange (for logging/debugging).
+// TODO(Phase 3): Remove allow(dead_code) when this is wired up
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct IpcMessageMeta {
     pub window_id: u32,
