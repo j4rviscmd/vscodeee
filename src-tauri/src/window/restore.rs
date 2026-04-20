@@ -28,6 +28,8 @@ pub struct RestoreEntry {
     /// Workspace (.code-workspace) URI to open, if any.
     pub workspace_uri: Option<String>,
     /// Whether this was the last active window (should receive focus).
+    // TODO(Phase 3): Remove allow(dead_code) when this is wired up
+    #[allow(dead_code)]
     pub is_last_active: bool,
     /// Whether to restore fullscreen state.
     pub is_fullscreen: bool,

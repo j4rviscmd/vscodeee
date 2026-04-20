@@ -19,15 +19,12 @@ import { ILogService } from '../../../../platform/log/common/log.js';
 import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { IUserDataProfilesService } from '../../../../platform/userDataProfile/common/userDataProfile.js';
-import { IOpenEmptyWindowOptions, IOpenWindowOptions, IWindowOpenable } from '../../../../platform/window/common/window.js';
+import { IOpenEmptyWindowOptions, IOpenWindowOptions, IWindowOpenable, isFolderToOpen, isWorkspaceToOpen } from '../../../../platform/window/common/window.js';
 import { invoke } from '../../../../platform/tauri/common/tauriApi.js';
 import { Schemas } from '../../../../base/common/network.js';
-import { isFolderToOpen, isWorkspaceToOpen } from '../../../../platform/window/common/window.js';
 
-// NOTE: This import MUST come after `workbench.common.main.js` which
-// transitively registers `BrowserHostService`. The last registration
-// wins (Map.set semantics), so our Tauri service overrides the browser one.
-import '../browser/browserHostService.js';
+// NOTE: BrowserHostService's singleton registration is triggered by the named import above (line 6).
+// The last registration wins (Map.set semantics), so our Tauri service overrides the browser one.
 
 /**
  * Workbench host service for the Tauri platform.

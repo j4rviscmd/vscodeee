@@ -11,6 +11,8 @@ use tauri::Emitter;
 use super::event_names;
 
 /// System events that platform monitors can report.
+// TODO(Phase 3): Remove allow(dead_code) when all variants are wired up
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum SystemEvent {
     Suspend,

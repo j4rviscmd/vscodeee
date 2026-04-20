@@ -15,13 +15,12 @@
  * - Future Tauri version upgrades only affect this single file.
  */
 
-/* eslint-disable no-restricted-globals */
-
 export type UnlistenFn = () => void;
 
 interface ITauriGlobal {
 	core: {
 		invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T>;
+		Channel: new () => { onmessage: ((message: unknown) => void) | undefined };
 	};
 	event: {
 		emit(event: string, payload?: unknown): Promise<void>;
@@ -30,7 +29,7 @@ interface ITauriGlobal {
 }
 
 function getTauriGlobal(): ITauriGlobal {
-	const tauri = (globalThis as any).__TAURI__;
+	const tauri = (globalThis as Record<string, unknown>).__TAURI__;
 	if (!tauri) {
 		throw new Error('Tauri API not available. Ensure withGlobalTauri is true in tauri.conf.json.');
 	}
@@ -79,12 +78,8 @@ export function listen<T>(event: string, handler: (event: { payload: T }) => voi
  * @returns A Channel object that can be passed to `invoke()` args.
  */
 export function createChannel<T>(onmessage: (message: T) => void): unknown {
-	const tauri = (globalThis as any).__TAURI__;
-	if (!tauri) {
-		throw new Error('Tauri API not available.');
-	}
-	// eslint-disable-next-line @typescript-eslint/no-unsafe-call
+	const tauri = getTauriGlobal();
 	const channel = new tauri.core.Channel();
-	channel.onmessage = onmessage;
+	channel.onmessage = onmessage as (message: unknown) => void;
 	return channel;
 }

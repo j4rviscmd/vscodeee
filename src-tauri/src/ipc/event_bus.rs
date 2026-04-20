@@ -43,6 +43,8 @@ impl EventBus {
     /// Uses `emit_to(label)` for window-scoped delivery. Looks up the Tauri
     /// window label from the `WindowManager` via the logical window ID.
     /// Falls back to global `emit()` if the label cannot be resolved.
+    // TODO(Phase 3): Remove allow(dead_code) when IPC event routing is implemented
+    #[allow(dead_code)]
     pub async fn emit_to_window(&self, window_id: u32, data: &str) {
         let handle = self.app_handle.read().await;
         if let Some(app) = handle.as_ref() {
@@ -78,6 +80,8 @@ impl EventBus {
         }
     }
 
+    // TODO(Phase 3): Remove allow(dead_code) when IPC event routing is implemented
+    #[allow(dead_code)]
     /// Emit a global event to all windows.
     pub async fn emit_global(&self, event: &str, data: &str) {
         let handle = self.app_handle.read().await;

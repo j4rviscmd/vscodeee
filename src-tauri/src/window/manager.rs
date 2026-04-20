@@ -29,6 +29,12 @@ pub struct WindowManager {
     last_active: RwLock<Option<WindowId>>,
 }
 
+impl Default for WindowManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WindowManager {
     /// Create a new, empty `WindowManager` with the ID counter starting at 1.
     pub fn new() -> Self {

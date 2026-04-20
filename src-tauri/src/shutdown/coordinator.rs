@@ -24,6 +24,8 @@ pub enum ShutdownPhase {
     Extensions = 0,
     Pty = 1,
     FileWatchers = 2,
+    // TODO(Phase 3): Remove allow(dead_code) when this is wired up
+    #[allow(dead_code)]
     SystemEvents = 3,
 }
 

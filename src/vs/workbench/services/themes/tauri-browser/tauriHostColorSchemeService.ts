@@ -68,7 +68,7 @@ export class TauriHostColorSchemeService extends Disposable implements IHostColo
 	 * WKWebView's matchMedia change events may not fire on macOS.
 	 */
 	private _registerTauriThemeListener(): void {
-		const tauriGlobal = (globalThis as any).__TAURI__;
+		const tauriGlobal = (globalThis as Record<string, unknown>).__TAURI__ as { window?: { getCurrentWindow?: () => { onThemeChanged?: (cb: (event: { payload: string }) => void) => Promise<() => void> } } } | undefined;
 
 		if (!tauriGlobal?.window?.getCurrentWindow) {
 			return;

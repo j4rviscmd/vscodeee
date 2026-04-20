@@ -33,7 +33,7 @@
  * `BrowserLifecycleService` and calls this method directly.
  */
 
-import { ShutdownReason, ILifecycleService, InternalBeforeShutdownEvent, StartupKind, WillShutdownJoinerOrder } from '../common/lifecycle.js';
+import { ShutdownReason, ILifecycleService, InternalBeforeShutdownEvent, StartupKind, WillShutdownJoinerOrder, IWillShutdownEventJoiner } from '../common/lifecycle.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { AbstractLifecycleService } from '../common/lifecycleService.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
@@ -44,7 +44,6 @@ import { CancellationTokenSource } from '../../../../base/common/cancellation.js
 import { mainWindow } from '../../../../base/browser/window.js';
 import { invoke, listen, UnlistenFn } from '../../../../platform/tauri/common/tauriApi.js';
 import { localize } from '../../../../nls.js';
-import { IWillShutdownEventJoiner } from '../common/lifecycle.js';
 
 /**
  * Tauri-specific lifecycle service implementing the two-phase close handshake.

@@ -1,3 +1,8 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) VS Codeee Contributors. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
 /* Phase 0-3: Test resource for vscode-file:// protocol verification */
 .protocol-test-marker {
 	color: #4ec9b0;

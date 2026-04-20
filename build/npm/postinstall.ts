@@ -145,7 +145,9 @@ async function npmInstallAsync(dir: string, opts?: child_process.SpawnOptions): 
 		const output = await spawnAsync(npm, command.split(' '), finalOpts);
 		if (output.trim()) {
 			for (const line of output.trim().split('\n')) {
-				if (line) log(dir, line);
+				if (line) {
+				log(dir, line);
+			}
 			}
 		}
 	}

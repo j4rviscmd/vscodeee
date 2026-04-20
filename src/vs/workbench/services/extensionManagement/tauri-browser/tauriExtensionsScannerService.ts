@@ -15,17 +15,15 @@
  * and falls back to a direct JSON persistence path that skips the check.
  */
 
-import { URI } from '../../../../base/common/uri.js';
+import { URI, UriComponents } from '../../../../base/common/uri.js';
 import { areSameExtensions, getGalleryExtensionId } from '../../../../platform/extensionManagement/common/extensionManagementUtil.js';
-import { Metadata, IGalleryExtension } from '../../../../platform/extensionManagement/common/extensionManagement.js';
-import { ExtensionType, IRelaxedExtensionManifest } from '../../../../platform/extensions/common/extensions.js';
+import { Metadata, IGalleryExtension, IExtensionGalleryService } from '../../../../platform/extensionManagement/common/extensionManagement.js';
+import { ExtensionType, IRelaxedExtensionManifest, IBuiltinExtensionsScannerService, TargetPlatform } from '../../../../platform/extensions/common/extensions.js';
 import { IScannedExtension, IWebExtensionsScannerService, ScanOptions } from '../common/extensionManagement.js';
 import { WebExtensionsScannerService } from '../browser/webExtensionsScannerService.js';
 import { IBrowserWorkbenchEnvironmentService } from '../../environment/browser/environmentService.js';
-import { IBuiltinExtensionsScannerService } from '../../../../platform/extensions/common/extensions.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
-import { IExtensionGalleryService } from '../../../../platform/extensionManagement/common/extensionManagement.js';
 import { IExtensionManifestPropertiesService } from '../../extensions/common/extensionManifestPropertiesService.js';
 import { IExtensionResourceLoaderService } from '../../../../platform/extensionResourceLoader/common/extensionResourceLoader.js';
 import { IExtensionStorageService } from '../../../../platform/extensionManagement/common/extensionStorage.js';
@@ -36,8 +34,6 @@ import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uri
 import { ILifecycleService } from '../../lifecycle/common/lifecycle.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
-import { TargetPlatform } from '../../../../platform/extensions/common/extensions.js';
-import { UriComponents } from '../../../../base/common/uri.js';
 import { joinPath } from '../../../../base/common/resources.js';
 import { localizeManifest } from '../../../../platform/extensionManagement/common/extensionNls.js';
 

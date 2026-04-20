@@ -126,7 +126,7 @@ export default tseslint.config(
 				'block',
 				[
 					'---------------------------------------------------------------------------------------------',
-					' *  Copyright (c) Microsoft Corporation. All rights reserved.',
+					{ pattern: ' \\*  Copyright \\(c\\) (Microsoft Corporation|VS Codeee Contributors)\\. All rights reserved\\.', template: ' *  Copyright (c) Microsoft Corporation. All rights reserved.' },
 					' *  Licensed under the MIT License. See License.txt in the project root for license information.',
 					' *--------------------------------------------------------------------------------------------'
 				]
@@ -1084,10 +1084,10 @@ export default tseslint.config(
 			]
 		}
 	},
-	// browser/electron-browser layer
+	// browser/electron-browser/tauri-browser layer
 	{
 		files: [
-			'src/**/{browser,electron-browser}/**/*.ts'
+			'src/**/{browser,electron-browser,tauri-browser}/**/*.ts'
 		],
 		languageOptions: {
 			parser: tseslint.parser,
@@ -1913,6 +1913,23 @@ export default tseslint.config(
 					]
 				},
 				{
+					'target': 'src/vs/workbench/workbench.tauri.main.ts',
+					'layer': 'tauri-browser',
+					'restrictions': [
+						'vs/base/*/~',
+						'vs/base/parts/*/~',
+						'vs/platform/*/~',
+						'vs/editor/~',
+						'vs/editor/contrib/*/~',
+						'vs/editor/editor.all.js',
+						'vs/workbench/~',
+						'vs/workbench/api/~',
+						'vs/workbench/services/*/~',
+						'vs/workbench/contrib/*/~',
+						'vs/workbench/workbench.common.main.js'
+					]
+				},
+				{
 					'target': 'src/vs/amdX.ts',
 					'restrictions': [
 						'vs/base/common/*'
@@ -1933,7 +1950,7 @@ export default tseslint.config(
 					]
 				},
 				{
-					'target': 'src/{bootstrap-cli.ts,bootstrap-esm.ts,bootstrap-fork.ts,bootstrap-import.ts,bootstrap-meta.ts,bootstrap-node.ts,bootstrap-server.ts,cli.ts,main.ts,server-cli.ts,server-main.ts}',
+					'target': 'src/{bootstrap-cli.ts,bootstrap-esm.ts,bootstrap-esm-resolve.ts,bootstrap-fork.ts,bootstrap-import.ts,bootstrap-meta.ts,bootstrap-node.ts,bootstrap-server.ts,cli.ts,main.ts,server-cli.ts,server-main.ts}',
 					'restrictions': [
 						'vs/**/common/*',
 						'vs/**/node/*',

@@ -299,7 +299,7 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
 
             // ── Initialize terminal state store ──
             {
-                if let Some(data_dir) = app.path().app_data_dir().ok() {
+                if let Ok(data_dir) = app.path().app_data_dir() {
                     let store = pty::state::TerminalStateStore::new(&data_dir);
                     if let Some(mgr) = app.try_state::<pty::manager::PtyManager>() {
                         mgr.set_state_store(store);

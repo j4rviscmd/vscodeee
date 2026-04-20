@@ -5,6 +5,8 @@
 
 import assert from 'assert';
 import { URI } from '../../../base/common/uri.js';
+// TODO(Phase 2): Move test to standard location src/vs/workbench/test/tauri-browser/
+// eslint-disable-next-line local/code-import-patterns
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../base/test/common/utils.js';
 import { TauriURLCallbackProvider, TauriListenFn } from '../urlCallbackProvider.js';
 

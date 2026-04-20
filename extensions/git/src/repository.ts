@@ -2091,7 +2091,7 @@ export class Repository implements Disposable {
 				return limiter.queue(async () => {
 					const targetFile = path.join(worktreePath, relativePath(this.root, sourceFile));
 					await fsPromises.mkdir(path.dirname(targetFile), { recursive: true });
-						const { cp } = await import('@vscode/fs-copyfile');
+					const { cp } = await import('@vscode/fs-copyfile');
 					await cp(sourceFile, targetFile, { force: true, recursive: true, verbatimSymlinks: true });
 				});
 			}));

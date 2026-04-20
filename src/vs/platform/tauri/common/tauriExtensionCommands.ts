@@ -19,14 +19,14 @@ import { invoke } from './tauriApi.js';
 
 export interface ExtractResult {
 	extensionPath: string;
-	manifest: /* IExtensionManifest */ any;
+	manifest: /* IExtensionManifest */ unknown;
 }
 
 export interface ScannedExtension {
 	id: string;
 	version: string;
 	location: string;
-	manifest: /* IExtensionManifest */ any;
+	manifest: /* IExtensionManifest */ unknown;
 	installedTimestamp: number | undefined;
 	targetPlatform: string;
 }
@@ -51,7 +51,7 @@ export const extCommands = {
 	 * Read the manifest (package.json) from a VSIX without full extraction.
 	 */
 	readVsixManifest: (vsixPath: string) =>
-		invoke</* IExtensionManifest */ any>('ext_read_vsix_manifest', { vsixPath }),
+		invoke</* IExtensionManifest */ unknown>('ext_read_vsix_manifest', { vsixPath }),
 
 	/**
 	 * Recursively delete an extension directory.

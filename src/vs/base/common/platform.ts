@@ -105,7 +105,7 @@ else if (typeof navigator === 'object' && !isElectronRenderer) {
 	_isLinux = _userAgent.indexOf('Linux') >= 0;
 	_isMobile = _userAgent?.indexOf('Mobi') >= 0;
 	_isWeb = true;
-	_isTauri = typeof ($globalThis as any).__TAURI_INTERNALS__ !== 'undefined';
+	_isTauri = typeof ($globalThis as Record<string, unknown>).__TAURI_INTERNALS__ !== 'undefined';
 	_language = nls.getNLSLanguage() || LANGUAGE_DEFAULT;
 	_locale = navigator.language.toLowerCase();
 	_platformLocale = _locale;

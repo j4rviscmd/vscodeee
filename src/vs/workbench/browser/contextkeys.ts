@@ -137,7 +137,7 @@ export class WorkbenchContextKeysHandler extends Disposable {
 		// Opening folder support: support for opening a folder workspace
 		// (e.g. "Open Folder...") is limited in web when not connected
 		// to a remote. Tauri has native file system access, so it behaves like desktop.
-		const isTauri = typeof (globalThis as any).__TAURI_INTERNALS__ !== 'undefined';
+		const isTauri = typeof (globalThis as Record<string, unknown>).__TAURI_INTERNALS__ !== 'undefined';
 		this.openFolderWorkspaceSupportContext = OpenFolderWorkspaceSupportContext.bindTo(this.contextKeyService);
 		this.openFolderWorkspaceSupportContext.set(isNative || isTauri || typeof this.environmentService.remoteAuthority === 'string');
 

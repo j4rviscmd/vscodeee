@@ -35,4 +35,5 @@
 **/test/automation/out/**
 **/typings/**
 **/.build/**
+**/src/vs/code/tauri-browser/workbench/pty-poc/**
 !.vscode

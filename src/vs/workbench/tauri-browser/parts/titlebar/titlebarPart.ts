@@ -103,7 +103,7 @@ export class TauriTitlebarPart extends BrowserTitlebarPart {
 			}
 
 			e.preventDefault();
-			(targetWindow as any).__TAURI_INTERNALS__?.invoke('plugin:window|start_dragging').catch(() => { /* permission or runtime error */ });
+			(targetWindow as unknown as Record<string, { invoke: (cmd: string) => Promise<void> }>).__TAURI_INTERNALS__?.invoke('plugin:window|start_dragging').catch(() => { /* permission or runtime error */ });
 		}));
 
 		// Custom Window Controls (Windows/Linux only — macOS uses native traffic lights via TitleBarStyle::Overlay)

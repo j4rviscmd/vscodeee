@@ -14,10 +14,10 @@
  *
  * ```
  * VS Code Terminal UI (xterm.js)
- *   ↕ ITerminalBackend (TauriTerminalBackend)
- *   ↕ ITerminalChildProcess (TauriPty)
+ *   | ITerminalBackend (TauriTerminalBackend)
+ *   | ITerminalChildProcess (TauriPty)
  * Tauri IPC
- *   ↕
+ *   |
  * Rust PTY Manager (portable-pty)
  * ```
  */

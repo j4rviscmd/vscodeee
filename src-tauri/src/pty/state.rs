@@ -79,6 +79,8 @@ impl TerminalStateStore {
         Ok(Some(data))
     }
 
+    // TODO(Phase 3): Remove allow(dead_code) when this is wired up
+    #[allow(dead_code)]
     /// Clear all persisted state for a workspace.
     pub fn clear(&self, workspace_id: &str) -> Result<(), String> {
         let dir = self.workspace_dir(workspace_id);

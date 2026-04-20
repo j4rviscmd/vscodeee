@@ -12,7 +12,7 @@ import { IWorkbenchContribution, WorkbenchPhase, registerWorkbenchContribution2 
 import { ITransparencyService } from '../common/transparency.js';
 import { TransparencyService } from './transparencyService.js';
 
-// ── Register settings schema ──
+// -- Register settings schema --
 
 const configurationRegistry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration);
 
@@ -91,11 +91,11 @@ configurationRegistry.registerConfiguration({
 	}
 });
 
-// ── Register service ──
+// -- Register service --
 
 registerSingleton(ITransparencyService, TransparencyService, InstantiationType.Eager);
 
-// ── Workbench contribution to force service instantiation ──
+// -- Workbench contribution to force service instantiation --
 // ITransparencyService has no consumers, so we need a contribution to
 // request it and trigger the Eager singleton creation.
 

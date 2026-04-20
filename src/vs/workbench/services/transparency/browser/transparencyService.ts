@@ -27,7 +27,7 @@ import {
 	NativeEffect,
 } from '../common/transparency.js';
 
-// ── CSS element IDs ──
+// -- CSS element IDs --
 const TRANSPARENCY_STYLE_ID = 'vscodeee-transparency-style';
 const TRANSPARENCY_BG_LAYER_ID = 'vscodeee-transparency-bg-layer';
 
@@ -96,7 +96,7 @@ export class TransparencyService extends Disposable implements ITransparencyServ
 		this.apply();
 	}
 
-	// ── Public API ──
+	// -- Public API --
 
 	apply(): void {
 		this._applyCSS();
@@ -134,7 +134,7 @@ export class TransparencyService extends Disposable implements ITransparencyServ
 		}
 	}
 
-	// ── Private: Read configuration ──
+	// -- Private: Read configuration --
 
 	private _readConfiguration(): ITransparencyConfiguration {
 		const get = <T>(key: string, defaultValue: T): T =>
@@ -151,7 +151,7 @@ export class TransparencyService extends Disposable implements ITransparencyServ
 		};
 	}
 
-	// ── Private: CSS injection (Level 2) ──
+	// -- Private: CSS injection (Level 2) --
 
 	private _applyCSS(): void {
 		const doc = mainWindow.document;
@@ -163,6 +163,7 @@ export class TransparencyService extends Disposable implements ITransparencyServ
 			return;
 		}
 
+		// eslint-disable-next-line no-restricted-syntax -- Self-managed ID, no fragile selector
 		let styleEl = doc.getElementById(TRANSPARENCY_STYLE_ID) as HTMLStyleElement | null;
 		if (!styleEl) {
 			styleEl = doc.createElement('style');
@@ -208,13 +209,14 @@ export class TransparencyService extends Disposable implements ITransparencyServ
 	}
 
 	private _removeStyleElement(): void {
+		// eslint-disable-next-line no-restricted-syntax -- Self-managed ID, no fragile selector
 		const el = mainWindow.document.getElementById(TRANSPARENCY_STYLE_ID);
 		if (el) {
 			el.remove();
 		}
 	}
 
-	// ── Private: Native transparency (Level 3) ──
+	// -- Private: Native transparency (Level 3) --
 
 	/**
 	 * Apply or remove native window transparency based on current config.
@@ -229,7 +231,7 @@ export class TransparencyService extends Disposable implements ITransparencyServ
 		}
 	}
 
-	// ── Private: Background image layer (Level 1) ──
+	// -- Private: Background image layer (Level 1) --
 
 	private _applyBackgroundImage(): void {
 		const doc = mainWindow.document;
@@ -240,6 +242,7 @@ export class TransparencyService extends Disposable implements ITransparencyServ
 			return;
 		}
 
+		// eslint-disable-next-line no-restricted-syntax -- Self-managed ID, no fragile selector
 		let bgLayer = doc.getElementById(TRANSPARENCY_BG_LAYER_ID) as HTMLDivElement | null;
 		if (!bgLayer) {
 			bgLayer = doc.createElement('div');
@@ -270,6 +273,7 @@ export class TransparencyService extends Disposable implements ITransparencyServ
 	}
 
 	private _removeBackgroundLayer(): void {
+		// eslint-disable-next-line no-restricted-syntax -- Self-managed ID, no fragile selector
 		const el = mainWindow.document.getElementById(TRANSPARENCY_BG_LAYER_ID);
 		if (el) {
 			el.remove();
@@ -299,7 +303,7 @@ export class TransparencyService extends Disposable implements ITransparencyServ
 		return CSS.escape(rawPath);
 	}
 
-	// ── Private: Toast notifications ──
+	// -- Private: Toast notifications --
 
 	/**
 	 * Show a restart-required toast when nativeTransparency is toggled.
@@ -335,7 +339,7 @@ export class TransparencyService extends Disposable implements ITransparencyServ
 		);
 	}
 
-	// ── Utility ──
+	// -- Utility --
 
 	private _clamp(value: number, min: number, max: number): number {
 		return Math.max(min, Math.min(max, value));

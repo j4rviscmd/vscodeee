@@ -10,14 +10,16 @@
  * using base64-encoded `VSBuffer` for full binary protocol compatibility.
  *
  * Architecture:
- *   WebView ──invoke('ipc_message', {data})──► Rust backend
- *   WebView ◄──emit('vscode:ipc_message:{windowId}')── Rust backend
+ *   WebView --invoke('ipc_message', {data})--> Rust backend
+ *   WebView <--emit('vscode:ipc_message:{windowId}')-- Rust backend
  */
 
 import { VSBuffer } from '../../../common/buffer.js';
 import { Emitter, Event } from '../../../common/event.js';
 import { Disposable } from '../../../common/lifecycle.js';
 import { IMessagePassingProtocol, IPCClient } from '../common/ipc.js';
+// TODO(Phase 2): Move tauriApi.ts from platform/ to base/ to fix layering violation
+// eslint-disable-next-line local/code-import-patterns
 import { invoke, listen, type UnlistenFn } from '../../../../platform/tauri/common/tauriApi.js';
 
 /**
