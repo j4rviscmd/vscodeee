@@ -65,7 +65,7 @@ mod tests {
 
     #[test]
     fn empty_args() {
-        let parsed = parse_args(&args(&["codeee"]));
+        let parsed = parse_args(&args(&["eee"]));
         assert!(parsed.paths.is_empty());
         assert!(!parsed.force_new_window);
         assert!(!parsed.force_reuse_window);
@@ -73,45 +73,45 @@ mod tests {
 
     #[test]
     fn single_path() {
-        let parsed = parse_args(&args(&["codeee", "/path/to/project"]));
+        let parsed = parse_args(&args(&["eee", "/path/to/project"]));
         assert_eq!(parsed.paths, vec!["/path/to/project"]);
     }
 
     #[test]
     fn multiple_paths() {
-        let parsed = parse_args(&args(&["codeee", "/a", "/b", "/c"]));
+        let parsed = parse_args(&args(&["eee", "/a", "/b", "/c"]));
         assert_eq!(parsed.paths, vec!["/a", "/b", "/c"]);
     }
 
     #[test]
     fn new_window_flag() {
-        let parsed = parse_args(&args(&["codeee", "-n", "/path"]));
+        let parsed = parse_args(&args(&["eee", "-n", "/path"]));
         assert!(parsed.force_new_window);
         assert_eq!(parsed.paths, vec!["/path"]);
     }
 
     #[test]
     fn reuse_window_flag() {
-        let parsed = parse_args(&args(&["codeee", "-r", "/path"]));
+        let parsed = parse_args(&args(&["eee", "-r", "/path"]));
         assert!(parsed.force_reuse_window);
     }
 
     #[test]
     fn double_dash_stops_flag_parsing() {
-        let parsed = parse_args(&args(&["codeee", "--", "-n", "/path"]));
+        let parsed = parse_args(&args(&["eee", "--", "-n", "/path"]));
         assert!(!parsed.force_new_window);
         assert_eq!(parsed.paths, vec!["-n", "/path"]);
     }
 
     #[test]
     fn unknown_flags_ignored() {
-        let parsed = parse_args(&args(&["codeee", "--unknown", "/path"]));
+        let parsed = parse_args(&args(&["eee", "--unknown", "/path"]));
         assert_eq!(parsed.paths, vec!["/path"]);
     }
 
     #[test]
     fn recognized_but_noop_flags() {
-        let parsed = parse_args(&args(&["codeee", "--wait", "--goto", "/path"]));
+        let parsed = parse_args(&args(&["eee", "--wait", "--goto", "/path"]));
         assert_eq!(parsed.paths, vec!["/path"]);
         assert!(!parsed.force_new_window);
     }

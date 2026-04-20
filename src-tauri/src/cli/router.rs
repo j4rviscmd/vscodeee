@@ -5,12 +5,12 @@
 
 //! CLI argument router — dispatches parsed args to window actions.
 //!
-//! Routes a [`ParsedCli`](super::parser::ParsedCli) to the appropriate
+//! Routes a [`ParsedGuiArgs`](super::dispatch::ParsedGuiArgs) to the appropriate
 //! window operations: focusing existing windows or opening new ones.
 
 use tauri::Manager;
 
-use super::parser::ParsedCli;
+use super::dispatch::ParsedGuiArgs;
 use super::uri;
 use crate::window::manager::WindowManager;
 use crate::window::state::OpenWindowOptions;
@@ -22,19 +22,19 @@ use crate::window::state::OpenWindowOptions;
 /// 1. **No paths** — focus the most recently active window
 /// 2. **Paths without flags** — workspace dedup via `WindowManager`
 /// 3. **`force_new_window`** — each path gets a new window regardless
-pub async fn route_cli(
+pub async fn route_gui_args(
     app_handle: &tauri::AppHandle,
     wm: &WindowManager,
-    cli: &ParsedCli,
+    args: &ParsedGuiArgs,
     cwd: &str,
 ) {
-    if cli.paths.is_empty() {
+    if args.paths.is_empty() {
         focus_last_active(app_handle, wm).await;
         return;
     }
 
-    for path in &cli.paths {
-        let uri = match uri::path_to_file_uri(path, cwd) {
+    for path in &args.paths {
+        let file_uri = match uri::path_to_file_uri(path, cwd) {
             Some(u) => uri::normalize_uri(&u),
             None => {
                 log::warn!(
@@ -46,17 +46,17 @@ pub async fn route_cli(
         };
 
         let (folder_uri, workspace_uri) = if uri::is_workspace_file(path) {
-            (None, Some(uri))
+            (None, Some(file_uri))
         } else {
-            (Some(uri.clone()), None)
+            (Some(file_uri.clone()), None)
         };
 
         let options = OpenWindowOptions {
             folder_uri,
             workspace_uri,
             remote_authority: None,
-            force_new_window: cli.force_new_window,
-            force_reuse_window: cli.force_reuse_window,
+            force_new_window: args.force_new_window,
+            force_reuse_window: args.force_reuse_window,
         };
 
         match wm.open_window(app_handle, &options).await {
@@ -74,6 +74,22 @@ pub async fn route_cli(
             }
         }
     }
+}
+
+/// Route a legacy [`ParsedCli`](super::parser::ParsedCli) (backward compat).
+pub async fn route_cli(
+    app_handle: &tauri::AppHandle,
+    wm: &WindowManager,
+    cli: &super::parser::ParsedCli,
+    cwd: &str,
+) {
+    let args = ParsedGuiArgs {
+        paths: cli.paths.clone(),
+        force_new_window: cli.force_new_window,
+        force_reuse_window: cli.force_reuse_window,
+        ..Default::default()
+    };
+    route_gui_args(app_handle, wm, &args, cwd).await;
 }
 
 /// Focus the most recently active window, falling back to the "main" window.
