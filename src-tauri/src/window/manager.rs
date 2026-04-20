@@ -129,7 +129,7 @@ impl WindowManager {
 
         let builder = chrome.apply_to_builder(builder);
 
-        let window = builder
+        let _window = builder
             .build()
             .map_err(|e| format!("Failed to create window: {e}"))?;
 
@@ -138,7 +138,7 @@ impl WindowManager {
         // post-creation hooks.
         #[cfg(target_os = "macos")]
         {
-            let _ = window.set_decorations(true);
+            let _ = _window.set_decorations(true);
         }
 
         // Register in state
