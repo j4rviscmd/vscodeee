@@ -367,14 +367,14 @@ impl WindowManager {
 
         let builder = chrome.apply_to_builder(builder);
 
-        let window = builder
+        let _window = builder
             .build()
             .map_err(|e| format!("Failed to create restored window '{label}': {e}"))?;
 
         // Ensure decorations are applied at runtime (same as open_window).
         #[cfg(target_os = "macos")]
         {
-            let _ = window.set_decorations(true);
+            let _ = _window.set_decorations(true);
         }
 
         let effective_uri = folder_uri

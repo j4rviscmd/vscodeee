@@ -49,3 +49,8 @@ runs:
         PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
         ELECTRON_SKIP_BINARY_DOWNLOAD: 1
       run: npm ci --ignore-scripts
+
+    - name: Install build tool dependencies
+      if: ${{ steps.cacheNodeModules.outputs.cache-hit != 'true' }}
+      shell: bash
+      run: cd build && npm ci --ignore-scripts

@@ -20,8 +20,10 @@ pub struct WindowChromeConfig {
     /// Whether to show the native window frame.
     pub decorations: bool,
     /// The title bar style (macOS only).
+    #[allow(dead_code)]
     pub title_bar_style: Option<tauri::TitleBarStyle>,
     /// Whether to hide the native title text (macOS only).
+    #[allow(dead_code)]
     pub hidden_title: bool,
 }
 

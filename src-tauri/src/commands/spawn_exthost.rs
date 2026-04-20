@@ -127,8 +127,8 @@ impl ExtHostState {
     pub fn sync_kill_all(&self) {
         let pids: Vec<u32> = match self.instances.try_lock() {
             Ok(instances) => instances
-                .iter()
-                .filter_map(|(_, inst)| inst.sidecar.child.id())
+                .values()
+                .filter_map(|inst| inst.sidecar.child.id())
                 .collect(),
             Err(_) => {
                 log::warn!(
