@@ -48,6 +48,8 @@ aes-gcm = "0.10"
 rand = "0.8"
 tokio-tungstenite = "0.24"
 futures-util = { version = "0.3", default-features = false, features = ["sink"] }
+clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
 
 # macOS Keychain ACL control — used to set permissive ACL on the master
 # encryption key so that different worktree binaries can access it

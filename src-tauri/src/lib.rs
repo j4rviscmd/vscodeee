@@ -33,8 +33,8 @@ mod system_events;
 /// Phase 0-4: Uses portable-pty for direct Rust PTY management.
 mod pty;
 
-/// CLI argument handling for single-instance arg forwarding.
-mod cli;
+/// CLI argument handling for the `eee` command.
+pub mod cli;
 
 /// Build and run the Tauri application.
 ///
@@ -50,7 +50,7 @@ mod cli;
 ///
 /// Panics if an error occurs while running the Tauri application.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
+pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
     // Pre-build protocol state so the handler closure can capture it.
     // We use a OnceCell to defer actual root registration until setup(),
     // where the Tauri App handle is available.
@@ -90,8 +90,8 @@ pub fn run() {
             };
             let handle = app.clone();
             tauri::async_runtime::spawn(async move {
-                let parsed = cli::parser::parse_args(&args);
-                cli::router::route_cli(&handle, &wm, &parsed, &cwd).await;
+                let parsed = cli::dispatch::parse_gui_args(&args);
+                cli::router::route_gui_args(&handle, &wm, &parsed, &cwd).await;
             });
         }))
         .plugin(tauri_plugin_shell::init())
@@ -473,7 +473,12 @@ pub fn run() {
 
             // ── Create additional restored windows ──
             // Windows beyond the first one need to be created programmatically.
-            if restore_plan.len() > 1 {
+            // Skip if CLI args override the session (user explicitly opened files/folders).
+            let cli_overrides_session = gui_args
+                .as_ref()
+                .is_some_and(|a| !a.paths.is_empty());
+
+            if !cli_overrides_session && restore_plan.len() > 1 {
                 let wm = Arc::clone(&window_manager);
                 let handle = app.handle().clone();
                 let additional_entries: Vec<_> = restore_plan[1..].to_vec();
@@ -512,6 +517,28 @@ pub fn run() {
                         }
                     }
                 });
+            }
+
+            // ── Route first-instance CLI arguments ──
+            // When the user launches `eee /path/to/project` for the first time,
+            // the CLI args need to be routed to window operations.
+            if let Some(ref args) = gui_args {
+                if !args.paths.is_empty() {
+                    let handle = app.handle().clone();
+                    let wm = Arc::clone(&window_manager);
+                    let args = args.clone();
+                    let cwd = std::env::current_dir()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|_| ".".to_string());
+                    tauri::async_runtime::spawn(async move {
+                        cli::router::route_gui_args(&handle, &wm, &args, &cwd).await;
+                    });
+                    log::info!(
+                        target: "vscodeee",
+                        "Routed first-instance CLI args: {} paths",
+                        gui_args.as_ref().map(|a| a.paths.len()).unwrap_or(0)
+                    );
+                }
             }
 
             Ok(())

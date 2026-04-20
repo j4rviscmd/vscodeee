@@ -3,15 +3,21 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-//! CLI argument handling for single-instance arg forwarding.
+//! CLI argument handling for the `eee` command.
 //!
-//! When a second VS Codeee process starts, `tauri-plugin-single-instance` forwards
-//! the CLI arguments to the primary instance. This module:
-//!
-//! - [`parser`] — Parses raw CLI args into a structured [`ParsedCli`]
-//! - [`uri`]    — Converts filesystem paths to `file:///` URIs
-//! - [`router`] — Routes parsed args to window actions (focus or open)
+//! Architecture:
+//! - [`args`]           — Clap derive definitions for all CLI flags
+//! - [`dispatch`]       — Routes parsed args to early-exit, headless, or GUI paths
+//! - [`extension_cli`]  — Headless extension management operations
+//! - [`completion`]     — Shell completion generation
+//! - [`parser`]         — Legacy parser (kept for backward compatibility)
+//! - [`uri`]            — Filesystem path to `file:///` URI conversion
+//! - [`router`]         — Routes parsed args to window actions
 
+pub mod args;
+pub mod completion;
+pub mod dispatch;
+pub mod extension_cli;
 pub mod parser;
 pub mod router;
 pub mod uri;
