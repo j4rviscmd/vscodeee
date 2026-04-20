@@ -644,7 +644,7 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 
 	// #endregion
 
-	// #region macOS Shell command
+	// #region Shell command
 
 	/** Installs the `codeee` shell command by creating a symlink via the Rust backend. */
 	async installShellCommand(): Promise<void> {
