@@ -110,6 +110,20 @@ export class TauriPty extends Disposable implements ITerminalChildProcess {
 	// Dimensions tracking
 	private _lastDimensions: { cols: number; rows: number } = { cols: -1, rows: -1 };
 
+	/**
+	 * Persistent TextDecoder for streaming UTF-8 decoding.
+	 *
+	 * PTY output arrives in arbitrary-sized chunks (up to 8192 bytes from the
+	 * Rust reader thread) that may split multi-byte UTF-8 sequences across chunk
+	 * boundaries. Using `{ stream: true }` in each `decode()` call tells the
+	 * decoder to buffer any incomplete trailing bytes and prepend them to the
+	 * next chunk, preventing U+FFFD replacement characters from appearing.
+	 *
+	 * This mirrors how node-pty handles UTF-8 internally — the PTY backend
+	 * reads raw bytes, and the consumer side is responsible for correct decoding.
+	 */
+	private readonly _decoder = new TextDecoder('utf-8', { fatal: false });
+
 	// Events
 	private readonly _onProcessData = this._register(new Emitter<IProcessDataEvent | string>());
 	readonly onProcessData = this._onProcessData.event;
@@ -168,14 +182,18 @@ export class TauriPty extends Disposable implements ITerminalChildProcess {
 			// Phase 2: Register event listeners BEFORE activating the reader
 			// Listen for output data from the Rust PTY
 			this._unlistenOutput = await tauriListen(`pty-output-${this._ptyId}`, (payload: unknown) => {
-				// Payload is Vec<u8> from Rust, arrives as number[] in JS
+				// Payload is Vec<u8> from Rust, arrives as number[] in JS.
+				// Use the persistent decoder with { stream: true } so that
+				// multi-byte UTF-8 sequences split across chunk boundaries are
+				// buffered and correctly decoded on the next call, instead of
+				// being replaced with U+FFFD replacement characters.
 				let data: string;
 				if (payload instanceof Uint8Array) {
-					data = new TextDecoder().decode(payload);
+					data = this._decoder.decode(payload, { stream: true });
 				} else if (typeof payload === 'string') {
 					data = payload;
 				} else if (Array.isArray(payload)) {
-					data = new TextDecoder().decode(new Uint8Array(payload as number[]));
+					data = this._decoder.decode(new Uint8Array(payload as number[]), { stream: true });
 				} else {
 					data = String(payload);
 				}
