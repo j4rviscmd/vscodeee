@@ -285,6 +285,12 @@ Architectural differences between Electron (bundled Chromium) and Tauri (native 
 | Linux                 | [`.AppImage`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_Linux_x64.AppImage) / [`.deb`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_Linux_x64.deb) |
 | Windows               | [`.exe`](https://github.com/j4rviscmd/vscodeee/releases/latest/download/VSCodeee_Windows_x64-setup.exe)                                                                                                     |
 
+> [!NOTE]
+> macOS builds use ad-hoc code signing (not Apple-notarized). On first launch, go to **System Settings > Privacy & Security** and click **Open Anyway**. Alternatively, run:
+> ```bash
+> xattr -dr com.apple.quarantine "/Applications/VS Codeee.app"
+> ```
+
 ## Contributing
 
 Issues and PRs are welcome.<br>
