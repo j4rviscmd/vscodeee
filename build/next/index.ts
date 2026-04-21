@@ -835,6 +835,230 @@ async function transpileExtensions(): Promise<void> {
 }
 
 // ============================================================================
+// Package Extensions (for Tauri bundle)
+// ============================================================================
+
+/**
+ * Excluded extensions that should not be shipped in production builds.
+ * These are test/development-only extensions.
+ */
+const EXCLUDED_EXTENSIONS = new Set([
+	'vscode-api-tests',
+	'vscode-colorize-tests',
+	'vscode-colorize-perf-tests',
+	'vscode-test-resolver',
+]);
+
+/**
+ * Patterns of files/directories to exclude when packaging extensions.
+ * These reduce the bundle size by removing development-only artifacts.
+ */
+const PACKAGE_EXCLUDE_PATTERNS = new Set([
+	'node_modules',
+	'src',
+	'test',
+	'tests',
+	'test-workspace',
+	'build',
+	'.vscode',
+	'.github',
+]);
+
+/**
+ * File extensions/names to exclude from packaging.
+ */
+const PACKAGE_EXCLUDE_FILES = new Set([
+	'tsconfig.json',
+	'tsconfig.browser.json',
+	'tsconfig.web.json',
+	'.vscodeignore',
+	'cgmanifest.json',
+	'package-lock.json',
+	'yarn.lock',
+	'.eslintrc.json',
+	'.npmrc',
+	'CONTRIBUTING.md',
+]);
+
+/**
+ * File extensions to exclude from packaging.
+ */
+const PACKAGE_EXCLUDE_EXTS = new Set([
+	'.ts',   // TypeScript source (but keep .d.ts)
+	'.mts',  // esbuild configs
+]);
+
+/**
+ * Package built-in extensions into .build/extensions/ for Tauri bundling.
+ *
+ * This is the Tauri equivalent of the gulp `compile-extensions-build` pipeline.
+ * It copies only the runtime-necessary files from each extension, excluding:
+ * - Test extensions (vscode-api-tests, etc.)
+ * - Source files (.ts, but not .d.ts)
+ * - node_modules (esbuild-bundled extensions don't need them)
+ * - Test directories, build scripts, config files
+ *
+ * The result is a dramatically smaller extensions directory (~50-70 MB vs 1.5 GB).
+ *
+ * For extensions with `esbuild.mts` (bundled extensions), node_modules are
+ * excluded entirely since dependencies are bundled into dist/.
+ * For non-bundled extensions that have runtime dependencies, the required
+ * production node_modules are preserved.
+ */
+async function packageExtensions(): Promise<void> {
+	const extensionsDir = path.join(REPO_ROOT, 'extensions');
+	const outputDir = path.join(REPO_ROOT, '.build', 'extensions');
+
+	// Clean output directory
+	await fs.promises.rm(outputDir, { recursive: true, force: true });
+	await fs.promises.mkdir(outputDir, { recursive: true });
+
+	const entries = await fs.promises.readdir(extensionsDir, { withFileTypes: true });
+	const extensionDirs = entries.filter(e => e.isDirectory() && !EXCLUDED_EXTENSIONS.has(e.name));
+
+	console.log(`[package-extensions] Packaging ${extensionDirs.length} extensions...`);
+
+	let totalFiles = 0;
+	let totalSize = 0;
+
+	await Promise.all(extensionDirs.map(async (entry) => {
+		const extName = entry.name;
+		const srcDir = path.join(extensionsDir, extName);
+		const destDir = path.join(outputDir, extName);
+
+		// Check for package.json — required for a valid extension
+		const pkgJsonPath = path.join(srcDir, 'package.json');
+		try {
+			await fs.promises.access(pkgJsonPath);
+		} catch {
+			return; // Skip directories without package.json (e.g., node_modules)
+		}
+
+		// Determine if this is an esbuild-bundled extension
+		const hasEsbuild = await fileExists(path.join(srcDir, 'esbuild.mts'));
+
+		// Copy the extension, filtering out unnecessary files
+		const { files, size } = await copyExtension(srcDir, destDir, extName, hasEsbuild);
+		totalFiles += files;
+		totalSize += size;
+	}));
+
+	// NOTE: extensions/node_modules/ contains shared build tools (tsc, esbuild, etc.)
+	// and is NOT needed at runtime. Individual extension runtime deps are in each
+	// extension's own node_modules/ (only for non-esbuild extensions).
+
+	console.log(`[package-extensions] Packaged ${totalFiles} files (${(totalSize / 1024 / 1024).toFixed(1)} MB) into .build/extensions/`);
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+	try {
+		await fs.promises.access(filePath);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Copy an extension directory, filtering out development-only files.
+ *
+ * For esbuild-bundled extensions: excludes node_modules entirely (deps are in dist/).
+ * For non-bundled extensions with runtime deps: preserves production node_modules.
+ */
+async function copyExtension(
+	srcDir: string,
+	destDir: string,
+	_extName: string,
+	hasEsbuild: boolean,
+): Promise<{ files: number; size: number }> {
+	return copyDirectory(srcDir, destDir, (relPath) => {
+		const parts = relPath.split(path.sep);
+		const fileName = parts[parts.length - 1];
+		const firstDir = parts[0];
+
+		// Exclude TypeScript source files first (applies everywhere, including node_modules)
+		// Keep .d.ts declaration files as they may be needed at runtime
+		const ext = path.extname(fileName);
+		if (ext === '.ts' && !fileName.endsWith('.d.ts')) {
+			return false;
+		}
+		if (PACKAGE_EXCLUDE_EXTS.has(ext) && ext !== '.ts') {
+			return false;
+		}
+
+		if (PACKAGE_EXCLUDE_PATTERNS.has(firstDir)) {
+			// For non-esbuild extensions, allow node_modules (they need runtime deps)
+			if (firstDir === 'node_modules' && !hasEsbuild) {
+				// But still exclude test directories within node_modules
+				if (parts.some(p => p === 'test' || p === 'tests' || p === '.github')) {
+					return false;
+				}
+				return true;
+			}
+			return false;
+		}
+
+		// Exclude specific files
+		if (PACKAGE_EXCLUDE_FILES.has(fileName)) {
+			return false;
+		}
+
+		return true;
+	});
+}
+
+/**
+ * Recursively copy a directory, applying a filter function to each relative path.
+ */
+async function copyDirectory(
+	srcDir: string,
+	destDir: string,
+	filter: (relPath: string) => boolean,
+): Promise<{ files: number; size: number }> {
+	let files = 0;
+	let size = 0;
+
+	async function walk(currentSrc: string, currentDest: string, relBase: string): Promise<void> {
+		const entries = await fs.promises.readdir(currentSrc, { withFileTypes: true });
+
+		for (const entry of entries) {
+			const relPath = relBase ? path.join(relBase, entry.name) : entry.name;
+
+			if (!filter(relPath)) {
+				continue;
+			}
+
+			const srcPath = path.join(currentSrc, entry.name);
+			const destPath = path.join(currentDest, entry.name);
+
+			if (entry.isSymbolicLink()) {
+				// Preserve symlinks (e.g., node_modules/.bin/ entries)
+				try {
+					const linkTarget = await fs.promises.readlink(srcPath);
+					await fs.promises.mkdir(path.dirname(destPath), { recursive: true });
+					await fs.promises.symlink(linkTarget, destPath);
+					files++;
+				} catch {
+					// Skip broken or unresolvable symlinks
+				}
+			} else if (entry.isDirectory()) {
+				await fs.promises.mkdir(destPath, { recursive: true });
+				await walk(srcPath, destPath, relPath);
+			} else if (entry.isFile()) {
+				await fs.promises.mkdir(path.dirname(destPath), { recursive: true });
+				await fs.promises.copyFile(srcPath, destPath);
+				const stat = await fs.promises.stat(srcPath);
+				size += stat.size;
+				files++;
+			}
+		}
+	}
+
+	await walk(srcDir, destDir, '');
+	return { files, size };
+}
+
+// ============================================================================
 // Bundle (Goal 2: JS → bundled JS)
 // ============================================================================
 
@@ -1248,6 +1472,7 @@ function printUsage(): void {
 Commands:
 	transpile          Transpile TypeScript to JavaScript (single-file, fast)
 	transpile-extensions  Transpile built-in extensions under extensions/
+	package-extensions    Package built-in extensions for Tauri bundling
 	bundle             Bundle entry points into optimized bundles
 
 Options for 'transpile':
@@ -1302,11 +1527,19 @@ async function main(): Promise<void> {
 				}
 				break;
 
-			case 'transpile-extensions': {
+		case 'transpile-extensions': {
 				console.log(`[transpile-extensions] Transpiling built-in extensions...`);
 				const t1 = Date.now();
 				await transpileExtensions();
 				console.log(`[transpile-extensions] Done in ${Date.now() - t1}ms`);
+				break;
+			}
+
+			case 'package-extensions': {
+				console.log(`[package-extensions] Packaging built-in extensions for Tauri...`);
+				const t1 = Date.now();
+				await packageExtensions();
+				console.log(`[package-extensions] Done in ${Date.now() - t1}ms`);
 				break;
 			}
 
