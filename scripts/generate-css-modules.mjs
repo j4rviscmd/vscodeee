@@ -13,14 +13,14 @@ import { readdirSync, writeFileSync } from 'fs';
 import { join, relative, sep } from 'path';
 
 function collectCssFiles(dir, root, result) {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        const fullPath = join(dir, entry.name);
-        if (entry.isDirectory()) {
-            collectCssFiles(fullPath, root, result);
-        } else if (entry.name.endsWith('.css')) {
-            result.push(relative(root, fullPath).split(sep).join('/'));
-        }
-    }
+	for (const entry of readdirSync(dir, { withFileTypes: true })) {
+		const fullPath = join(dir, entry.name);
+		if (entry.isDirectory()) {
+			collectCssFiles(fullPath, root, result);
+		} else if (entry.name.endsWith('.css')) {
+			result.push(relative(root, fullPath).split(sep).join('/'));
+		}
+	}
 }
 
 const modules = [];
