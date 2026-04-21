@@ -37,8 +37,6 @@ Maintain the current functionality of VSCode while achieving the following:
 
 ## Roadmap
 
-> **Current Phase: Phase 6 — Platform Features** 🔄
-
 | Phase  | Name                                                         | Goal                                                          |                            Status                             |
 | :----: | ------------------------------------------------------------ | ------------------------------------------------------------- | :-----------------------------------------------------------: |
 |   0    | [Feasibility Spike](#phase-0-feasibility-spike)              | Validate Tauri can host VS Code                               | [✅ Complete](https://github.com/j4rviscmd/vscodeee/issues/7) |
@@ -56,7 +54,7 @@ Maintain the current functionality of VSCode while achieving the following:
 |   5D   | [Extension ESM Fix](#phase-5-process-model)                  | Fix ESM module resolution for built-in extensions             | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/103) |
 |   5E   | [Remote-SSH](#phase-5-process-model)                         | SSH remote workspace support via Tauri                        | [✅ Complete](https://github.com/j4rviscmd/vscodeee/pull/193) |
 |   6    | [Platform Features](#phase-6-platform-features)              | Editor transparency, auto-update, single-instance            |                       ✅ Complete                        |
-|   7    | [Build & Packaging](#phase-7-build--packaging)               | Installers, code signing, CI/CD                               |                          📋 Planned                           |
+|   7    | [Build & Packaging](#phase-7-build--packaging)               | Installers, code signing, CI/CD                               |                        🔄 In Progress                        |
 
 ---
 
