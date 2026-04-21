@@ -18,14 +18,14 @@ const titleBarSessionMenu = MenuId.for('SessionsTitleBarSessionMenu');
 
 suite('RunScriptContribution', () => {
 
-	ensureNoDisposablesAreLeakedInTestSuite();
+  ensureNoDisposablesAreLeakedInTestSuite();
 
-	test('contributes run dropdown to TitleBarSessionMenu', () => {
-		const items = MenuRegistry.getMenuItems(titleBarSessionMenu);
+  test('contributes run dropdown to TitleBarSessionMenu', () => {
+    const items = MenuRegistry.getMenuItems(titleBarSessionMenu);
 
-		const runAction = items.find(item => isISubmenuItem(item) && item.submenu.id === 'AgentSessionsRunScriptDropdown');
+    const runAction = items.find(item => isISubmenuItem(item) && item.submenu.id === 'AgentSessionsRunScriptDropdown');
 
-		assert.ok(runAction, 'run dropdown should be contributed to TitleBarSessionMenu');
-		assert.strictEqual(runAction.order, 8);
-	});
+    assert.ok(runAction, 'run dropdown should be contributed to TitleBarSessionMenu');
+    assert.strictEqual(runAction.order, 8);
+  });
 });

@@ -17,197 +17,197 @@ import { NullTelemetryService } from '../../../../../platform/telemetry/common/t
 import { ITelemetryService } from '../../../../../platform/telemetry/common/telemetry.js';
 
 function r(startLine: number, endLine: number = startLine): Range {
-	return new Range(startLine, 1, endLine, 1);
+  return new Range(startLine, 1, endLine, 1);
 }
 
 function feedbackSummary(items: readonly { resourceUri: URI; range: { startLineNumber: number } }[]): string[] {
-	return items.map(f => `${f.resourceUri.path}:${f.range.startLineNumber}`);
+  return items.map(f => `${f.resourceUri.path}:${f.range.startLineNumber}`);
 }
 
 suite('AgentFeedbackService - Ordering', () => {
 
-	const store = new DisposableStore();
-	let service: IAgentFeedbackService;
-	let session: URI;
-	let fileA: URI;
-	let fileB: URI;
-	let fileC: URI;
+  const store = new DisposableStore();
+  let service: IAgentFeedbackService;
+  let session: URI;
+  let fileA: URI;
+  let fileB: URI;
+  let fileC: URI;
 
-	setup(() => {
-		const instantiationService = store.add(new TestInstantiationService());
+  setup(() => {
+    const instantiationService = store.add(new TestInstantiationService());
 
-		instantiationService.stub(IChatEditingService, new class extends mock<IChatEditingService>() { });
-		instantiationService.stub(IAgentSessionsService, new class extends mock<IAgentSessionsService>() { });
-		instantiationService.stub(ITelemetryService, NullTelemetryService);
+    instantiationService.stub(IChatEditingService, new class extends mock<IChatEditingService>() { });
+    instantiationService.stub(IAgentSessionsService, new class extends mock<IAgentSessionsService>() { });
+    instantiationService.stub(ITelemetryService, NullTelemetryService);
 
-		service = store.add(instantiationService.createInstance(AgentFeedbackService));
-		session = URI.parse('test://session/1');
-		fileA = URI.parse('file:///a.ts');
-		fileB = URI.parse('file:///b.ts');
-		fileC = URI.parse('file:///c.ts');
-	});
+    service = store.add(instantiationService.createInstance(AgentFeedbackService));
+    session = URI.parse('test://session/1');
+    fileA = URI.parse('file:///a.ts');
+    fileB = URI.parse('file:///b.ts');
+    fileC = URI.parse('file:///c.ts');
+  });
 
-	teardown(() => {
-		store.clear();
-	});
+  teardown(() => {
+    store.clear();
+  });
 
-	ensureNoDisposablesAreLeakedInTestSuite();
+  ensureNoDisposablesAreLeakedInTestSuite();
 
-	test('single file - items sorted by line number', () => {
-		service.addFeedback(session, fileA, r(20), 'line 20');
-		service.addFeedback(session, fileA, r(5), 'line 5');
-		service.addFeedback(session, fileA, r(10), 'line 10');
+  test('single file - items sorted by line number', () => {
+    service.addFeedback(session, fileA, r(20), 'line 20');
+    service.addFeedback(session, fileA, r(5), 'line 5');
+    service.addFeedback(session, fileA, r(10), 'line 10');
 
-		assert.deepStrictEqual(feedbackSummary(service.getFeedback(session)), [
-			'/a.ts:5',
-			'/a.ts:10',
-			'/a.ts:20',
-		]);
-	});
+    assert.deepStrictEqual(feedbackSummary(service.getFeedback(session)), [
+      '/a.ts:5',
+      '/a.ts:10',
+      '/a.ts:20',
+    ]);
+  });
 
-	test('multiple files - files ordered by recency, items within file sorted by line', () => {
-		service.addFeedback(session, fileA, r(10), 'A:10');
-		service.addFeedback(session, fileA, r(5), 'A:5');
-		service.addFeedback(session, fileB, r(20), 'B:20');
-		service.addFeedback(session, fileB, r(3), 'B:3');
+  test('multiple files - files ordered by recency, items within file sorted by line', () => {
+    service.addFeedback(session, fileA, r(10), 'A:10');
+    service.addFeedback(session, fileA, r(5), 'A:5');
+    service.addFeedback(session, fileB, r(20), 'B:20');
+    service.addFeedback(session, fileB, r(3), 'B:3');
 
-		assert.deepStrictEqual(feedbackSummary(service.getFeedback(session)), [
-			'/a.ts:5',
-			'/a.ts:10',
-			'/b.ts:3',
-			'/b.ts:20',
-		]);
-	});
+    assert.deepStrictEqual(feedbackSummary(service.getFeedback(session)), [
+      '/a.ts:5',
+      '/a.ts:10',
+      '/b.ts:3',
+      '/b.ts:20',
+    ]);
+  });
 
-	test('new file appended to end', () => {
-		service.addFeedback(session, fileA, r(1), 'A:1');
-		service.addFeedback(session, fileB, r(1), 'B:1');
-		service.addFeedback(session, fileC, r(1), 'C:1');
+  test('new file appended to end', () => {
+    service.addFeedback(session, fileA, r(1), 'A:1');
+    service.addFeedback(session, fileB, r(1), 'B:1');
+    service.addFeedback(session, fileC, r(1), 'C:1');
 
-		assert.deepStrictEqual(feedbackSummary(service.getFeedback(session)), [
-			'/a.ts:1',
-			'/b.ts:1',
-			'/c.ts:1',
-		]);
-	});
+    assert.deepStrictEqual(feedbackSummary(service.getFeedback(session)), [
+      '/a.ts:1',
+      '/b.ts:1',
+      '/c.ts:1',
+    ]);
+  });
 
-	test('adding to existing file does not change file ordering', () => {
-		service.addFeedback(session, fileA, r(10), 'A:10');
-		service.addFeedback(session, fileB, r(10), 'B:10');
-		// Add more feedback to fileA — should stay before fileB
-		service.addFeedback(session, fileA, r(5), 'A:5');
-		service.addFeedback(session, fileA, r(20), 'A:20');
+  test('adding to existing file does not change file ordering', () => {
+    service.addFeedback(session, fileA, r(10), 'A:10');
+    service.addFeedback(session, fileB, r(10), 'B:10');
+    // Add more feedback to fileA — should stay before fileB
+    service.addFeedback(session, fileA, r(5), 'A:5');
+    service.addFeedback(session, fileA, r(20), 'A:20');
 
-		assert.deepStrictEqual(feedbackSummary(service.getFeedback(session)), [
-			'/a.ts:5',
-			'/a.ts:10',
-			'/a.ts:20',
-			'/b.ts:10',
-		]);
-	});
+    assert.deepStrictEqual(feedbackSummary(service.getFeedback(session)), [
+      '/a.ts:5',
+      '/a.ts:10',
+      '/a.ts:20',
+      '/b.ts:10',
+    ]);
+  });
 
-	test('interleaved adds across files maintain file recency and line sort', () => {
-		service.addFeedback(session, fileA, r(30), 'A:30');
-		service.addFeedback(session, fileB, r(50), 'B:50');
-		service.addFeedback(session, fileA, r(10), 'A:10');
-		service.addFeedback(session, fileC, r(1), 'C:1');
-		service.addFeedback(session, fileB, r(5), 'B:5');
-		service.addFeedback(session, fileA, r(20), 'A:20');
+  test('interleaved adds across files maintain file recency and line sort', () => {
+    service.addFeedback(session, fileA, r(30), 'A:30');
+    service.addFeedback(session, fileB, r(50), 'B:50');
+    service.addFeedback(session, fileA, r(10), 'A:10');
+    service.addFeedback(session, fileC, r(1), 'C:1');
+    service.addFeedback(session, fileB, r(5), 'B:5');
+    service.addFeedback(session, fileA, r(20), 'A:20');
 
-		assert.deepStrictEqual(feedbackSummary(service.getFeedback(session)), [
-			'/a.ts:10',
-			'/a.ts:20',
-			'/a.ts:30',
-			'/b.ts:5',
-			'/b.ts:50',
-			'/c.ts:1',
-		]);
-	});
+    assert.deepStrictEqual(feedbackSummary(service.getFeedback(session)), [
+      '/a.ts:10',
+      '/a.ts:20',
+      '/a.ts:30',
+      '/b.ts:5',
+      '/b.ts:50',
+      '/c.ts:1',
+    ]);
+  });
 
-	test('navigation follows sorted order', () => {
-		service.addFeedback(session, fileA, r(20), 'A:20');
-		service.addFeedback(session, fileB, r(10), 'B:10');
-		service.addFeedback(session, fileA, r(5), 'A:5');
+  test('navigation follows sorted order', () => {
+    service.addFeedback(session, fileA, r(20), 'A:20');
+    service.addFeedback(session, fileB, r(10), 'B:10');
+    service.addFeedback(session, fileA, r(5), 'A:5');
 
-		// Expected order: A:5, A:20, B:10
-		const first = service.getNextFeedback(session, true)!;
-		assert.strictEqual(first.resourceUri.path, '/a.ts');
-		assert.strictEqual(first.range.startLineNumber, 5);
+    // Expected order: A:5, A:20, B:10
+    const first = service.getNextFeedback(session, true)!;
+    assert.strictEqual(first.resourceUri.path, '/a.ts');
+    assert.strictEqual(first.range.startLineNumber, 5);
 
-		const second = service.getNextFeedback(session, true)!;
-		assert.strictEqual(second.resourceUri.path, '/a.ts');
-		assert.strictEqual(second.range.startLineNumber, 20);
+    const second = service.getNextFeedback(session, true)!;
+    assert.strictEqual(second.resourceUri.path, '/a.ts');
+    assert.strictEqual(second.range.startLineNumber, 20);
 
-		const third = service.getNextFeedback(session, true)!;
-		assert.strictEqual(third.resourceUri.path, '/b.ts');
-		assert.strictEqual(third.range.startLineNumber, 10);
+    const third = service.getNextFeedback(session, true)!;
+    assert.strictEqual(third.resourceUri.path, '/b.ts');
+    assert.strictEqual(third.range.startLineNumber, 10);
 
-		// Wraps around
-		const fourth = service.getNextFeedback(session, true)!;
-		assert.strictEqual(fourth.resourceUri.path, '/a.ts');
-		assert.strictEqual(fourth.range.startLineNumber, 5);
-	});
+    // Wraps around
+    const fourth = service.getNextFeedback(session, true)!;
+    assert.strictEqual(fourth.resourceUri.path, '/a.ts');
+    assert.strictEqual(fourth.range.startLineNumber, 5);
+  });
 
-	test('navigation bearings reflect sorted position', () => {
-		service.addFeedback(session, fileA, r(20), 'A:20');
-		service.addFeedback(session, fileA, r(5), 'A:5');
-		service.addFeedback(session, fileB, r(1), 'B:1');
+  test('navigation bearings reflect sorted position', () => {
+    service.addFeedback(session, fileA, r(20), 'A:20');
+    service.addFeedback(session, fileA, r(5), 'A:5');
+    service.addFeedback(session, fileB, r(1), 'B:1');
 
-		// Before navigation, no anchor
-		let bearing = service.getNavigationBearing(session);
-		assert.strictEqual(bearing.activeIdx, -1);
-		assert.strictEqual(bearing.totalCount, 3);
+    // Before navigation, no anchor
+    let bearing = service.getNavigationBearing(session);
+    assert.strictEqual(bearing.activeIdx, -1);
+    assert.strictEqual(bearing.totalCount, 3);
 
-		// Navigate to first (A:5)
-		service.getNextFeedback(session, true);
-		bearing = service.getNavigationBearing(session);
-		assert.strictEqual(bearing.activeIdx, 0);
+    // Navigate to first (A:5)
+    service.getNextFeedback(session, true);
+    bearing = service.getNavigationBearing(session);
+    assert.strictEqual(bearing.activeIdx, 0);
 
-		// Navigate to second (A:20)
-		service.getNextFeedback(session, true);
-		bearing = service.getNavigationBearing(session);
-		assert.strictEqual(bearing.activeIdx, 1);
+    // Navigate to second (A:20)
+    service.getNextFeedback(session, true);
+    bearing = service.getNavigationBearing(session);
+    assert.strictEqual(bearing.activeIdx, 1);
 
-		// Navigate to third (B:1)
-		service.getNextFeedback(session, true);
-		bearing = service.getNavigationBearing(session);
-		assert.strictEqual(bearing.activeIdx, 2);
-	});
+    // Navigate to third (B:1)
+    service.getNextFeedback(session, true);
+    bearing = service.getNavigationBearing(session);
+    assert.strictEqual(bearing.activeIdx, 2);
+  });
 
-	test('removing feedback preserves ordering', () => {
-		const f1 = service.addFeedback(session, fileA, r(30), 'A:30');
-		service.addFeedback(session, fileA, r(10), 'A:10');
-		service.addFeedback(session, fileA, r(20), 'A:20');
+  test('removing feedback preserves ordering', () => {
+    const f1 = service.addFeedback(session, fileA, r(30), 'A:30');
+    service.addFeedback(session, fileA, r(10), 'A:10');
+    service.addFeedback(session, fileA, r(20), 'A:20');
 
-		assert.deepStrictEqual(feedbackSummary(service.getFeedback(session)), [
-			'/a.ts:10',
-			'/a.ts:20',
-			'/a.ts:30',
-		]);
+    assert.deepStrictEqual(feedbackSummary(service.getFeedback(session)), [
+      '/a.ts:10',
+      '/a.ts:20',
+      '/a.ts:30',
+    ]);
 
-		service.removeFeedback(session, f1.id);
-		assert.deepStrictEqual(feedbackSummary(service.getFeedback(session)), [
-			'/a.ts:10',
-			'/a.ts:20',
-		]);
-	});
+    service.removeFeedback(session, f1.id);
+    assert.deepStrictEqual(feedbackSummary(service.getFeedback(session)), [
+      '/a.ts:10',
+      '/a.ts:20',
+    ]);
+  });
 
-	test('same line number items are stable', () => {
-		const f1 = service.addFeedback(session, fileA, r(10), 'first');
-		const f2 = service.addFeedback(session, fileA, r(10), 'second');
+  test('same line number items are stable', () => {
+    const f1 = service.addFeedback(session, fileA, r(10), 'first');
+    const f2 = service.addFeedback(session, fileA, r(10), 'second');
 
-		const items = service.getFeedback(session);
-		assert.strictEqual(items[0].id, f1.id);
-		assert.strictEqual(items[1].id, f2.id);
-	});
+    const items = service.getFeedback(session);
+    assert.strictEqual(items[0].id, f1.id);
+    assert.strictEqual(items[1].id, f2.id);
+  });
 
-	test('preserves optional feedback context fields', () => {
-		const feedback = service.addFeedback(session, fileA, r(10), 'with context', undefined, {
-			codeSelection: 'const value = 1;',
-			diffHunks: '@@ -1,1 +1,1 @@\n-const value = 0;\n+const value = 1;',
-		});
+  test('preserves optional feedback context fields', () => {
+    const feedback = service.addFeedback(session, fileA, r(10), 'with context', undefined, {
+      codeSelection: 'const value = 1;',
+      diffHunks: '@@ -1,1 +1,1 @@\n-const value = 0;\n+const value = 1;',
+    });
 
-		assert.strictEqual(feedback.codeSelection, 'const value = 1;');
-		assert.strictEqual(feedback.diffHunks, '@@ -1,1 +1,1 @@\n-const value = 0;\n+const value = 1;');
-	});
+    assert.strictEqual(feedback.codeSelection, 'const value = 1;');
+    assert.strictEqual(feedback.diffHunks, '@@ -1,1 +1,1 @@\n-const value = 0;\n+const value = 1;');
+  });
 });
