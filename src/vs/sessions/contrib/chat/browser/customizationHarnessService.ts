@@ -4,10 +4,10 @@
  *--------------------------------------------------------------------------------------------*/
 
 import {
-	CustomizationHarness,
-	CustomizationHarnessServiceBase,
-	createCliHarnessDescriptor,
-	getCliUserRoots,
+  CustomizationHarness,
+  CustomizationHarnessServiceBase,
+  createCliHarnessDescriptor,
+  getCliUserRoots,
 } from '../../../../workbench/contrib/chat/common/customizationHarnessService.js';
 import { IPathService } from '../../../../workbench/services/path/common/pathService.js';
 import { BUILTIN_STORAGE } from '../common/builtinPromptsStorage.js';
@@ -19,14 +19,14 @@ import { BUILTIN_STORAGE } from '../common/builtinPromptsStorage.js';
  * the Copilot CLI. With a single harness the toggle bar is hidden.
  */
 export class SessionsCustomizationHarnessService extends CustomizationHarnessServiceBase {
-	constructor(
-		@IPathService pathService: IPathService,
-	) {
-		const userHome = pathService.userHome({ preferLocal: true });
-		const extras = [BUILTIN_STORAGE];
-		super(
-			[createCliHarnessDescriptor(getCliUserRoots(userHome), extras)],
-			CustomizationHarness.CLI,
-		);
-	}
+  constructor(
+    @IPathService pathService: IPathService,
+  ) {
+    const userHome = pathService.userHome({ preferLocal: true });
+    const extras = [BUILTIN_STORAGE];
+    super(
+      [createCliHarnessDescriptor(getCliUserRoots(userHome), extras)],
+      CustomizationHarness.CLI,
+    );
+  }
 }

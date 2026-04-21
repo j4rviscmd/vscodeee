@@ -33,19 +33,19 @@ import { INativeHostService } from '../../../../platform/native/common/native.js
  */
 export class TauriClipboardService extends Disposable implements IClipboardService {
 
-	declare readonly _serviceBrand: undefined;
+  declare readonly _serviceBrand: undefined;
 
-	/** Maximum number of characters read from the system clipboard when computing the resource-state hash. */
-	private static readonly MAX_RESOURCE_STATE_SOURCE_LENGTH = 1000;
+  /** Maximum number of characters read from the system clipboard when computing the resource-state hash. */
+  private static readonly MAX_RESOURCE_STATE_SOURCE_LENGTH = 1000;
 
-	/** In-memory store for typed clipboard text (MIME type -> text content). */
-	private readonly mapTextToType = new Map<string, string>();
-	/** In-memory list of resource URIs currently held on the clipboard. */
-	private resources: URI[] = [];
-	/** Hash of the system clipboard content at the time resources were last written, used for staleness detection. */
-	private resourcesStateHash: number | undefined = undefined;
+  /** In-memory store for typed clipboard text (MIME type -> text content). */
+  private readonly mapTextToType = new Map<string, string>();
+  /** In-memory list of resource URIs currently held on the clipboard. */
+  private resources: URI[] = [];
+  /** Hash of the system clipboard content at the time resources were last written, used for staleness detection. */
+  private resourcesStateHash: number | undefined = undefined;
 
-	/**
+  /**
 	 * Creates a new {@link TauriClipboardService}.
 	 *
 	 * Registers a `copy` event listener on every window (including windows
@@ -55,25 +55,25 @@ export class TauriClipboardService extends Disposable implements IClipboardServi
 	 * @param nativeHostService - Tauri native host service for system clipboard access.
 	 * @param logService - Logger for tracing clipboard operations.
 	 */
-	constructor(
-		@INativeHostService private readonly nativeHostService: INativeHostService,
-		@ILogService private readonly logService: ILogService
-	) {
-		super();
+  constructor(
+    @INativeHostService private readonly nativeHostService: INativeHostService,
+    @ILogService private readonly logService: ILogService,
+  ) {
+    super();
 
-		this._register(Event.runAndSubscribe(onDidRegisterWindow, ({ window, disposables }) => {
-			disposables.add(addDisposableListener(window.document, 'copy', () => this.clearResourcesState()));
-		}, { window: mainWindow, disposables: this._store }));
-	}
+    this._register(Event.runAndSubscribe(onDidRegisterWindow, ({ window, disposables }) => {
+      disposables.add(addDisposableListener(window.document, 'copy', () => this.clearResourcesState()));
+    }, { window: mainWindow, disposables: this._store }));
+  }
 
-	/** @inheritDoc IClipboardService.triggerPaste */
-	triggerPaste(_targetWindowId: number): Promise<void> | undefined {
-		// TODO(Phase 3): pass targetWindowId to nativeHostService once multi-window paste is supported
-		this.logService.trace('TauriClipboardService#triggerPaste');
-		return this.nativeHostService.triggerPaste();
-	}
+  /** @inheritDoc IClipboardService.triggerPaste */
+  triggerPaste(_targetWindowId: number): Promise<void> | undefined {
+    // TODO(Phase 3): pass targetWindowId to nativeHostService once multi-window paste is supported
+    this.logService.trace('TauriClipboardService#triggerPaste');
+    return this.nativeHostService.triggerPaste();
+  }
 
-	/**
+  /**
 	 * Writes text to the clipboard.
 	 *
 	 * If a `type` is provided the text is stored in-memory only (typed
@@ -83,19 +83,19 @@ export class TauriClipboardService extends Disposable implements IClipboardServi
 	 *
 	 * @inheritDoc IClipboardService.writeText
 	 */
-	async writeText(text: string, type?: string): Promise<void> {
-		this.logService.trace('TauriClipboardService#writeText, type:', type);
-		this.clearResourcesState();
+  async writeText(text: string, type?: string): Promise<void> {
+    this.logService.trace('TauriClipboardService#writeText, type:', type);
+    this.clearResourcesState();
 
-		if (type) {
-			this.mapTextToType.set(type, text);
-			return;
-		}
+    if (type) {
+      this.mapTextToType.set(type, text);
+      return;
+    }
 
-		await this.nativeHostService.writeClipboardText(text);
-	}
+    await this.nativeHostService.writeClipboardText(text);
+  }
 
-	/**
+  /**
 	 * Reads text from the clipboard.
 	 *
 	 * If a `type` is provided the value is read from the in-memory typed-text
@@ -103,29 +103,29 @@ export class TauriClipboardService extends Disposable implements IClipboardServi
 	 *
 	 * @inheritDoc IClipboardService.readText
 	 */
-	async readText(type?: string): Promise<string> {
-		this.logService.trace('TauriClipboardService#readText, type:', type);
+  async readText(type?: string): Promise<string> {
+    this.logService.trace('TauriClipboardService#readText, type:', type);
 
-		if (type) {
-			return this.mapTextToType.get(type) || '';
-		}
+    if (type) {
+      return this.mapTextToType.get(type) || '';
+    }
 
-		return this.nativeHostService.readClipboardText();
-	}
+    return this.nativeHostService.readClipboardText();
+  }
 
-	/** @inheritDoc IClipboardService.readFindText */
-	async readFindText(): Promise<string> {
-		this.logService.trace('TauriClipboardService#readFindText');
-		return this.nativeHostService.readClipboardFindText();
-	}
+  /** @inheritDoc IClipboardService.readFindText */
+  async readFindText(): Promise<string> {
+    this.logService.trace('TauriClipboardService#readFindText');
+    return this.nativeHostService.readClipboardFindText();
+  }
 
-	/** @inheritDoc IClipboardService.writeFindText */
-	async writeFindText(text: string): Promise<void> {
-		this.logService.trace('TauriClipboardService#writeFindText');
-		await this.nativeHostService.writeClipboardFindText(text);
-	}
+  /** @inheritDoc IClipboardService.writeFindText */
+  async writeFindText(text: string): Promise<void> {
+    this.logService.trace('TauriClipboardService#writeFindText');
+    await this.nativeHostService.writeClipboardFindText(text);
+  }
 
-	/**
+  /**
 	 * Stores resource URIs in-memory and snapshots the current system
 	 * clipboard hash so that staleness can be detected later.
 	 *
@@ -133,80 +133,80 @@ export class TauriClipboardService extends Disposable implements IClipboardServi
 	 *
 	 * @inheritDoc IClipboardService.writeResources
 	 */
-	async writeResources(resources: URI[]): Promise<void> {
-		// TODO(Phase 2): write resources to system clipboard via native clipboard buffer
-		if (resources.length === 0) {
-			this.clearResourcesState();
-		} else {
-			this.resources = resources;
-			this.resourcesStateHash = await this.computeResourcesStateHash();
-		}
-	}
+  async writeResources(resources: URI[]): Promise<void> {
+    // TODO(Phase 2): write resources to system clipboard via native clipboard buffer
+    if (resources.length === 0) {
+      this.clearResourcesState();
+    } else {
+      this.resources = resources;
+      this.resourcesStateHash = await this.computeResourcesStateHash();
+    }
+  }
 
-	/**
+  /**
 	 * Returns the in-memory resource URIs after validating that the system
 	 * clipboard has not changed since they were written.
 	 *
 	 * @inheritDoc IClipboardService.readResources
 	 */
-	async readResources(): Promise<URI[]> {
-		await this.validateResourcesState();
-		return this.resources;
-	}
+  async readResources(): Promise<URI[]> {
+    await this.validateResourcesState();
+    return this.resources;
+  }
 
-	/**
+  /**
 	 * Returns `true` if the in-memory resource list is non-empty and still
 	 * consistent with the system clipboard content.
 	 *
 	 * @inheritDoc IClipboardService.hasResources
 	 */
-	async hasResources(): Promise<boolean> {
-		await this.validateResourcesState();
-		return this.resources.length > 0;
-	}
+  async hasResources(): Promise<boolean> {
+    await this.validateResourcesState();
+    return this.resources.length > 0;
+  }
 
-	/**
+  /**
 	 * Recomputes the resource-state hash from the current system clipboard
 	 * content and clears the in-memory resource list if the hash differs
 	 * from the snapshot taken when resources were last written.
 	 */
-	private async validateResourcesState(): Promise<void> {
-		const currentHash = await this.computeResourcesStateHash();
-		if (this.resourcesStateHash !== currentHash) {
-			this.clearResourcesState();
-		}
-	}
+  private async validateResourcesState(): Promise<void> {
+    const currentHash = await this.computeResourcesStateHash();
+    if (this.resourcesStateHash !== currentHash) {
+      this.clearResourcesState();
+    }
+  }
 
-	/** @inheritDoc IClipboardService.clearInternalState */
-	clearInternalState(): void {
-		this.clearResourcesState();
-	}
+  /** @inheritDoc IClipboardService.clearInternalState */
+  clearInternalState(): void {
+    this.clearResourcesState();
+  }
 
-	/** @inheritDoc IClipboardService.readImage */
-	async readImage(): Promise<Uint8Array> {
-		this.logService.trace('TauriClipboardService#readImage');
-		return this.nativeHostService.readImage();
-	}
+  /** @inheritDoc IClipboardService.readImage */
+  async readImage(): Promise<Uint8Array> {
+    this.logService.trace('TauriClipboardService#readImage');
+    return this.nativeHostService.readImage();
+  }
 
-	/**
+  /**
 	 * Computes a hash of the current system clipboard text content,
 	 * truncated to {@link MAX_RESOURCE_STATE_SOURCE_LENGTH} characters.
 	 *
 	 * Returns `undefined` when the in-memory resource list is empty.
 	 */
-	private async computeResourcesStateHash(): Promise<number | undefined> {
-		if (this.resources.length === 0) {
-			return undefined;
-		}
-		const clipboardText = await this.readText();
-		return hash(clipboardText.substring(0, TauriClipboardService.MAX_RESOURCE_STATE_SOURCE_LENGTH));
-	}
+  private async computeResourcesStateHash(): Promise<number | undefined> {
+    if (this.resources.length === 0) {
+      return undefined;
+    }
+    const clipboardText = await this.readText();
+    return hash(clipboardText.substring(0, TauriClipboardService.MAX_RESOURCE_STATE_SOURCE_LENGTH));
+  }
 
-	/** Resets the in-memory resource list and its associated hash. */
-	private clearResourcesState(): void {
-		this.resources = [];
-		this.resourcesStateHash = undefined;
-	}
+  /** Resets the in-memory resource list and its associated hash. */
+  private clearResourcesState(): void {
+    this.resources = [];
+    this.resourcesStateHash = undefined;
+  }
 }
 
 registerSingleton(IClipboardService, TauriClipboardService, InstantiationType.Delayed);

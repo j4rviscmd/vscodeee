@@ -25,27 +25,27 @@ import { IElevatedFileService } from '../common/elevatedFileService.js';
  */
 export class TauriElevatedFileService implements IElevatedFileService {
 
-	declare readonly _serviceBrand: undefined;
+  declare readonly _serviceBrand: undefined;
 
-	/**
+  /**
 	 * @param nativeHostService - Tauri native host for invoking the elevated write command.
 	 * @param fileService - Standard file service used for temp-file I/O.
 	 * @param userDataProfileService - Provides the cache directory used for temp files.
 	 * @param logService - Logger for tracing elevated write operations.
 	 */
-	constructor(
-		@INativeHostService private readonly nativeHostService: INativeHostService,
-		@IFileService private readonly fileService: IFileService,
-		@IUserDataProfileService private readonly userDataProfileService: IUserDataProfileService,
-		@ILogService private readonly logService: ILogService
-	) { }
+  constructor(
+    @INativeHostService private readonly nativeHostService: INativeHostService,
+    @IFileService private readonly fileService: IFileService,
+    @IUserDataProfileService private readonly userDataProfileService: IUserDataProfileService,
+    @ILogService private readonly logService: ILogService,
+  ) { }
 
-	/** @inheritDoc IElevatedFileService.isSupported */
-	isSupported(resource: URI): boolean {
-		return resource.scheme === Schemas.file;
-	}
+  /** @inheritDoc IElevatedFileService.isSupported */
+  isSupported(resource: URI): boolean {
+    return resource.scheme === Schemas.file;
+  }
 
-	/**
+  /**
 	 * Writes `value` to `resource` with elevated privileges.
 	 *
 	 * The implementation uses a two-phase strategy:
@@ -58,27 +58,27 @@ export class TauriElevatedFileService implements IElevatedFileService {
 	 *
 	 * @inheritDoc IElevatedFileService.writeFileElevated
 	 */
-	async writeFileElevated(resource: URI, value: VSBuffer | VSBufferReadable | VSBufferReadableStream, options?: IWriteFileOptions): Promise<IFileStatWithMetadata> {
-		this.logService.trace('TauriElevatedFileService#writeFileElevated', resource.fsPath);
+  async writeFileElevated(resource: URI, value: VSBuffer | VSBufferReadable | VSBufferReadableStream, options?: IWriteFileOptions): Promise<IFileStatWithMetadata> {
+    this.logService.trace('TauriElevatedFileService#writeFileElevated', resource.fsPath);
 
-		// Write to a temp location first via the normal file service
-		const tempPath = URI.joinPath(this.userDataProfileService.currentProfile.cacheHome, `elevated-${Date.now()}.tmp`);
-		await this.fileService.writeFile(tempPath, value);
+    // Write to a temp location first via the normal file service
+    const tempPath = URI.joinPath(this.userDataProfileService.currentProfile.cacheHome, `elevated-${Date.now()}.tmp`);
+    await this.fileService.writeFile(tempPath, value);
 
-		try {
-			// Move to target with elevated privileges via Rust backend
-			await this.nativeHostService.writeElevated(tempPath, resource, { unlock: options?.unlock });
-		} finally {
-			// Clean up temp file
-			try {
-				await this.fileService.del(tempPath);
-			} catch {
-				// best effort
-			}
-		}
+    try {
+      // Move to target with elevated privileges via Rust backend
+      await this.nativeHostService.writeElevated(tempPath, resource, { unlock: options?.unlock });
+    } finally {
+      // Clean up temp file
+      try {
+        await this.fileService.del(tempPath);
+      } catch {
+        // best effort
+      }
+    }
 
-		return await this.fileService.resolve(resource, { resolveMetadata: true }) as IFileStatWithMetadata;
-	}
+    return await this.fileService.resolve(resource, { resolveMetadata: true }) as IFileStatWithMetadata;
+  }
 }
 
 registerSingleton(IElevatedFileService, TauriElevatedFileService, InstantiationType.Delayed);

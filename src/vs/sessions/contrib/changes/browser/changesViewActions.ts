@@ -16,48 +16,48 @@ import { bindContextKey } from '../../../../platform/observable/common/platformO
 import { ActiveSessionContextKeys, CHANGES_VIEW_ID } from '../common/changes.js';
 
 const openChangesViewActionOptions: IAction2Options = {
-	id: 'workbench.action.agentSessions.openChangesView',
-	title: localize2('openChangesView', "Changes"),
-	icon: Codicon.diffMultiple,
-	f1: false,
+  id: 'workbench.action.agentSessions.openChangesView',
+  title: localize2('openChangesView', 'Changes'),
+  icon: Codicon.diffMultiple,
+  f1: false,
 };
 
 class OpenChangesViewAction extends Action2 {
 
-	static readonly ID = openChangesViewActionOptions.id;
+  static readonly ID = openChangesViewActionOptions.id;
 
-	constructor() {
-		super(openChangesViewActionOptions);
-	}
+  constructor() {
+    super(openChangesViewActionOptions);
+  }
 
-	async run(accessor: ServicesAccessor): Promise<void> {
-		const viewsService = accessor.get(IViewsService);
-		await viewsService.openView(CHANGES_VIEW_ID, true);
-	}
+  async run(accessor: ServicesAccessor): Promise<void> {
+    const viewsService = accessor.get(IViewsService);
+    await viewsService.openView(CHANGES_VIEW_ID, true);
+  }
 }
 
 registerAction2(OpenChangesViewAction);
 
 class ChangesViewActionsContribution extends Disposable implements IWorkbenchContribution {
 
-	static readonly ID = 'workbench.contrib.changesViewActions';
+  static readonly ID = 'workbench.contrib.changesViewActions';
 
-	constructor(
-		@IContextKeyService contextKeyService: IContextKeyService,
-		@ISessionsManagementService sessionManagementService: ISessionsManagementService,
-	) {
-		super();
+  constructor(
+    @IContextKeyService contextKeyService: IContextKeyService,
+    @ISessionsManagementService sessionManagementService: ISessionsManagementService,
+  ) {
+    super();
 
-		// Bind context key: true when the active session has changes
-		this._register(bindContextKey(ActiveSessionContextKeys.HasChanges, contextKeyService, reader => {
-			const activeSession = sessionManagementService.activeSession.read(reader);
-			if (!activeSession) {
-				return false;
-			}
-			const changes = activeSession.changes.read(reader);
-			return changes.length > 0;
-		}));
-	}
+    // Bind context key: true when the active session has changes
+    this._register(bindContextKey(ActiveSessionContextKeys.HasChanges, contextKeyService, reader => {
+      const activeSession = sessionManagementService.activeSession.read(reader);
+      if (!activeSession) {
+        return false;
+      }
+      const changes = activeSession.changes.read(reader);
+      return changes.length > 0;
+    }));
+  }
 }
 
 registerWorkbenchContribution2(ChangesViewActionsContribution.ID, ChangesViewActionsContribution, WorkbenchPhase.AfterRestored);

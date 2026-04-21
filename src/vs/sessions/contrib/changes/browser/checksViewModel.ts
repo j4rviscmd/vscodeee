@@ -12,61 +12,61 @@ import { ISessionsManagementService } from '../../sessions/browser/sessionsManag
 import { structuralEquals } from '../../../../base/common/equals.js';
 
 export class ChecksViewModel extends Disposable {
-	readonly activeSessionResourceObs: IObservable<URI | undefined>;
-	readonly checksObs: IObservable<GitHubPullRequestCIModel | undefined>;
+  readonly activeSessionResourceObs: IObservable<URI | undefined>;
+  readonly checksObs: IObservable<GitHubPullRequestCIModel | undefined>;
 
-	constructor(
-		@IGitHubService gitHubService: IGitHubService,
-		@ISessionsManagementService sessionManagementService: ISessionsManagementService,
-	) {
-		super();
+  constructor(
+    @IGitHubService gitHubService: IGitHubService,
+    @ISessionsManagementService sessionManagementService: ISessionsManagementService,
+  ) {
+    super();
 
-		this.activeSessionResourceObs = derived<URI | undefined>(this, reader => {
-			const session = sessionManagementService.activeSession.read(reader);
-			return session?.resource;
-		});
+    this.activeSessionResourceObs = derived<URI | undefined>(this, reader => {
+      const session = sessionManagementService.activeSession.read(reader);
+      return session?.resource;
+    });
 
-		const pullRequestInfoObs = derivedOpts<{ owner: string; repo: string; headRef: string } | undefined>({
-			equalsFn: structuralEquals
-		}, reader => {
-			const session = sessionManagementService.activeSession.read(reader);
-			if (!session) {
-				return undefined;
-			}
+    const pullRequestInfoObs = derivedOpts<{ owner: string; repo: string; headRef: string } | undefined>({
+      equalsFn: structuralEquals,
+    }, reader => {
+      const session = sessionManagementService.activeSession.read(reader);
+      if (!session) {
+        return undefined;
+      }
 
-			const gitHubInfo = session.gitHubInfo.read(reader);
-			if (!gitHubInfo?.pullRequest) {
-				return undefined;
-			}
+      const gitHubInfo = session.gitHubInfo.read(reader);
+      if (!gitHubInfo?.pullRequest) {
+        return undefined;
+      }
 
-			const prModel = gitHubService.getPullRequest(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequest.number);
-			const pr = prModel.pullRequest.read(reader);
-			if (!pr) {
-				return undefined;
-			}
+      const prModel = gitHubService.getPullRequest(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequest.number);
+      const pr = prModel.pullRequest.read(reader);
+      if (!pr) {
+        return undefined;
+      }
 
-			return {
-				owner: gitHubInfo.owner,
-				repo: gitHubInfo.repo,
-				headRef: pr.headSha
-			};
-		});
+      return {
+        owner: gitHubInfo.owner,
+        repo: gitHubInfo.repo,
+        headRef: pr.headSha,
+      };
+    });
 
-		this.checksObs = derived(this, reader => {
-			const pullRequestInfo = pullRequestInfoObs.read(reader);
-			if (!pullRequestInfo) {
-				return undefined;
-			}
+    this.checksObs = derived(this, reader => {
+      const pullRequestInfo = pullRequestInfoObs.read(reader);
+      if (!pullRequestInfo) {
+        return undefined;
+      }
 
-			// Use the PR's headSha (commit SHA) rather than the branch
-			// name so CI checks can still be fetched after branch deletion
-			// (e.g. after the PR is merged).
-			const ciModel = gitHubService.getPullRequestCI(pullRequestInfo.owner, pullRequestInfo.repo, pullRequestInfo.headRef);
-			ciModel.refresh();
-			ciModel.startPolling();
-			reader.store.add({ dispose: () => ciModel.stopPolling() });
+      // Use the PR's headSha (commit SHA) rather than the branch
+      // name so CI checks can still be fetched after branch deletion
+      // (e.g. after the PR is merged).
+      const ciModel = gitHubService.getPullRequestCI(pullRequestInfo.owner, pullRequestInfo.repo, pullRequestInfo.headRef);
+      ciModel.refresh();
+      ciModel.startPolling();
+      reader.store.add({ dispose: () => ciModel.stopPolling() });
 
-			return ciModel;
-		});
-	}
+      return ciModel;
+    });
+  }
 }

@@ -30,14 +30,14 @@ import { TauriWorkingCopyBackupTracker } from './workingCopyBackupTracker.js';
 // For now, the browser backup service uses the same userRoamingDataHome/Backups path.
 export class TauriWorkingCopyBackupService extends WorkingCopyBackupService {
 
-	constructor(
-		@IWorkspaceContextService contextService: IWorkspaceContextService,
-		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
-		@IFileService fileService: IFileService,
-		@ILogService logService: ILogService
-	) {
-		super(joinPath(environmentService.userRoamingDataHome, 'Backups', contextService.getWorkspace().id), fileService, logService);
-	}
+  constructor(
+    @IWorkspaceContextService contextService: IWorkspaceContextService,
+    @IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
+    @IFileService fileService: IFileService,
+    @ILogService logService: ILogService,
+  ) {
+    super(joinPath(environmentService.userRoamingDataHome, 'Backups', contextService.getWorkspace().id), fileService, logService);
+  }
 }
 
 // Register Service

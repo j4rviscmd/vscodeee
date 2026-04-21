@@ -41,98 +41,98 @@ const TOGGLE_CHANGES_VIEW_ID = 'workbench.action.agentSessions.toggleChangesView
  */
 class ChangesTitleBarActionViewItem extends BaseActionViewItem {
 
-	private _container: HTMLElement | undefined;
-	private readonly _indicatorDisposables = this._register(new DisposableStore());
-	private readonly _hoverDelegate = this._register(createInstantHoverDelegate());
+  private _container: HTMLElement | undefined;
+  private readonly _indicatorDisposables = this._register(new DisposableStore());
+  private readonly _hoverDelegate = this._register(createInstantHoverDelegate());
 
-	constructor(
-		action: IAction,
-		options: IBaseActionViewItemOptions | undefined,
-		@IHoverService private readonly hoverService: IHoverService,
-		@ISessionsManagementService private readonly activeSessionService: ISessionsManagementService,
-		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
-	) {
-		super(undefined, action, options);
+  constructor(
+    action: IAction,
+    options: IBaseActionViewItemOptions | undefined,
+    @IHoverService private readonly hoverService: IHoverService,
+    @ISessionsManagementService private readonly activeSessionService: ISessionsManagementService,
+    @IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService,
+  ) {
+    super(undefined, action, options);
 
-		// Re-render when the active session changes
-		this._register(autorun(reader => {
-			this.activeSessionService.activeSession.read(reader);
-			this._rebuildIndicators();
-		}));
+    // Re-render when the active session changes
+    this._register(autorun(reader => {
+      this.activeSessionService.activeSession.read(reader);
+      this._rebuildIndicators();
+    }));
 
-		// Re-render when sessions data changes
-		this._register(this.activeSessionService.onDidChangeSessions(() => {
-			this._rebuildIndicators();
-		}));
+    // Re-render when sessions data changes
+    this._register(this.activeSessionService.onDidChangeSessions(() => {
+      this._rebuildIndicators();
+    }));
 
-		// Update active state when auxiliary bar visibility changes
-		this._register(this.layoutService.onDidChangePartVisibility(e => {
-			if (e.partId === Parts.AUXILIARYBAR_PART) {
-				this._updateActiveState();
-			}
-		}));
-	}
+    // Update active state when auxiliary bar visibility changes
+    this._register(this.layoutService.onDidChangePartVisibility(e => {
+      if (e.partId === Parts.AUXILIARYBAR_PART) {
+        this._updateActiveState();
+      }
+    }));
+  }
 
-	override render(container: HTMLElement): void {
-		super.render(container);
+  override render(container: HTMLElement): void {
+    super.render(container);
 
-		this._container = container;
-		container.classList.add('changes-titlebar-indicator');
-		container.setAttribute('role', 'button');
+    this._container = container;
+    container.classList.add('changes-titlebar-indicator');
+    container.setAttribute('role', 'button');
 
-		this._rebuildIndicators();
-		this._updateActiveState();
-	}
+    this._rebuildIndicators();
+    this._updateActiveState();
+  }
 
-	private _updateActiveState(): void {
-		const isVisible = this.layoutService.isVisible(Parts.AUXILIARYBAR_PART);
-		this._container?.classList.toggle('toggled', isVisible);
-		this._container?.setAttribute('aria-pressed', String(isVisible));
-	}
+  private _updateActiveState(): void {
+    const isVisible = this.layoutService.isVisible(Parts.AUXILIARYBAR_PART);
+    this._container?.classList.toggle('toggled', isVisible);
+    this._container?.setAttribute('aria-pressed', String(isVisible));
+  }
 
-	private _rebuildIndicators(): void {
-		if (!this._container) {
-			return;
-		}
+  private _rebuildIndicators(): void {
+    if (!this._container) {
+      return;
+    }
 
-		this._indicatorDisposables.clear();
+    this._indicatorDisposables.clear();
 
-		const btn = this._container;
-		btn.textContent = '';
+    const btn = this._container;
+    btn.textContent = '';
 
-		// Get change summary from the active session
-		const activeSession = this.activeSessionService.activeSession.get();
-		const resource = activeSession?.resource;
-		const session = resource ? this.activeSessionService.getSession(resource) : undefined;
-		const summary = session ? getAgentChangesSummary(session.changes.get()) : undefined;
+    // Get change summary from the active session
+    const activeSession = this.activeSessionService.activeSession.get();
+    const resource = activeSession?.resource;
+    const session = resource ? this.activeSessionService.getSession(resource) : undefined;
+    const summary = session ? getAgentChangesSummary(session.changes.get()) : undefined;
 
-		// Rebuild inner content: [diff icon] +insertions -deletions
-		append(btn, $(ThemeIcon.asCSSSelector(Codicon.diffMultiple)));
+    // Rebuild inner content: [diff icon] +insertions -deletions
+    append(btn, $(ThemeIcon.asCSSSelector(Codicon.diffMultiple)));
 
-		if (summary && summary.insertions > 0) {
-			const insLabel = append(btn, $('span.changes-titlebar-count.changes-titlebar-insertions'));
-			insLabel.textContent = `+${summary.insertions}`;
-		}
+    if (summary && summary.insertions > 0) {
+      const insLabel = append(btn, $('span.changes-titlebar-count.changes-titlebar-insertions'));
+      insLabel.textContent = `+${summary.insertions}`;
+    }
 
-		if (summary && summary.deletions > 0) {
-			const delLabel = append(btn, $('span.changes-titlebar-count.changes-titlebar-deletions'));
-			delLabel.textContent = `-${summary.deletions}`;
-		}
+    if (summary && summary.deletions > 0) {
+      const delLabel = append(btn, $('span.changes-titlebar-count.changes-titlebar-deletions'));
+      delLabel.textContent = `-${summary.deletions}`;
+    }
 
-		if (summary) {
-			const label = localize('changesSummary', "{0} file(s) changed, {1} insertion(s), {2} deletion(s)", summary.files, summary.insertions, summary.deletions);
-			btn.setAttribute('aria-label', label);
-			this._indicatorDisposables.add(this.hoverService.setupManagedHover(
-				this._hoverDelegate, btn, label
-			));
-		} else {
-			btn.setAttribute('aria-label', localize('showChanges', "Show Changes"));
-			this._indicatorDisposables.add(this.hoverService.setupManagedHover(
-				this._hoverDelegate, btn,
-				localize('showChanges', "Show Changes")
-			));
-		}
-	}
+    if (summary) {
+      const label = localize('changesSummary', '{0} file(s) changed, {1} insertion(s), {2} deletion(s)', summary.files, summary.insertions, summary.deletions);
+      btn.setAttribute('aria-label', label);
+      this._indicatorDisposables.add(this.hoverService.setupManagedHover(
+        this._hoverDelegate, btn, label,
+      ));
+    } else {
+      btn.setAttribute('aria-label', localize('showChanges', 'Show Changes'));
+      this._indicatorDisposables.add(this.hoverService.setupManagedHover(
+        this._hoverDelegate, btn,
+        localize('showChanges', 'Show Changes'),
+      ));
+    }
+  }
 }
 
 /**
@@ -142,56 +142,56 @@ class ChangesTitleBarActionViewItem extends BaseActionViewItem {
  */
 export class ChangesTitleBarContribution extends Disposable implements IWorkbenchContribution {
 
-	static readonly ID = 'workbench.contrib.changesTitleBar';
+  static readonly ID = 'workbench.contrib.changesTitleBar';
 
-	constructor(
-		@IActionViewItemService actionViewItemService: IActionViewItemService,
-		@IInstantiationService instantiationService: IInstantiationService,
-	) {
-		super();
+  constructor(
+    @IActionViewItemService actionViewItemService: IActionViewItemService,
+    @IInstantiationService instantiationService: IInstantiationService,
+  ) {
+    super();
 
-		// Register the toggle action in the session toolbar
-		this._register(MenuRegistry.appendMenuItem(Menus.TitleBarSessionMenu, {
-			command: {
-				id: TOGGLE_CHANGES_VIEW_ID,
-				title: localize('toggleChanges', "Toggle Changes"),
-				icon: Codicon.diffMultiple,
-				toggled: AuxiliaryBarVisibleContext,
-			},
-			group: 'navigation',
-			order: 11, // After Run Script (8), Open in VS Code (9), and Open Terminal (10)
-			when: ContextKeyExpr.and(IsAuxiliaryWindowContext.toNegated(), SessionsWelcomeVisibleContext.toNegated()),
-		}));
+    // Register the toggle action in the session toolbar
+    this._register(MenuRegistry.appendMenuItem(Menus.TitleBarSessionMenu, {
+      command: {
+        id: TOGGLE_CHANGES_VIEW_ID,
+        title: localize('toggleChanges', 'Toggle Changes'),
+        icon: Codicon.diffMultiple,
+        toggled: AuxiliaryBarVisibleContext,
+      },
+      group: 'navigation',
+      order: 11, // After Run Script (8), Open in VS Code (9), and Open Terminal (10)
+      when: ContextKeyExpr.and(IsAuxiliaryWindowContext.toNegated(), SessionsWelcomeVisibleContext.toNegated()),
+    }));
 
-		// Provide a custom action view item that renders the diff stats
-		this._register(actionViewItemService.register(Menus.TitleBarSessionMenu, TOGGLE_CHANGES_VIEW_ID, (action, options) => {
-			return instantiationService.createInstance(ChangesTitleBarActionViewItem, action, options);
-		}));
-	}
+    // Provide a custom action view item that renders the diff stats
+    this._register(actionViewItemService.register(Menus.TitleBarSessionMenu, TOGGLE_CHANGES_VIEW_ID, (action, options) => {
+      return instantiationService.createInstance(ChangesTitleBarActionViewItem, action, options);
+    }));
+  }
 }
 
 // Register the toggle action
 registerAction2(class extends Action2 {
-	constructor() {
-		super({
-			id: TOGGLE_CHANGES_VIEW_ID,
-			title: localize('toggleChanges', "Toggle Changes"),
-			icon: Codicon.diffMultiple,
-			precondition: ContextKeyExpr.and(IsAuxiliaryWindowContext.toNegated(), SessionsWelcomeVisibleContext.toNegated()),
-		});
-	}
+  constructor() {
+    super({
+      id: TOGGLE_CHANGES_VIEW_ID,
+      title: localize('toggleChanges', 'Toggle Changes'),
+      icon: Codicon.diffMultiple,
+      precondition: ContextKeyExpr.and(IsAuxiliaryWindowContext.toNegated(), SessionsWelcomeVisibleContext.toNegated()),
+    });
+  }
 
-	run(accessor: ServicesAccessor): void {
-		const layoutService = accessor.get(IWorkbenchLayoutService);
-		const paneCompositeService = accessor.get(IPaneCompositePartService);
-		const telemetryService = accessor.get(ITelemetryService);
+  run(accessor: ServicesAccessor): void {
+    const layoutService = accessor.get(IWorkbenchLayoutService);
+    const paneCompositeService = accessor.get(IPaneCompositePartService);
+    const telemetryService = accessor.get(ITelemetryService);
 
-		const isVisible = !layoutService.isVisible(Parts.AUXILIARYBAR_PART);
-		layoutService.setPartHidden(!isVisible, Parts.AUXILIARYBAR_PART);
-		if (isVisible) {
-			paneCompositeService.openPaneComposite(CHANGES_VIEW_CONTAINER_ID, ViewContainerLocation.AuxiliaryBar);
-		}
+    const isVisible = !layoutService.isVisible(Parts.AUXILIARYBAR_PART);
+    layoutService.setPartHidden(!isVisible, Parts.AUXILIARYBAR_PART);
+    if (isVisible) {
+      paneCompositeService.openPaneComposite(CHANGES_VIEW_CONTAINER_ID, ViewContainerLocation.AuxiliaryBar);
+    }
 
-		logChangesViewToggle(telemetryService, isVisible);
-	}
+    logChangesViewToggle(telemetryService, isVisible);
+  }
 });

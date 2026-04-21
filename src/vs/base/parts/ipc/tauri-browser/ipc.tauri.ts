@@ -31,54 +31,54 @@ import { invoke, listen, type UnlistenFn } from '../../../../platform/tauri/comm
  */
 export class TauriMessagePassingProtocol extends Disposable implements IMessagePassingProtocol {
 
-	private readonly _onMessage = this._register(new Emitter<VSBuffer>());
-	readonly onMessage: Event<VSBuffer> = this._onMessage.event;
+  private readonly _onMessage = this._register(new Emitter<VSBuffer>());
+  readonly onMessage: Event<VSBuffer> = this._onMessage.event;
 
-	private _unlisten: UnlistenFn | undefined;
+  private _unlisten: UnlistenFn | undefined;
 
-	constructor(private readonly windowId: number) {
-		super();
+  constructor(private readonly windowId: number) {
+    super();
 
-		this._startListening();
-	}
+    this._startListening();
+  }
 
-	private _startListening(): void {
-		listen<string>(`vscode:ipc_message:${this.windowId}`, (event) => {
-			const buffer = VSBuffer.wrap(
-				new Uint8Array(
-					atob(event.payload)
-						.split('')
-						.map(c => c.charCodeAt(0))
-				)
-			);
-			this._onMessage.fire(buffer);
-		}).then(unlisten => {
-			this._unlisten = unlisten;
-		}).catch(err => {
-			console.error('[TauriIPC] Failed to start listening:', err);
-		});
-	}
+  private _startListening(): void {
+    listen<string>(`vscode:ipc_message:${this.windowId}`, (event) => {
+      const buffer = VSBuffer.wrap(
+        new Uint8Array(
+          atob(event.payload)
+            .split('')
+            .map(c => c.charCodeAt(0)),
+        ),
+      );
+      this._onMessage.fire(buffer);
+    }).then(unlisten => {
+      this._unlisten = unlisten;
+    }).catch(err => {
+      console.error('[TauriIPC] Failed to start listening:', err);
+    });
+  }
 
-	send(buffer: VSBuffer): void {
-		const bytes = buffer.buffer;
-		let binary = '';
-		for (let i = 0; i < bytes.byteLength; i++) {
-			binary += String.fromCharCode(bytes[i]);
-		}
-		const base64 = btoa(binary);
+  send(buffer: VSBuffer): void {
+    const bytes = buffer.buffer;
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64 = btoa(binary);
 
-		invoke('ipc_message', {
-			windowId: this.windowId,
-			data: base64,
-		}).catch(err => {
-			console.error('[TauriIPC] Failed to send message:', err);
-		});
-	}
+    invoke('ipc_message', {
+      windowId: this.windowId,
+      data: base64,
+    }).catch(err => {
+      console.error('[TauriIPC] Failed to send message:', err);
+    });
+  }
 
-	override dispose(): void {
-		this._unlisten?.();
-		super.dispose();
-	}
+  override dispose(): void {
+    this._unlisten?.();
+    super.dispose();
+  }
 }
 
 /**
@@ -95,16 +95,16 @@ export class TauriMessagePassingProtocol extends Disposable implements IMessageP
  */
 export class TauriIPCClient extends IPCClient {
 
-	private readonly protocol: TauriMessagePassingProtocol;
+  private readonly protocol: TauriMessagePassingProtocol;
 
-	constructor(windowId: number) {
-		const protocol = new TauriMessagePassingProtocol(windowId);
-		super(protocol, `window:${windowId}`);
-		this.protocol = protocol;
-	}
+  constructor(windowId: number) {
+    const protocol = new TauriMessagePassingProtocol(windowId);
+    super(protocol, `window:${windowId}`);
+    this.protocol = protocol;
+  }
 
-	override dispose(): void {
-		this.protocol.dispose();
-		super.dispose();
-	}
+  override dispose(): void {
+    this.protocol.dispose();
+    super.dispose();
+  }
 }

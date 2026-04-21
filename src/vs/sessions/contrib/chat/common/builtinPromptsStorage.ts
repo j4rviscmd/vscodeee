@@ -15,9 +15,9 @@ export { BUILTIN_STORAGE } from '../../../../workbench/contrib/chat/common/aiCus
  * Prompt path for built-in prompts bundled with the Agents app.
  */
 export interface IBuiltinPromptPath {
-	readonly uri: URI;
-	readonly storage: AICustomizationPromptsStorage;
-	readonly type: PromptsType;
-	readonly name?: string;
-	readonly description?: string;
+  readonly uri: URI;
+  readonly storage: AICustomizationPromptsStorage;
+  readonly type: PromptsType;
+  readonly name?: string;
+  readonly description?: string;
 }

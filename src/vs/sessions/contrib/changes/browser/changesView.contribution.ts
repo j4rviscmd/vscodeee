@@ -21,27 +21,27 @@ const changesViewIcon = registerIcon('changes-view-icon', Codicon.gitCompare, lo
 const viewContainersRegistry = Registry.as<IViewContainersRegistry>(ViewContainerExtensions.ViewContainersRegistry);
 
 const changesViewContainer = viewContainersRegistry.registerViewContainer({
-	id: CHANGES_VIEW_CONTAINER_ID,
-	title: localize2('changes', 'Changes'),
-	ctorDescriptor: new SyncDescriptor(ChangesViewPaneContainer),
-	icon: changesViewIcon,
-	order: 10,
-	hideIfEmpty: true,
-	windowVisibility: WindowVisibility.Sessions
+  id: CHANGES_VIEW_CONTAINER_ID,
+  title: localize2('changes', 'Changes'),
+  ctorDescriptor: new SyncDescriptor(ChangesViewPaneContainer),
+  icon: changesViewIcon,
+  order: 10,
+  hideIfEmpty: true,
+  windowVisibility: WindowVisibility.Sessions,
 }, ViewContainerLocation.AuxiliaryBar, { doNotRegisterOpenCommand: true, isDefault: true });
 
 const viewsRegistry = Registry.as<IViewsRegistry>(ViewContainerExtensions.ViewsRegistry);
 
 viewsRegistry.registerViews([{
-	id: CHANGES_VIEW_ID,
-	name: localize2('changes', 'Changes'),
-	containerIcon: changesViewIcon,
-	ctorDescriptor: new SyncDescriptor(ChangesViewPane),
-	canToggleVisibility: true,
-	canMoveView: true,
-	weight: 100,
-	order: 1,
-	windowVisibility: WindowVisibility.Sessions
+  id: CHANGES_VIEW_ID,
+  name: localize2('changes', 'Changes'),
+  containerIcon: changesViewIcon,
+  ctorDescriptor: new SyncDescriptor(ChangesViewPane),
+  canToggleVisibility: true,
+  canMoveView: true,
+  weight: 100,
+  order: 1,
+  windowVisibility: WindowVisibility.Sessions,
 }], changesViewContainer);
 
 registerWorkbenchContribution2(ChangesTitleBarContribution.ID, ChangesTitleBarContribution, WorkbenchPhase.AfterRestored);

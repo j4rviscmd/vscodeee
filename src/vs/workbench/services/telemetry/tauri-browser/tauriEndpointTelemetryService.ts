@@ -20,27 +20,27 @@ import { InstantiationType, registerSingleton } from '../../../../platform/insta
 
 export class TauriEndpointTelemetryService implements ICustomEndpointTelemetryService {
 
-	declare readonly _serviceBrand: undefined;
+  declare readonly _serviceBrand: undefined;
 
-	private loggedWarning = false;
+  private loggedWarning = false;
 
-	publicLog(_endpoint: ITelemetryEndpoint, eventName: string, _data?: ITelemetryData): void {
-		this.warnOnce(eventName);
-	}
+  publicLog(_endpoint: ITelemetryEndpoint, eventName: string, _data?: ITelemetryData): void {
+    this.warnOnce(eventName);
+  }
 
-	publicLogError(_endpoint: ITelemetryEndpoint, errorEventName: string, _data?: ITelemetryData): void {
-		this.warnOnce(errorEventName);
-	}
+  publicLogError(_endpoint: ITelemetryEndpoint, errorEventName: string, _data?: ITelemetryData): void {
+    this.warnOnce(errorEventName);
+  }
 
-	private warnOnce(eventName: string): void {
-		if (!this.loggedWarning) {
-			this.loggedWarning = true;
-			console.warn(
-				`[TauriEndpointTelemetryService] Custom endpoint telemetry is not available ` +
-				`(Shared Process removed). Event "${eventName}" was discarded.`
-			);
-		}
-	}
+  private warnOnce(eventName: string): void {
+    if (!this.loggedWarning) {
+      this.loggedWarning = true;
+      console.warn(
+        '[TauriEndpointTelemetryService] Custom endpoint telemetry is not available ' +
+				`(Shared Process removed). Event "${eventName}" was discarded.`,
+      );
+    }
+  }
 }
 
 registerSingleton(ICustomEndpointTelemetryService, TauriEndpointTelemetryService, InstantiationType.Delayed);

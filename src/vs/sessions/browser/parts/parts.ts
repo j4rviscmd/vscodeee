@@ -4,5 +4,5 @@
  *--------------------------------------------------------------------------------------------*/
 
 export const enum AgenticParts {
-	PROJECTBAR_PART = 'workbench.parts.projectbar',
+  PROJECTBAR_PART = 'workbench.parts.projectbar',
 }

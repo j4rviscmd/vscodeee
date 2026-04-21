@@ -22,12 +22,12 @@ import { CopilotCLISessionType } from '../../sessions/browser/sessionTypes.js';
 import { CopilotChatSessionsProvider } from './copilotChatSessionsProvider.js';
 
 interface IModePickerItem {
-	readonly kind: 'mode';
-	readonly mode: IChatMode;
+  readonly kind: 'mode';
+  readonly mode: IChatMode;
 }
 
 interface IConfigurePickerItem {
-	readonly kind: 'configure';
+  readonly kind: 'configure';
 }
 
 type ModePickerItem = IModePickerItem | IConfigurePickerItem;
@@ -39,210 +39,210 @@ type ModePickerItem = IModePickerItem | IConfigurePickerItem;
  */
 export class ModePicker extends Disposable {
 
-	private readonly _onDidChange = this._register(new Emitter<IChatMode>());
-	readonly onDidChange: Event<IChatMode> = this._onDidChange.event;
+  private readonly _onDidChange = this._register(new Emitter<IChatMode>());
+  readonly onDidChange: Event<IChatMode> = this._onDidChange.event;
 
-	private _triggerElement: HTMLElement | undefined;
-	private _slotElement: HTMLElement | undefined;
-	private readonly _renderDisposables = this._register(new DisposableStore());
+  private _triggerElement: HTMLElement | undefined;
+  private _slotElement: HTMLElement | undefined;
+  private readonly _renderDisposables = this._register(new DisposableStore());
 
-	private _selectedMode: IChatMode = ChatMode.Agent;
+  private _selectedMode: IChatMode = ChatMode.Agent;
 
-	get selectedMode(): IChatMode {
-		return this._selectedMode;
-	}
+  get selectedMode(): IChatMode {
+    return this._selectedMode;
+  }
 
-	constructor(
-		@IActionWidgetService private readonly actionWidgetService: IActionWidgetService,
-		@IChatModeService private readonly chatModeService: IChatModeService,
-		@IChatSessionsService private readonly chatSessionsService: IChatSessionsService,
-		@ICommandService private readonly commandService: ICommandService,
-		@ISessionsManagementService private readonly sessionsManagementService: ISessionsManagementService,
-		@ISessionsProvidersService private readonly sessionsProvidersService: ISessionsProvidersService,
-	) {
-		super();
+  constructor(
+    @IActionWidgetService private readonly actionWidgetService: IActionWidgetService,
+    @IChatModeService private readonly chatModeService: IChatModeService,
+    @IChatSessionsService private readonly chatSessionsService: IChatSessionsService,
+    @ICommandService private readonly commandService: ICommandService,
+    @ISessionsManagementService private readonly sessionsManagementService: ISessionsManagementService,
+    @ISessionsProvidersService private readonly sessionsProvidersService: ISessionsProvidersService,
+  ) {
+    super();
 
-		this._register(this.chatModeService.onDidChangeChatModes(() => {
-			// Refresh the trigger label when available chat modes change
-			if (this._triggerElement) {
-				this._updateTriggerLabel();
-			}
-		}));
-	}
+    this._register(this.chatModeService.onDidChangeChatModes(() => {
+      // Refresh the trigger label when available chat modes change
+      if (this._triggerElement) {
+        this._updateTriggerLabel();
+      }
+    }));
+  }
 
-	/**
+  /**
 	 * Resets the selected mode back to the default Agent mode.
 	 */
-	reset(): void {
-		this._selectedMode = ChatMode.Agent;
-		this._updateTriggerLabel();
-	}
+  reset(): void {
+    this._selectedMode = ChatMode.Agent;
+    this._updateTriggerLabel();
+  }
 
-	/**
+  /**
 	 * Renders the mode picker trigger button into the given container.
 	 */
-	render(container: HTMLElement): HTMLElement {
-		this._renderDisposables.clear();
+  render(container: HTMLElement): HTMLElement {
+    this._renderDisposables.clear();
 
-		const slot = dom.append(container, dom.$('.sessions-chat-picker-slot'));
-		this._slotElement = slot;
-		this._renderDisposables.add({ dispose: () => slot.remove() });
+    const slot = dom.append(container, dom.$('.sessions-chat-picker-slot'));
+    this._slotElement = slot;
+    this._renderDisposables.add({ dispose: () => slot.remove() });
 
-		const trigger = dom.append(slot, dom.$('a.action-label'));
-		trigger.tabIndex = 0;
-		trigger.role = 'button';
-		trigger.setAttribute('aria-label', localize('sessions.modePicker.ariaLabel', "Select chat mode"));
-		this._triggerElement = trigger;
+    const trigger = dom.append(slot, dom.$('a.action-label'));
+    trigger.tabIndex = 0;
+    trigger.role = 'button';
+    trigger.setAttribute('aria-label', localize('sessions.modePicker.ariaLabel', 'Select chat mode'));
+    this._triggerElement = trigger;
 
-		this._updateTriggerLabel();
+    this._updateTriggerLabel();
 
-		this._renderDisposables.add(dom.addDisposableListener(trigger, dom.EventType.CLICK, (e) => {
-			dom.EventHelper.stop(e, true);
-			this._showPicker();
-		}));
+    this._renderDisposables.add(dom.addDisposableListener(trigger, dom.EventType.CLICK, (e) => {
+      dom.EventHelper.stop(e, true);
+      this._showPicker();
+    }));
 
-		this._renderDisposables.add(dom.addDisposableListener(trigger, dom.EventType.KEY_DOWN, (e) => {
-			if (e.key === 'Enter' || e.key === ' ') {
-				dom.EventHelper.stop(e, true);
-				this._showPicker();
-			}
-		}));
+    this._renderDisposables.add(dom.addDisposableListener(trigger, dom.EventType.KEY_DOWN, (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        dom.EventHelper.stop(e, true);
+        this._showPicker();
+      }
+    }));
 
-		return slot;
-	}
+    return slot;
+  }
 
-	private _getAvailableModes(): IChatMode[] {
-		const customAgentTarget = this.chatSessionsService.getCustomAgentTargetForSessionType(CopilotCLISessionType.id);
-		const effectiveTarget = customAgentTarget && customAgentTarget !== Target.Undefined ? customAgentTarget : Target.GitHubCopilot;
-		const modes = this.chatModeService.getModes();
+  private _getAvailableModes(): IChatMode[] {
+    const customAgentTarget = this.chatSessionsService.getCustomAgentTargetForSessionType(CopilotCLISessionType.id);
+    const effectiveTarget = customAgentTarget && customAgentTarget !== Target.Undefined ? customAgentTarget : Target.GitHubCopilot;
+    const modes = this.chatModeService.getModes();
 
-		// Always include the default Agent mode
-		const result: IChatMode[] = [ChatMode.Agent];
+    // Always include the default Agent mode
+    const result: IChatMode[] = [ChatMode.Agent];
 
-		// Add custom modes matching the target and visible to users
-		for (const mode of modes.custom) {
-			const target = mode.target.get();
-			if (target === effectiveTarget || target === Target.Undefined) {
-				const visibility = mode.visibility?.get();
-				if (visibility && !visibility.userInvocable) {
-					continue;
-				}
-				result.push(mode);
-			}
-		}
+    // Add custom modes matching the target and visible to users
+    for (const mode of modes.custom) {
+      const target = mode.target.get();
+      if (target === effectiveTarget || target === Target.Undefined) {
+        const visibility = mode.visibility?.get();
+        if (visibility && !visibility.userInvocable) {
+          continue;
+        }
+        result.push(mode);
+      }
+    }
 
-		return result;
-	}
+    return result;
+  }
 
-	private _showPicker(): void {
-		if (!this._triggerElement || this.actionWidgetService.isVisible) {
-			return;
-		}
+  private _showPicker(): void {
+    if (!this._triggerElement || this.actionWidgetService.isVisible) {
+      return;
+    }
 
-		const modes = this._getAvailableModes();
+    const modes = this._getAvailableModes();
 
-		const items = this._buildItems(modes);
+    const items = this._buildItems(modes);
 
-		const triggerElement = this._triggerElement;
-		const delegate: IActionListDelegate<ModePickerItem> = {
-			onSelect: (item) => {
-				this.actionWidgetService.hide();
-				if (item.kind === 'mode') {
-					this._selectMode(item.mode);
-				} else {
-					this.commandService.executeCommand(AICustomizationManagementCommands.OpenEditor);
-				}
-			},
-			onHide: () => { triggerElement.focus(); },
-		};
+    const triggerElement = this._triggerElement;
+    const delegate: IActionListDelegate<ModePickerItem> = {
+      onSelect: (item) => {
+        this.actionWidgetService.hide();
+        if (item.kind === 'mode') {
+          this._selectMode(item.mode);
+        } else {
+          this.commandService.executeCommand(AICustomizationManagementCommands.OpenEditor);
+        }
+      },
+      onHide: () => { triggerElement.focus(); },
+    };
 
-		this.actionWidgetService.show<ModePickerItem>(
-			'localModePicker',
-			false,
-			items,
-			delegate,
-			this._triggerElement,
-			undefined,
-			[],
-			{
-				getAriaLabel: (item) => item.label ?? '',
-				getWidgetAriaLabel: () => localize('modePicker.ariaLabel', "Mode Picker"),
-			},
-		);
-	}
+    this.actionWidgetService.show<ModePickerItem>(
+      'localModePicker',
+      false,
+      items,
+      delegate,
+      this._triggerElement,
+      undefined,
+      [],
+      {
+        getAriaLabel: (item) => item.label ?? '',
+        getWidgetAriaLabel: () => localize('modePicker.ariaLabel', 'Mode Picker'),
+      },
+    );
+  }
 
-	private _buildItems(modes: IChatMode[]): IActionListItem<ModePickerItem>[] {
-		const items: IActionListItem<ModePickerItem>[] = [];
+  private _buildItems(modes: IChatMode[]): IActionListItem<ModePickerItem>[] {
+    const items: IActionListItem<ModePickerItem>[] = [];
 
-		// Default Agent mode
-		const agentMode = modes[0];
-		items.push({
-			kind: ActionListItemKind.Action,
-			label: agentMode.label.get(),
-			group: { title: '', icon: this._selectedMode.id === agentMode.id ? Codicon.check : Codicon.blank },
-			item: { kind: 'mode', mode: agentMode },
-		});
+    // Default Agent mode
+    const agentMode = modes[0];
+    items.push({
+      kind: ActionListItemKind.Action,
+      label: agentMode.label.get(),
+      group: { title: '', icon: this._selectedMode.id === agentMode.id ? Codicon.check : Codicon.blank },
+      item: { kind: 'mode', mode: agentMode },
+    });
 
-		// Custom modes (with separator if any exist)
-		const customModes = modes.slice(1);
-		if (customModes.length > 0) {
-			items.push({ kind: ActionListItemKind.Separator, label: '' });
-			for (const mode of customModes) {
-				items.push({
-					kind: ActionListItemKind.Action,
-					label: mode.label.get(),
-					group: { title: '', icon: this._selectedMode.id === mode.id ? Codicon.check : Codicon.blank },
-					item: { kind: 'mode', mode },
-				});
-			}
-		}
+    // Custom modes (with separator if any exist)
+    const customModes = modes.slice(1);
+    if (customModes.length > 0) {
+      items.push({ kind: ActionListItemKind.Separator, label: '' });
+      for (const mode of customModes) {
+        items.push({
+          kind: ActionListItemKind.Action,
+          label: mode.label.get(),
+          group: { title: '', icon: this._selectedMode.id === mode.id ? Codicon.check : Codicon.blank },
+          item: { kind: 'mode', mode },
+        });
+      }
+    }
 
-		// Configure Custom Agents action
-		items.push({ kind: ActionListItemKind.Separator, label: '' });
-		items.push({
-			kind: ActionListItemKind.Action,
-			label: localize('configureCustomAgents', "Configure Custom Agents..."),
-			group: { title: '', icon: Codicon.blank },
-			item: { kind: 'configure' },
-		});
+    // Configure Custom Agents action
+    items.push({ kind: ActionListItemKind.Separator, label: '' });
+    items.push({
+      kind: ActionListItemKind.Action,
+      label: localize('configureCustomAgents', 'Configure Custom Agents...'),
+      group: { title: '', icon: Codicon.blank },
+      item: { kind: 'configure' },
+    });
 
-		return items;
-	}
+    return items;
+  }
 
-	private _selectMode(mode: IChatMode): void {
-		this._selectedMode = mode;
-		this._updateTriggerLabel();
-		this._onDidChange.fire(mode);
+  private _selectMode(mode: IChatMode): void {
+    this._selectedMode = mode;
+    this._updateTriggerLabel();
+    this._onDidChange.fire(mode);
 
-		const session = this.sessionsManagementService.activeSession.get();
-		if (!session) {
-			return;
-		}
+    const session = this.sessionsManagementService.activeSession.get();
+    if (!session) {
+      return;
+    }
 
-		this.sessionsProvidersService.getProvider<CopilotChatSessionsProvider>(session.providerId)?.getSession(session.sessionId)?.setMode(mode);
-	}
+    this.sessionsProvidersService.getProvider<CopilotChatSessionsProvider>(session.providerId)?.getSession(session.sessionId)?.setMode(mode);
+  }
 
-	private _updateTriggerLabel(): void {
-		if (!this._triggerElement || !this._slotElement) {
-			return;
-		}
+  private _updateTriggerLabel(): void {
+    if (!this._triggerElement || !this._slotElement) {
+      return;
+    }
 
-		dom.clearNode(this._triggerElement);
+    dom.clearNode(this._triggerElement);
 
-		const icon = this._selectedMode.icon.get();
-		if (icon) {
-			dom.append(this._triggerElement, renderIcon(icon));
-		}
+    const icon = this._selectedMode.icon.get();
+    if (icon) {
+      dom.append(this._triggerElement, renderIcon(icon));
+    }
 
-		const labelSpan = dom.append(this._triggerElement, dom.$('span.sessions-chat-dropdown-label'));
-		labelSpan.textContent = this._selectedMode.label.get();
-		dom.append(this._triggerElement, renderIcon(Codicon.chevronDown));
+    const labelSpan = dom.append(this._triggerElement, dom.$('span.sessions-chat-dropdown-label'));
+    labelSpan.textContent = this._selectedMode.label.get();
+    dom.append(this._triggerElement, renderIcon(Codicon.chevronDown));
 
-		const modes = this._getAvailableModes();
-		const visible = modes.length > 1;
-		dom.setVisibility(visible, this._slotElement);
-		this._slotElement.classList.toggle('disabled', false);
-		this._triggerElement.setAttribute('aria-hidden', String(!visible));
-		this._triggerElement.tabIndex = visible ? 0 : -1;
-	}
+    const modes = this._getAvailableModes();
+    const visible = modes.length > 1;
+    dom.setVisibility(visible, this._slotElement);
+    this._slotElement.classList.toggle('disabled', false);
+    this._triggerElement.setAttribute('aria-hidden', String(!visible));
+    this._triggerElement.tabIndex = visible ? 0 : -1;
+  }
 }

@@ -10,24 +10,24 @@ import { InstantiationType, registerSingleton } from '../../../../platform/insta
 import { IInlineChatSession2, IInlineChatSessionService } from '../../../../workbench/contrib/inlineChat/browser/inlineChatSessionService.js';
 
 class NullInlineChatSessionService implements IInlineChatSessionService {
-	declare _serviceBrand: undefined;
+  declare _serviceBrand: undefined;
 
-	readonly onWillStartSession: Event<IActiveCodeEditor> = Event.None;
-	readonly onDidChangeSessions: Event<this> = Event.None;
+  readonly onWillStartSession: Event<IActiveCodeEditor> = Event.None;
+  readonly onDidChangeSessions: Event<this> = Event.None;
 
-	dispose(): void { }
+  dispose(): void { }
 
-	createSession(_editor: ICodeEditor): IInlineChatSession2 {
-		throw new Error('Inline chat sessions are not supported in the sessions window');
-	}
+  createSession(_editor: ICodeEditor): IInlineChatSession2 {
+    throw new Error('Inline chat sessions are not supported in the sessions window');
+  }
 
-	getSessionByTextModel(_uri: URI): IInlineChatSession2 | undefined {
-		return undefined;
-	}
+  getSessionByTextModel(_uri: URI): IInlineChatSession2 | undefined {
+    return undefined;
+  }
 
-	getSessionBySessionUri(_uri: URI): IInlineChatSession2 | undefined {
-		return undefined;
-	}
+  getSessionBySessionUri(_uri: URI): IInlineChatSession2 | undefined {
+    return undefined;
+  }
 }
 
 registerSingleton(IInlineChatSessionService, NullInlineChatSessionService, InstantiationType.Delayed);

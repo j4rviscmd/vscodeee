@@ -23,14 +23,14 @@ import { IWorkbenchConstructionOptions } from '../../../browser/web.api.js';
  * then passed into this service's constructor.
  */
 export interface ITauriWindowConfiguration {
-	readonly windowId: number;
-	readonly logLevel: number;
-	readonly resourceDir: string;
-	readonly frontendDist: string;
-	readonly appDataDir: string;
-	readonly homeDir?: string;
-	readonly tmpDir?: string;
-	readonly windowLabel?: string;
+  readonly windowId: number;
+  readonly logLevel: number;
+  readonly resourceDir: string;
+  readonly frontendDist: string;
+  readonly appDataDir: string;
+  readonly homeDir?: string;
+  readonly tmpDir?: string;
+  readonly windowLabel?: string;
 }
 
 /**
@@ -48,84 +48,84 @@ export interface ITauriWindowConfiguration {
  */
 export class TauriWorkbenchEnvironmentService extends BrowserWorkbenchEnvironmentService implements IBrowserWorkbenchEnvironmentService {
 
-	constructor(
-		private readonly tauriConfig: ITauriWindowConfiguration,
-		workspaceId: string,
-		logsHome: URI,
-		options: IWorkbenchConstructionOptions,
-		private readonly tauriProductService: IProductService
-	) {
-		super(workspaceId, logsHome, options, tauriProductService);
-	}
+  constructor(
+    private readonly tauriConfig: ITauriWindowConfiguration,
+    workspaceId: string,
+    logsHome: URI,
+    options: IWorkbenchConstructionOptions,
+    private readonly tauriProductService: IProductService,
+  ) {
+    super(workspaceId, logsHome, options, tauriProductService);
+  }
 
-	/**
+  /**
 	 * The Tauri window ID.
 	 */
-	get tauriWindowId(): number {
-		return this.tauriConfig.windowId;
-	}
+  get tauriWindowId(): number {
+    return this.tauriConfig.windowId;
+  }
 
-	/**
+  /**
 	 * Path to the Tauri resource directory.
 	 */
-	@memoize
-	get resourceDir(): string {
-		return this.tauriConfig.resourceDir;
-	}
+  @memoize
+  get resourceDir(): string {
+    return this.tauriConfig.resourceDir;
+  }
 
-	/**
+  /**
 	 * User's home directory (from Rust `dirs::home_dir()`).
 	 */
-	@memoize
-	get userHome(): URI {
-		if (this.tauriConfig.homeDir) {
-			return URI.file(this.tauriConfig.homeDir);
-		}
-		return super.userRoamingDataHome;
-	}
+  @memoize
+  get userHome(): URI {
+    if (this.tauriConfig.homeDir) {
+      return URI.file(this.tauriConfig.homeDir);
+    }
+    return super.userRoamingDataHome;
+  }
 
-	/**
+  /**
 	 * User roaming data home — where settings, keybindings, snippets live.
 	 * e.g., `~/Library/Application Support/vscodeee/User` on macOS.
 	 */
-	@memoize
-	override get userRoamingDataHome(): URI {
-		return URI.file(`${this.tauriConfig.appDataDir}/User`);
-	}
+  @memoize
+  override get userRoamingDataHome(): URI {
+    return URI.file(`${this.tauriConfig.appDataDir}/User`);
+  }
 
-	/**
+  /**
 	 * Cache home directory.
 	 */
-	@memoize
-	override get cacheHome(): URI {
-		return URI.file(`${this.tauriConfig.appDataDir}/CachedData`);
-	}
+  @memoize
+  override get cacheHome(): URI {
+    return URI.file(`${this.tauriConfig.appDataDir}/CachedData`);
+  }
 
-	/**
+  /**
 	 * Workspace storage home — per-workspace state.
 	 */
-	@memoize
-	override get workspaceStorageHome(): URI {
-		return URI.file(`${this.tauriConfig.appDataDir}/User/workspaceStorage`);
-	}
+  @memoize
+  override get workspaceStorageHome(): URI {
+    return URI.file(`${this.tauriConfig.appDataDir}/User/workspaceStorage`);
+  }
 
-	/**
+  /**
 	 * Local history home.
 	 */
-	@memoize
-	override get localHistoryHome(): URI {
-		return URI.file(`${this.tauriConfig.appDataDir}/User/History`);
-	}
+  @memoize
+  override get localHistoryHome(): URI {
+    return URI.file(`${this.tauriConfig.appDataDir}/User/History`);
+  }
 
-	/**
+  /**
 	 * State resource — global persistent state.
 	 */
-	@memoize
-	override get stateResource(): URI {
-		return URI.file(`${this.tauriConfig.appDataDir}/User/globalStorage/state.vscdb`);
-	}
+  @memoize
+  override get stateResource(): URI {
+    return URI.file(`${this.tauriConfig.appDataDir}/User/globalStorage/state.vscdb`);
+  }
 
-	/**
+  /**
 	 * Webview external endpoint — override to use local `vscode-file://` protocol
 	 * instead of the CDN URL (`vscode-cdn.net`).
 	 *
@@ -136,26 +136,26 @@ export class TauriWorkbenchEnvironmentService extends BrowserWorkbenchEnvironmen
 	 * The path points to `out/vs/workbench/contrib/webview/browser/pre/` under
 	 * the frontend dist directory (the Tauri resource root).
 	 */
-	@memoize
-	override get webviewExternalEndpoint(): string {
-		// Use vscode-file:// protocol to serve webview pre/ content locally.
-		// frontendDist is the absolute path to the app's out/ directory
-		// (e.g., /path/to/project/out in dev, or .../Resources/dist in prod).
-		// The webview pre/ files are at vs/workbench/contrib/webview/browser/pre/
-		// under this directory.
-		return `vscode-file://vscode-app${this.tauriConfig.frontendDist}/vs/workbench/contrib/webview/browser/pre/`;
-	}
+  @memoize
+  override get webviewExternalEndpoint(): string {
+    // Use vscode-file:// protocol to serve webview pre/ content locally.
+    // frontendDist is the absolute path to the app's out/ directory
+    // (e.g., /path/to/project/out in dev, or .../Resources/dist in prod).
+    // The webview pre/ files are at vs/workbench/contrib/webview/browser/pre/
+    // under this directory.
+    return `vscode-file://vscode-app${this.tauriConfig.frontendDist}/vs/workbench/contrib/webview/browser/pre/`;
+  }
 
-	/**
+  /**
 	 * Path to the user extensions directory.
 	 *
 	 * In desktop VS Code this comes from `AbstractNativeEnvironmentService`.
 	 * For Tauri we derive it from `homeDir` using the product's data folder
 	 * name (e.g., `~/.vscode-oss/extensions/`).
 	 */
-	@memoize
-	get extensionsPath(): string {
-		const dataFolderName = this.tauriProductService.dataFolderName ?? 'vscodeee';
-		return URI.joinPath(this.userHome, dataFolderName, 'extensions').fsPath;
-	}
+  @memoize
+  get extensionsPath(): string {
+    const dataFolderName = this.tauriProductService.dataFolderName ?? 'vscodeee';
+    return URI.joinPath(this.userHome, dataFolderName, 'extensions').fsPath;
+  }
 }

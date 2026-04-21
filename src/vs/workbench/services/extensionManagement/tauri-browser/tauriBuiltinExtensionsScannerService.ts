@@ -17,16 +17,16 @@ import { ILogService } from '../../../../platform/log/common/log.js';
 import { invoke } from '../../../../platform/tauri/common/tauriApi.js';
 
 interface IBundledExtension {
-	extensionPath: string;
-	packageJSON: IExtensionManifest;
-	packageNLS?: ITranslations;
-	readmePath?: string;
-	changelogPath?: string;
+  extensionPath: string;
+  packageJSON: IExtensionManifest;
+  packageNLS?: ITranslations;
+  readmePath?: string;
+  changelogPath?: string;
 }
 
 interface IBuiltinExtensionsResult {
-	extensionsDir: string;
-	extensions: IBundledExtension[];
+  extensionsDir: string;
+  extensions: IBundledExtension[];
 }
 
 /**
@@ -49,94 +49,94 @@ interface IBuiltinExtensionsResult {
  */
 export class TauriBuiltinExtensionsScannerService implements IBuiltinExtensionsScannerService {
 
-	declare readonly _serviceBrand: undefined;
+  declare readonly _serviceBrand: undefined;
 
-	private scanPromise: Promise<IExtension[]> | undefined;
-	private nlsUrl: URI | undefined;
+  private scanPromise: Promise<IExtension[]> | undefined;
+  private nlsUrl: URI | undefined;
 
-	constructor(
-		@IWorkbenchEnvironmentService _environmentService: IWorkbenchEnvironmentService,
-		@IUriIdentityService private readonly uriIdentityService: IUriIdentityService,
-		@IExtensionResourceLoaderService private readonly extensionResourceLoaderService: IExtensionResourceLoaderService,
-		@IProductService productService: IProductService,
-		@ILogService private readonly logService: ILogService
-	) {
-		const nlsBaseUrl = productService.extensionsGallery?.nlsBaseUrl;
-		if (nlsBaseUrl && productService.commit && !Language.isDefaultVariant()) {
-			this.nlsUrl = URI.joinPath(URI.parse(nlsBaseUrl), productService.commit, productService.version, Language.value());
-		}
-	}
+  constructor(
+    @IWorkbenchEnvironmentService _environmentService: IWorkbenchEnvironmentService,
+    @IUriIdentityService private readonly uriIdentityService: IUriIdentityService,
+    @IExtensionResourceLoaderService private readonly extensionResourceLoaderService: IExtensionResourceLoaderService,
+    @IProductService productService: IProductService,
+    @ILogService private readonly logService: ILogService,
+  ) {
+    const nlsBaseUrl = productService.extensionsGallery?.nlsBaseUrl;
+    if (nlsBaseUrl && productService.commit && !Language.isDefaultVariant()) {
+      this.nlsUrl = URI.joinPath(URI.parse(nlsBaseUrl), productService.commit, productService.version, Language.value());
+    }
+  }
 
-	async scanBuiltinExtensions(): Promise<IExtension[]> {
-		if (!this.scanPromise) {
-			this.scanPromise = this.doScanBuiltinExtensions();
-		}
-		return this.scanPromise;
-	}
+  async scanBuiltinExtensions(): Promise<IExtension[]> {
+    if (!this.scanPromise) {
+      this.scanPromise = this.doScanBuiltinExtensions();
+    }
+    return this.scanPromise;
+  }
 
-	private async doScanBuiltinExtensions(): Promise<IExtension[]> {
-		let result: IBuiltinExtensionsResult;
-		try {
-			result = await invoke<IBuiltinExtensionsResult>('list_builtin_extensions');
-		} catch (error) {
-			this.logService.error('[TauriBuiltinExtensionsScannerService] Failed to scan built-in extensions:', error);
-			return [];
-		}
+  private async doScanBuiltinExtensions(): Promise<IExtension[]> {
+    let result: IBuiltinExtensionsResult;
+    try {
+      result = await invoke<IBuiltinExtensionsResult>('list_builtin_extensions');
+    } catch (error) {
+      this.logService.error('[TauriBuiltinExtensionsScannerService] Failed to scan built-in extensions:', error);
+      return [];
+    }
 
-		this.logService.info(
-			`[TauriBuiltinExtensionsScannerService] Found ${result.extensions.length} built-in extensions in ${result.extensionsDir}`
-		);
+    this.logService.info(
+      `[TauriBuiltinExtensionsScannerService] Found ${result.extensions.length} built-in extensions in ${result.extensionsDir}`,
+    );
 
-		const extensionsDirUri = URI.file(result.extensionsDir);
+    const extensionsDirUri = URI.file(result.extensionsDir);
 
-		const extensionPromises: Promise<IExtension | undefined>[] = result.extensions.map(async (e): Promise<IExtension | undefined> => {
-			// Skip extensions without required manifest fields
-			if (!e.packageJSON?.publisher || !e.packageJSON?.name) {
-				return undefined;
-			}
+    const extensionPromises: Promise<IExtension | undefined>[] = result.extensions.map(async (e): Promise<IExtension | undefined> => {
+      // Skip extensions without required manifest fields
+      if (!e.packageJSON?.publisher || !e.packageJSON?.name) {
+        return undefined;
+      }
 
-			const id = getGalleryExtensionId(e.packageJSON.publisher, e.packageJSON.name);
-			const extensionLocation = this.uriIdentityService.extUri.joinPath(extensionsDirUri, e.extensionPath);
+      const id = getGalleryExtensionId(e.packageJSON.publisher, e.packageJSON.name);
+      const extensionLocation = this.uriIdentityService.extUri.joinPath(extensionsDirUri, e.extensionPath);
 
-			return {
-				identifier: { id },
-				location: extensionLocation,
-				type: ExtensionType.System,
-				isBuiltin: true,
-				manifest: e.packageNLS ? await this.localizeManifest(id, e.packageJSON, e.packageNLS) : e.packageJSON,
-				readmeUrl: e.readmePath ? this.uriIdentityService.extUri.joinPath(extensionsDirUri, e.readmePath) : undefined,
-				changelogUrl: e.changelogPath ? this.uriIdentityService.extUri.joinPath(extensionsDirUri, e.changelogPath) : undefined,
-				targetPlatform: TargetPlatform.WEB,
-				validations: [],
-				isValid: true,
-				preRelease: false,
-			};
-		});
+      return {
+        identifier: { id },
+        location: extensionLocation,
+        type: ExtensionType.System,
+        isBuiltin: true,
+        manifest: e.packageNLS ? await this.localizeManifest(id, e.packageJSON, e.packageNLS) : e.packageJSON,
+        readmeUrl: e.readmePath ? this.uriIdentityService.extUri.joinPath(extensionsDirUri, e.readmePath) : undefined,
+        changelogUrl: e.changelogPath ? this.uriIdentityService.extUri.joinPath(extensionsDirUri, e.changelogPath) : undefined,
+        targetPlatform: TargetPlatform.WEB,
+        validations: [],
+        isValid: true,
+        preRelease: false,
+      };
+    });
 
-		const resolved = await Promise.all(extensionPromises);
-		const extensions = resolved.filter((e): e is IExtension => e !== undefined);
+    const resolved = await Promise.all(extensionPromises);
+    const extensions = resolved.filter((e): e is IExtension => e !== undefined);
 
-		this.logService.info(
-			`[TauriBuiltinExtensionsScannerService] ${extensions.length} of ${result.extensions.length} extensions have valid manifests`
-		);
+    this.logService.info(
+      `[TauriBuiltinExtensionsScannerService] ${extensions.length} of ${result.extensions.length} extensions have valid manifests`,
+    );
 
-		return extensions;
-	}
+    return extensions;
+  }
 
-	private async localizeManifest(extensionId: string, manifest: IExtensionManifest, fallbackTranslations: ITranslations): Promise<IExtensionManifest> {
-		if (!this.nlsUrl) {
-			return localizeManifest(this.logService, manifest, fallbackTranslations);
-		}
-		const uri = URI.joinPath(this.nlsUrl, extensionId, 'package');
-		try {
-			const res = await this.extensionResourceLoaderService.readExtensionResource(uri);
-			const json = JSON.parse(res.toString());
-			return localizeManifest(this.logService, manifest, json, fallbackTranslations);
-		} catch (e) {
-			this.logService.error(e);
-			return localizeManifest(this.logService, manifest, fallbackTranslations);
-		}
-	}
+  private async localizeManifest(extensionId: string, manifest: IExtensionManifest, fallbackTranslations: ITranslations): Promise<IExtensionManifest> {
+    if (!this.nlsUrl) {
+      return localizeManifest(this.logService, manifest, fallbackTranslations);
+    }
+    const uri = URI.joinPath(this.nlsUrl, extensionId, 'package');
+    try {
+      const res = await this.extensionResourceLoaderService.readExtensionResource(uri);
+      const json = JSON.parse(res.toString());
+      return localizeManifest(this.logService, manifest, json, fallbackTranslations);
+    } catch (e) {
+      this.logService.error(e);
+      return localizeManifest(this.logService, manifest, fallbackTranslations);
+    }
+  }
 }
 
 registerSingleton(IBuiltinExtensionsScannerService, TauriBuiltinExtensionsScannerService, InstantiationType.Delayed);

@@ -17,20 +17,20 @@ import { GitHubFileSystemProvider } from './githubFileSystemProvider.js';
 
 class GitHubFileSystemProviderContribution extends Disposable {
 
-	static readonly ID = 'workbench.contrib.githubFileSystemProvider';
+  static readonly ID = 'workbench.contrib.githubFileSystemProvider';
 
-	constructor(
-		@IFileService fileService: IFileService,
-		@IInstantiationService instantiationService: IInstantiationService,
-	) {
-		super();
-		const provider = this._register(instantiationService.createInstance(GitHubFileSystemProvider));
-		this._register(fileService.registerProvider(GITHUB_REMOTE_FILE_SCHEME, provider));
-	}
+  constructor(
+    @IFileService fileService: IFileService,
+    @IInstantiationService instantiationService: IInstantiationService,
+  ) {
+    super();
+    const provider = this._register(instantiationService.createInstance(GitHubFileSystemProvider));
+    this._register(fileService.registerProvider(GITHUB_REMOTE_FILE_SCHEME, provider));
+  }
 }
 
 registerWorkbenchContribution2(
-	GitHubFileSystemProviderContribution.ID,
-	GitHubFileSystemProviderContribution,
-	WorkbenchPhase.AfterRestored
+  GitHubFileSystemProviderContribution.ID,
+  GitHubFileSystemProviderContribution,
+  WorkbenchPhase.AfterRestored,
 );

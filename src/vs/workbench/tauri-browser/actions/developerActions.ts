@@ -12,24 +12,24 @@ import { INativeHostService } from '../../../platform/native/common/native.js';
 import { ServicesAccessor } from '../../../platform/instantiation/common/instantiation.js';
 
 class ToggleDevToolsAction extends Action2 {
-	constructor() {
-		super({
-			id: 'workbench.action.toggleDevTools',
-			title: localize2('toggleDevTools', "Toggle Developer Tools"),
-			category: Categories.Developer,
-			f1: true,
-			keybinding: {
-				weight: KeybindingWeight.WorkbenchContrib,
-				primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyCode.KeyI,
-				mac: { primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyCode.KeyI }
-			}
-		});
-	}
+  constructor() {
+    super({
+      id: 'workbench.action.toggleDevTools',
+      title: localize2('toggleDevTools', 'Toggle Developer Tools'),
+      category: Categories.Developer,
+      f1: true,
+      keybinding: {
+        weight: KeybindingWeight.WorkbenchContrib,
+        primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyCode.KeyI,
+        mac: { primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyCode.KeyI },
+      },
+    });
+  }
 
-	run(accessor: ServicesAccessor): void {
-		const nativeHostService = accessor.get(INativeHostService);
-		nativeHostService.toggleDevTools();
-	}
+  run(accessor: ServicesAccessor): void {
+    const nativeHostService = accessor.get(INativeHostService);
+    nativeHostService.toggleDevTools();
+  }
 }
 
 registerAction2(ToggleDevToolsAction);

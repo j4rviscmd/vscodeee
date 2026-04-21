@@ -42,242 +42,242 @@ import { Extensions } from '../../../workbench/browser/panecomposite.js';
  */
 export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 
-	static readonly activeViewSettingsKey = 'workbench.agentsession.auxiliarybar.activepanelid';
-	static readonly pinnedViewsKey = 'workbench.agentsession.auxiliarybar.pinnedPanels';
-	static readonly placeholderViewContainersKey = 'workbench.agentsession.auxiliarybar.placeholderPanels';
-	static readonly viewContainersWorkspaceStateKey = 'workbench.agentsession.auxiliarybar.viewContainersWorkspaceState';
+  static readonly activeViewSettingsKey = 'workbench.agentsession.auxiliarybar.activepanelid';
+  static readonly pinnedViewsKey = 'workbench.agentsession.auxiliarybar.pinnedPanels';
+  static readonly placeholderViewContainersKey = 'workbench.agentsession.auxiliarybar.placeholderPanels';
+  static readonly viewContainersWorkspaceStateKey = 'workbench.agentsession.auxiliarybar.viewContainersWorkspaceState';
 
-	/** Visual margin values for the card-like appearance */
-	static readonly MARGIN_TOP = 10;
-	static readonly MARGIN_BOTTOM = 0;
-	static readonly MARGIN_RIGHT = 10;
+  /** Visual margin values for the card-like appearance */
+  static readonly MARGIN_TOP = 10;
+  static readonly MARGIN_BOTTOM = 0;
+  static readonly MARGIN_RIGHT = 10;
 
-	// Action ID for run script - defined here to avoid layering issues
-	private static readonly RUN_SCRIPT_ACTION_ID = 'workbench.action.agentSessions.runScript';
-	private static readonly RUN_SCRIPT_DROPDOWN_MENU_ID = MenuId.for('AgentSessionsRunScriptDropdown');
+  // Action ID for run script - defined here to avoid layering issues
+  private static readonly RUN_SCRIPT_ACTION_ID = 'workbench.action.agentSessions.runScript';
+  private static readonly RUN_SCRIPT_DROPDOWN_MENU_ID = MenuId.for('AgentSessionsRunScriptDropdown');
 
-	// Run script dropdown management
-	private readonly _runScriptDropdown = this._register(new MutableDisposable<DropdownWithPrimaryActionViewItem>());
-	private readonly _runScriptMenu = this._register(new MutableDisposable<IMenu>());
-	private readonly _runScriptMenuListener = this._register(new MutableDisposable<IDisposable>());
+  // Run script dropdown management
+  private readonly _runScriptDropdown = this._register(new MutableDisposable<DropdownWithPrimaryActionViewItem>());
+  private readonly _runScriptMenu = this._register(new MutableDisposable<IMenu>());
+  private readonly _runScriptMenuListener = this._register(new MutableDisposable<IDisposable>());
 
-	// Sessions-specific auxiliary bar dimensions (intentionally not tied to the sessions SidebarPart values)
-	override readonly minimumWidth: number = 270;
-	override readonly maximumWidth: number = Number.POSITIVE_INFINITY;
-	override readonly minimumHeight: number = 0;
-	override readonly maximumHeight: number = Number.POSITIVE_INFINITY;
+  // Sessions-specific auxiliary bar dimensions (intentionally not tied to the sessions SidebarPart values)
+  override readonly minimumWidth: number = 270;
+  override readonly maximumWidth: number = Number.POSITIVE_INFINITY;
+  override readonly minimumHeight: number = 0;
+  override readonly maximumHeight: number = Number.POSITIVE_INFINITY;
 
-	get preferredHeight(): number | undefined {
-		return this.layoutService.mainContainerDimension.height * 0.4;
-	}
+  get preferredHeight(): number | undefined {
+    return this.layoutService.mainContainerDimension.height * 0.4;
+  }
 
-	get preferredWidth(): number | undefined {
-		const activeComposite = this.getActivePaneComposite();
+  get preferredWidth(): number | undefined {
+    const activeComposite = this.getActivePaneComposite();
 
-		if (!activeComposite) {
-			return undefined;
-		}
+    if (!activeComposite) {
+      return undefined;
+    }
 
-		const width = activeComposite.getOptimalWidth();
-		if (typeof width !== 'number') {
-			return undefined;
-		}
+    const width = activeComposite.getOptimalWidth();
+    if (typeof width !== 'number') {
+      return undefined;
+    }
 
-		return Math.max(width, 380);
-	}
+    return Math.max(width, 380);
+  }
 
-	readonly priority = LayoutPriority.Low;
+  readonly priority = LayoutPriority.Low;
 
-	constructor(
-		@INotificationService notificationService: INotificationService,
-		@IStorageService storageService: IStorageService,
-		@IContextMenuService contextMenuService: IContextMenuService,
-		@IWorkbenchLayoutService layoutService: IWorkbenchLayoutService,
-		@IKeybindingService keybindingService: IKeybindingService,
-		@IHoverService hoverService: IHoverService,
-		@IInstantiationService instantiationService: IInstantiationService,
-		@IThemeService themeService: IThemeService,
-		@IViewDescriptorService viewDescriptorService: IViewDescriptorService,
-		@IContextKeyService contextKeyService: IContextKeyService,
-		@IExtensionService extensionService: IExtensionService,
-		@IMenuService menuService: IMenuService,
-	) {
-		super(
-			Parts.AUXILIARYBAR_PART,
-			{
-				hasTitle: true,
-				trailingSeparator: false,
-				borderWidth: () => 0,
-			},
-			AuxiliaryBarPart.activeViewSettingsKey,
-			ActiveAuxiliaryContext.bindTo(contextKeyService),
-			AuxiliaryBarFocusContext.bindTo(contextKeyService),
-			'auxiliarybar',
-			'auxiliarybar',
-			undefined,
-			SIDE_BAR_TITLE_BORDER,
-			ViewContainerLocation.AuxiliaryBar,
-			Extensions.Auxiliary,
-			Menus.AuxiliaryBarTitle,
-			Menus.AuxiliaryBarTitleLeft,
-			notificationService,
-			storageService,
-			contextMenuService,
-			layoutService,
-			keybindingService,
-			hoverService,
-			instantiationService,
-			themeService,
-			viewDescriptorService,
-			contextKeyService,
-			extensionService,
-			menuService,
-		);
+  constructor(
+    @INotificationService notificationService: INotificationService,
+    @IStorageService storageService: IStorageService,
+    @IContextMenuService contextMenuService: IContextMenuService,
+    @IWorkbenchLayoutService layoutService: IWorkbenchLayoutService,
+    @IKeybindingService keybindingService: IKeybindingService,
+    @IHoverService hoverService: IHoverService,
+    @IInstantiationService instantiationService: IInstantiationService,
+    @IThemeService themeService: IThemeService,
+    @IViewDescriptorService viewDescriptorService: IViewDescriptorService,
+    @IContextKeyService contextKeyService: IContextKeyService,
+    @IExtensionService extensionService: IExtensionService,
+    @IMenuService menuService: IMenuService,
+  ) {
+    super(
+      Parts.AUXILIARYBAR_PART,
+      {
+        hasTitle: true,
+        trailingSeparator: false,
+        borderWidth: () => 0,
+      },
+      AuxiliaryBarPart.activeViewSettingsKey,
+      ActiveAuxiliaryContext.bindTo(contextKeyService),
+      AuxiliaryBarFocusContext.bindTo(contextKeyService),
+      'auxiliarybar',
+      'auxiliarybar',
+      undefined,
+      SIDE_BAR_TITLE_BORDER,
+      ViewContainerLocation.AuxiliaryBar,
+      Extensions.Auxiliary,
+      Menus.AuxiliaryBarTitle,
+      Menus.AuxiliaryBarTitleLeft,
+      notificationService,
+      storageService,
+      contextMenuService,
+      layoutService,
+      keybindingService,
+      hoverService,
+      instantiationService,
+      themeService,
+      viewDescriptorService,
+      contextKeyService,
+      extensionService,
+      menuService,
+    );
 
-	}
+  }
 
-	override updateStyles(): void {
-		super.updateStyles();
+  override updateStyles(): void {
+    super.updateStyles();
 
-		const container = assertReturnsDefined(this.getContainer());
+    const container = assertReturnsDefined(this.getContainer());
 
-		// Store background and border as CSS variables for the card styling on .part
-		container.style.setProperty('--part-background', this.getColor(sessionsAuxiliaryBarBackground) || '');
-		container.style.setProperty('--part-border-color', this.getColor(PANEL_BORDER) || this.getColor(contrastBorder) || 'transparent');
-		container.style.backgroundColor = this.getColor(sessionsAuxiliaryBarBackground) || '';
-		container.style.color = this.getColor(SIDE_BAR_FOREGROUND) || '';
+    // Store background and border as CSS variables for the card styling on .part
+    container.style.setProperty('--part-background', this.getColor(sessionsAuxiliaryBarBackground) || '');
+    container.style.setProperty('--part-border-color', this.getColor(PANEL_BORDER) || this.getColor(contrastBorder) || 'transparent');
+    container.style.backgroundColor = this.getColor(sessionsAuxiliaryBarBackground) || '';
+    container.style.color = this.getColor(SIDE_BAR_FOREGROUND) || '';
 
-		// Clear borders - the card appearance uses border-radius instead
-		container.style.borderLeftColor = '';
-		container.style.borderRightColor = '';
-		container.style.borderLeftStyle = '';
-		container.style.borderRightStyle = '';
-		container.style.borderLeftWidth = '';
-		container.style.borderRightWidth = '';
-	}
+    // Clear borders - the card appearance uses border-radius instead
+    container.style.borderLeftColor = '';
+    container.style.borderRightColor = '';
+    container.style.borderLeftStyle = '';
+    container.style.borderRightStyle = '';
+    container.style.borderLeftWidth = '';
+    container.style.borderRightWidth = '';
+  }
 
-	protected getCompositeBarOptions(): IPaneCompositeBarOptions {
-		const $this = this;
-		return {
-			partContainerClass: 'auxiliarybar',
-			pinnedViewContainersKey: AuxiliaryBarPart.pinnedViewsKey,
-			placeholderViewContainersKey: AuxiliaryBarPart.placeholderViewContainersKey,
-			viewContainersWorkspaceStateKey: AuxiliaryBarPart.viewContainersWorkspaceStateKey,
-			icon: false,
-			orientation: ActionsOrientation.HORIZONTAL,
-			recomputeSizes: true,
-			activityHoverOptions: {
-				position: () => this.getCompositeBarPosition() === CompositeBarPosition.BOTTOM ? HoverPosition.ABOVE : HoverPosition.BELOW,
-			},
-			fillExtraContextMenuActions: actions => this.fillExtraContextMenuActions(actions),
-			compositeSize: 0,
-			iconSize: 16,
-			get overflowActionSize() { return $this.getCompositeBarPosition() === CompositeBarPosition.TITLE ? 40 : 30; },
-			colors: theme => ({
-				activeBackgroundColor: theme.getColor(sessionsAuxiliaryBarBackground),
-				inactiveBackgroundColor: theme.getColor(sessionsAuxiliaryBarBackground),
-				get activeBorderBottomColor() { return $this.getCompositeBarPosition() === CompositeBarPosition.TITLE ? theme.getColor(PANEL_ACTIVE_TITLE_BORDER) : theme.getColor(ACTIVITY_BAR_TOP_ACTIVE_BORDER); },
-				get activeForegroundColor() { return $this.getCompositeBarPosition() === CompositeBarPosition.TITLE ? theme.getColor(PANEL_ACTIVE_TITLE_FOREGROUND) : theme.getColor(ACTIVITY_BAR_TOP_FOREGROUND); },
-				get inactiveForegroundColor() { return $this.getCompositeBarPosition() === CompositeBarPosition.TITLE ? theme.getColor(PANEL_INACTIVE_TITLE_FOREGROUND) : theme.getColor(ACTIVITY_BAR_TOP_INACTIVE_FOREGROUND); },
-				badgeBackground: theme.getColor(ACTIVITY_BAR_BADGE_BACKGROUND),
-				badgeForeground: theme.getColor(ACTIVITY_BAR_BADGE_FOREGROUND),
-				get dragAndDropBorder() { return $this.getCompositeBarPosition() === CompositeBarPosition.TITLE ? theme.getColor(PANEL_DRAG_AND_DROP_BORDER) : theme.getColor(ACTIVITY_BAR_TOP_DRAG_AND_DROP_BORDER); }
-			}),
-			compact: true
-		};
-	}
+  protected getCompositeBarOptions(): IPaneCompositeBarOptions {
+    const $this = this;
+    return {
+      partContainerClass: 'auxiliarybar',
+      pinnedViewContainersKey: AuxiliaryBarPart.pinnedViewsKey,
+      placeholderViewContainersKey: AuxiliaryBarPart.placeholderViewContainersKey,
+      viewContainersWorkspaceStateKey: AuxiliaryBarPart.viewContainersWorkspaceStateKey,
+      icon: false,
+      orientation: ActionsOrientation.HORIZONTAL,
+      recomputeSizes: true,
+      activityHoverOptions: {
+        position: () => this.getCompositeBarPosition() === CompositeBarPosition.BOTTOM ? HoverPosition.ABOVE : HoverPosition.BELOW,
+      },
+      fillExtraContextMenuActions: actions => this.fillExtraContextMenuActions(actions),
+      compositeSize: 0,
+      iconSize: 16,
+      get overflowActionSize() { return $this.getCompositeBarPosition() === CompositeBarPosition.TITLE ? 40 : 30; },
+      colors: theme => ({
+        activeBackgroundColor: theme.getColor(sessionsAuxiliaryBarBackground),
+        inactiveBackgroundColor: theme.getColor(sessionsAuxiliaryBarBackground),
+        get activeBorderBottomColor() { return $this.getCompositeBarPosition() === CompositeBarPosition.TITLE ? theme.getColor(PANEL_ACTIVE_TITLE_BORDER) : theme.getColor(ACTIVITY_BAR_TOP_ACTIVE_BORDER); },
+        get activeForegroundColor() { return $this.getCompositeBarPosition() === CompositeBarPosition.TITLE ? theme.getColor(PANEL_ACTIVE_TITLE_FOREGROUND) : theme.getColor(ACTIVITY_BAR_TOP_FOREGROUND); },
+        get inactiveForegroundColor() { return $this.getCompositeBarPosition() === CompositeBarPosition.TITLE ? theme.getColor(PANEL_INACTIVE_TITLE_FOREGROUND) : theme.getColor(ACTIVITY_BAR_TOP_INACTIVE_FOREGROUND); },
+        badgeBackground: theme.getColor(ACTIVITY_BAR_BADGE_BACKGROUND),
+        badgeForeground: theme.getColor(ACTIVITY_BAR_BADGE_FOREGROUND),
+        get dragAndDropBorder() { return $this.getCompositeBarPosition() === CompositeBarPosition.TITLE ? theme.getColor(PANEL_DRAG_AND_DROP_BORDER) : theme.getColor(ACTIVITY_BAR_TOP_DRAG_AND_DROP_BORDER); },
+      }),
+      compact: true,
+    };
+  }
 
-	protected override actionViewItemProvider(action: IAction, options: IBaseActionViewItemOptions): IActionViewItem | undefined {
-		// Create a DropdownWithPrimaryActionViewItem for the run script action
-		if (action.id === AuxiliaryBarPart.RUN_SCRIPT_ACTION_ID && action instanceof MenuItemAction) {
-			// Create and store the menu so we can listen for changes
-			if (!this._runScriptMenu.value) {
-				this._runScriptMenu.value = this.menuService.createMenu(AuxiliaryBarPart.RUN_SCRIPT_DROPDOWN_MENU_ID, this.contextKeyService);
-				this._runScriptMenuListener.value = this._runScriptMenu.value.onDidChange(() => this._updateRunScriptDropdown());
-			}
+  protected override actionViewItemProvider(action: IAction, options: IBaseActionViewItemOptions): IActionViewItem | undefined {
+    // Create a DropdownWithPrimaryActionViewItem for the run script action
+    if (action.id === AuxiliaryBarPart.RUN_SCRIPT_ACTION_ID && action instanceof MenuItemAction) {
+      // Create and store the menu so we can listen for changes
+      if (!this._runScriptMenu.value) {
+        this._runScriptMenu.value = this.menuService.createMenu(AuxiliaryBarPart.RUN_SCRIPT_DROPDOWN_MENU_ID, this.contextKeyService);
+        this._runScriptMenuListener.value = this._runScriptMenu.value.onDidChange(() => this._updateRunScriptDropdown());
+      }
 
-			const dropdownActions = this._getRunScriptDropdownActions();
+      const dropdownActions = this._getRunScriptDropdownActions();
 
-			const dropdownAction: IAction = {
-				id: 'runScriptDropdown',
-				label: '',
-				tooltip: '',
-				class: undefined,
-				enabled: true,
-				run: () => { }
-			};
+      const dropdownAction: IAction = {
+        id: 'runScriptDropdown',
+        label: '',
+        tooltip: '',
+        class: undefined,
+        enabled: true,
+        run: () => { },
+      };
 
-			this._runScriptDropdown.value = this.instantiationService.createInstance(
-				DropdownWithPrimaryActionViewItem,
-				action,
-				dropdownAction,
-				dropdownActions,
-				'',
-				{
-					hoverDelegate: options.hoverDelegate,
-					getKeyBinding: (action: IAction) => this.keybindingService.lookupKeybinding(action.id, this.contextKeyService)
-				}
-			);
+      this._runScriptDropdown.value = this.instantiationService.createInstance(
+        DropdownWithPrimaryActionViewItem,
+        action,
+        dropdownAction,
+        dropdownActions,
+        '',
+        {
+          hoverDelegate: options.hoverDelegate,
+          getKeyBinding: (action: IAction) => this.keybindingService.lookupKeybinding(action.id, this.contextKeyService),
+        },
+      );
 
-			return this._runScriptDropdown.value;
-		}
+      return this._runScriptDropdown.value;
+    }
 
-		return super.actionViewItemProvider(action, options);
-	}
+    return super.actionViewItemProvider(action, options);
+  }
 
-	private _getRunScriptDropdownActions(): IAction[] {
-		if (!this._runScriptMenu.value) {
-			return [];
-		}
-		return getFlatContextMenuActions(this._runScriptMenu.value.getActions({ shouldForwardArgs: true }));
-	}
+  private _getRunScriptDropdownActions(): IAction[] {
+    if (!this._runScriptMenu.value) {
+      return [];
+    }
+    return getFlatContextMenuActions(this._runScriptMenu.value.getActions({ shouldForwardArgs: true }));
+  }
 
-	private _updateRunScriptDropdown(): void {
-		if (this._runScriptDropdown.value) {
-			const dropdownActions = this._getRunScriptDropdownActions();
-			const dropdownAction: IAction = {
-				id: 'runScriptDropdown',
-				label: '',
-				tooltip: '',
-				class: undefined,
-				enabled: true,
-				run: () => { }
-			};
-			this._runScriptDropdown.value.update(dropdownAction, dropdownActions);
-		}
-	}
+  private _updateRunScriptDropdown(): void {
+    if (this._runScriptDropdown.value) {
+      const dropdownActions = this._getRunScriptDropdownActions();
+      const dropdownAction: IAction = {
+        id: 'runScriptDropdown',
+        label: '',
+        tooltip: '',
+        class: undefined,
+        enabled: true,
+        run: () => { },
+      };
+      this._runScriptDropdown.value.update(dropdownAction, dropdownActions);
+    }
+  }
 
-	private fillExtraContextMenuActions(_actions: IAction[]): void { }
+  private fillExtraContextMenuActions(_actions: IAction[]): void { }
 
-	protected shouldShowCompositeBar(): boolean {
-		return true;
-	}
+  protected shouldShowCompositeBar(): boolean {
+    return true;
+  }
 
-	protected getCompositeBarPosition(): CompositeBarPosition {
-		return CompositeBarPosition.TITLE;
-	}
+  protected getCompositeBarPosition(): CompositeBarPosition {
+    return CompositeBarPosition.TITLE;
+  }
 
-	override layout(width: number, height: number, top: number, left: number): void {
-		if (!this.layoutService.isVisible(Parts.AUXILIARYBAR_PART)) {
-			return;
-		}
+  override layout(width: number, height: number, top: number, left: number): void {
+    if (!this.layoutService.isVisible(Parts.AUXILIARYBAR_PART)) {
+      return;
+    }
 
-		// Layout content with reduced dimensions to account for visual margins and border
-		const borderTotal = 2; // 1px border on each side
-		super.layout(
-			width - AuxiliaryBarPart.MARGIN_RIGHT - borderTotal,
-			height - AuxiliaryBarPart.MARGIN_TOP - AuxiliaryBarPart.MARGIN_BOTTOM - borderTotal,
-			top, left
-		);
+    // Layout content with reduced dimensions to account for visual margins and border
+    const borderTotal = 2; // 1px border on each side
+    super.layout(
+      width - AuxiliaryBarPart.MARGIN_RIGHT - borderTotal,
+      height - AuxiliaryBarPart.MARGIN_TOP - AuxiliaryBarPart.MARGIN_BOTTOM - borderTotal,
+      top, left,
+    );
 
-		// Restore the full grid-allocated dimensions so that Part.relayout() works correctly.
-		// Part.layout() only stores _dimension and _contentPosition - no other side effects.
-		Part.prototype.layout.call(this, width, height, top, left);
-	}
+    // Restore the full grid-allocated dimensions so that Part.relayout() works correctly.
+    // Part.layout() only stores _dimension and _contentPosition - no other side effects.
+    Part.prototype.layout.call(this, width, height, top, left);
+  }
 
-	override toJSON(): object {
-		return {
-			type: Parts.AUXILIARYBAR_PART
-		};
-	}
+  override toJSON(): object {
+    return {
+      type: Parts.AUXILIARYBAR_PART,
+    };
+  }
 }

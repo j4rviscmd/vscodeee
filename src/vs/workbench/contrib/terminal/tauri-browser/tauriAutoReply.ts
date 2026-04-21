@@ -21,32 +21,32 @@ import { tauriInvoke } from './tauriIpc.js';
  * to all PTY instances automatically by the reader thread.
  */
 export class TauriAutoReply {
-	constructor(
-		private readonly _logService: ITerminalLogService,
-	) { }
+  constructor(
+    private readonly _logService: ITerminalLogService,
+  ) { }
 
-	/**
+  /**
 	 * Install an auto-reply pattern.
 	 * When terminal output contains `matchStr`, `reply` will be sent back.
 	 */
-	async install(matchStr: string, reply: string): Promise<void> {
-		try {
-			await tauriInvoke('install_auto_reply', { matchStr, reply });
-			this._logService.trace('TauriAutoReply#install', { matchStr, reply });
-		} catch (e) {
-			this._logService.error('TauriAutoReply#install failed', e instanceof Error ? e.message : String(e));
-		}
-	}
+  async install(matchStr: string, reply: string): Promise<void> {
+    try {
+      await tauriInvoke('install_auto_reply', { matchStr, reply });
+      this._logService.trace('TauriAutoReply#install', { matchStr, reply });
+    } catch (e) {
+      this._logService.error('TauriAutoReply#install failed', e instanceof Error ? e.message : String(e));
+    }
+  }
 
-	/**
+  /**
 	 * Remove all auto-reply patterns.
 	 */
-	async uninstallAll(): Promise<void> {
-		try {
-			await tauriInvoke('uninstall_all_auto_replies');
-			this._logService.trace('TauriAutoReply#uninstallAll');
-		} catch (e) {
-			this._logService.error('TauriAutoReply#uninstallAll failed', e instanceof Error ? e.message : String(e));
-		}
-	}
+  async uninstallAll(): Promise<void> {
+    try {
+      await tauriInvoke('uninstall_all_auto_replies');
+      this._logService.trace('TauriAutoReply#uninstallAll');
+    } catch (e) {
+      this._logService.error('TauriAutoReply#uninstallAll failed', e instanceof Error ? e.message : String(e));
+    }
+  }
 }

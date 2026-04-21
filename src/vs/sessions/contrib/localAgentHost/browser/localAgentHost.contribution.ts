@@ -23,22 +23,22 @@ import { LocalAgentHostSessionsProvider } from './localAgentHostSessionsProvider
  */
 class LocalAgentHostContribution extends Disposable implements IWorkbenchContribution {
 
-	static readonly ID = 'sessions.contrib.localAgentHostContribution';
+  static readonly ID = 'sessions.contrib.localAgentHostContribution';
 
-	constructor(
-		@IConfigurationService configurationService: IConfigurationService,
-		@IInstantiationService instantiationService: IInstantiationService,
-		@ISessionsProvidersService sessionsProvidersService: ISessionsProvidersService,
-	) {
-		super();
+  constructor(
+    @IConfigurationService configurationService: IConfigurationService,
+    @IInstantiationService instantiationService: IInstantiationService,
+    @ISessionsProvidersService sessionsProvidersService: ISessionsProvidersService,
+  ) {
+    super();
 
-		if (!configurationService.getValue<boolean>(AgentHostEnabledSettingId)) {
-			return;
-		}
+    if (!configurationService.getValue<boolean>(AgentHostEnabledSettingId)) {
+      return;
+    }
 
-		const provider = this._register(instantiationService.createInstance(LocalAgentHostSessionsProvider));
-		this._register(sessionsProvidersService.registerProvider(provider));
-	}
+    const provider = this._register(instantiationService.createInstance(LocalAgentHostSessionsProvider));
+    this._register(sessionsProvidersService.registerProvider(provider));
+  }
 }
 
 registerWorkbenchContribution2(LocalAgentHostContribution.ID, LocalAgentHostContribution, WorkbenchPhase.AfterRestored);

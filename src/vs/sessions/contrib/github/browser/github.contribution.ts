@@ -18,34 +18,34 @@ import { GitHubService, IGitHubService } from './githubService.js';
  */
 class GitHubActiveSessionRefreshContribution extends Disposable implements IWorkbenchContribution {
 
-	static readonly ID = 'sessions.contrib.githubActiveSessionRefresh';
+  static readonly ID = 'sessions.contrib.githubActiveSessionRefresh';
 
-	private _lastSessionResource: URI | undefined;
+  private _lastSessionResource: URI | undefined;
 
-	constructor(
-		@ISessionsManagementService private readonly _sessionsManagementService: ISessionsManagementService,
-		@IGitHubService private readonly _gitHubService: IGitHubService,
-	) {
-		super();
+  constructor(
+    @ISessionsManagementService private readonly _sessionsManagementService: ISessionsManagementService,
+    @IGitHubService private readonly _gitHubService: IGitHubService,
+  ) {
+    super();
 
-		this._register(autorun(reader => {
-			const session = this._sessionsManagementService.activeSession.read(reader);
-			if (!session) {
-				this._lastSessionResource = undefined;
-				return;
-			}
-			if (this._lastSessionResource?.toString() === session.resource.toString()) {
-				return;
-			}
-			this._lastSessionResource = session.resource;
-			const gitHubInfo = session.gitHubInfo.read(reader);
-			if (!gitHubInfo?.pullRequest) {
-				return;
-			}
-			const prModel = this._gitHubService.getPullRequest(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequest.number);
-			prModel.refresh();
-		}));
-	}
+    this._register(autorun(reader => {
+      const session = this._sessionsManagementService.activeSession.read(reader);
+      if (!session) {
+        this._lastSessionResource = undefined;
+        return;
+      }
+      if (this._lastSessionResource?.toString() === session.resource.toString()) {
+        return;
+      }
+      this._lastSessionResource = session.resource;
+      const gitHubInfo = session.gitHubInfo.read(reader);
+      if (!gitHubInfo?.pullRequest) {
+        return;
+      }
+      const prModel = this._gitHubService.getPullRequest(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequest.number);
+      prModel.refresh();
+    }));
+  }
 }
 
 registerSingleton(IGitHubService, GitHubService, InstantiationType.Delayed);

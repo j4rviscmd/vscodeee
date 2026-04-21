@@ -13,15 +13,15 @@ import '../../browser/layoutActions.js';
 
 suite('Sessions - Layout Actions', () => {
 
-	ensureNoDisposablesAreLeakedInTestSuite();
+  ensureNoDisposablesAreLeakedInTestSuite();
 
-	test('always-on-top toggle action is contributed to TitleBarRight', () => {
-		const items = MenuRegistry.getMenuItems(Menus.TitleBarRightLayout);
-		const menuItems = items.filter(isIMenuItem);
+  test('always-on-top toggle action is contributed to TitleBarRight', () => {
+    const items = MenuRegistry.getMenuItems(Menus.TitleBarRightLayout);
+    const menuItems = items.filter(isIMenuItem);
 
-		const toggleAlwaysOnTop = menuItems.find(item => item.command.id === 'workbench.action.toggleWindowAlwaysOnTop');
+    const toggleAlwaysOnTop = menuItems.find(item => item.command.id === 'workbench.action.toggleWindowAlwaysOnTop');
 
-		assert.ok(toggleAlwaysOnTop, 'toggleWindowAlwaysOnTop should be contributed to TitleBarRight');
-		assert.strictEqual(toggleAlwaysOnTop.group, 'navigation');
-	});
+    assert.ok(toggleAlwaysOnTop, 'toggleWindowAlwaysOnTop should be contributed to TitleBarRight');
+    assert.strictEqual(toggleAlwaysOnTop.group, 'navigation');
+  });
 });

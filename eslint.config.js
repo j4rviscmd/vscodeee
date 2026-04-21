@@ -2313,4 +2313,26 @@ export default tseslint.config(
 				},
 			],
 		}
-	});
+	},
+	// Tauri layer formatting rules
+	// Applied only to tauri-browser/ and sessions/ to avoid upstream merge conflicts
+	{
+		files: [
+			'src/**/tauri-browser/**/*.ts',
+			'src/vs/sessions/**/*.ts',
+		],
+		plugins: {
+			'@stylistic/ts': stylisticTs,
+		},
+		rules: {
+			'@stylistic/ts/indent': ['warn', 2, { 'SwitchCase': 1 }],
+			'@stylistic/ts/type-annotation-spacing': ['warn', {}],
+			'@stylistic/ts/object-curly-spacing': ['warn', 'always'],
+			'@stylistic/ts/quotes': ['warn', 'single', { 'avoidEscape': true }],
+			'@stylistic/ts/comma-dangle': ['warn', 'always-multiline'],
+			'no-trailing-spaces': 'warn',
+			'no-multiple-empty-lines': ['warn', { 'max': 1 }],
+			'eol-last': ['warn', 'always'],
+		}
+	}
+);

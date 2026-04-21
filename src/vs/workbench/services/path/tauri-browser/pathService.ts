@@ -23,13 +23,13 @@ import { IWorkspaceContextService } from '../../../../platform/workspace/common/
  * @returns The URI of the user home directory.
  */
 function resolveUserHome(environmentService: IWorkbenchEnvironmentService): URI {
-	// TauriWorkbenchEnvironmentService exposes the real user home from Rust (dirs::home_dir).
-	if (environmentService instanceof TauriWorkbenchEnvironmentService) {
-		return environmentService.userHome;
-	}
+  // TauriWorkbenchEnvironmentService exposes the real user home from Rust (dirs::home_dir).
+  if (environmentService instanceof TauriWorkbenchEnvironmentService) {
+    return environmentService.userHome;
+  }
 
-	// Fallback: derive from userRoamingDataHome (less accurate but safe)
-	return environmentService.userRoamingDataHome;
+  // Fallback: derive from userRoamingDataHome (less accurate but safe)
+  return environmentService.userRoamingDataHome;
 }
 
 /**
@@ -43,18 +43,18 @@ function resolveUserHome(environmentService: IWorkbenchEnvironmentService): URI 
  */
 export class TauriPathService extends AbstractPathService {
 
-	constructor(
-		@IRemoteAgentService remoteAgentService: IRemoteAgentService,
-		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
-		@IWorkspaceContextService contextService: IWorkspaceContextService
-	) {
-		super(
-			resolveUserHome(environmentService),
-			remoteAgentService,
-			environmentService,
-			contextService
-		);
-	}
+  constructor(
+    @IRemoteAgentService remoteAgentService: IRemoteAgentService,
+    @IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
+    @IWorkspaceContextService contextService: IWorkspaceContextService,
+  ) {
+    super(
+      resolveUserHome(environmentService),
+      remoteAgentService,
+      environmentService,
+      contextService,
+    );
+  }
 }
 
 registerSingleton(IPathService, TauriPathService, InstantiationType.Delayed);

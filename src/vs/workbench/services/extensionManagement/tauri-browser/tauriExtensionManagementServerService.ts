@@ -45,53 +45,53 @@ import { TauriExtensionManagementService } from './tauriExtensionManagementServi
  */
 export class TauriExtensionManagementServerService implements IExtensionManagementServerService {
 
-	declare readonly _serviceBrand: undefined;
+  declare readonly _serviceBrand: undefined;
 
-	readonly localExtensionManagementServer: IExtensionManagementServer | null;
-	readonly remoteExtensionManagementServer: IExtensionManagementServer | null = null;
-	readonly webExtensionManagementServer: IExtensionManagementServer | null = null;
+  readonly localExtensionManagementServer: IExtensionManagementServer | null;
+  readonly remoteExtensionManagementServer: IExtensionManagementServer | null = null;
+  readonly webExtensionManagementServer: IExtensionManagementServer | null = null;
 
-	constructor(
-		@IRemoteAgentService remoteAgentService: IRemoteAgentService,
-		@ILabelService labelService: ILabelService,
-		@IInstantiationService instantiationService: IInstantiationService,
-	) {
-		const remoteAgentConnection = remoteAgentService.getConnection();
-		if (remoteAgentConnection) {
-			const extensionManagementService = instantiationService.createInstance(RemoteExtensionManagementService, remoteAgentConnection.getChannel<IChannel>('extensions'));
-			this.remoteExtensionManagementServer = {
-				id: 'remote',
-				extensionManagementService,
-				get label() { return labelService.getHostLabel(Schemas.vscodeRemote, remoteAgentConnection.remoteAuthority) || localize('remote', "Remote"); },
-			};
-		}
+  constructor(
+    @IRemoteAgentService remoteAgentService: IRemoteAgentService,
+    @ILabelService labelService: ILabelService,
+    @IInstantiationService instantiationService: IInstantiationService,
+  ) {
+    const remoteAgentConnection = remoteAgentService.getConnection();
+    if (remoteAgentConnection) {
+      const extensionManagementService = instantiationService.createInstance(RemoteExtensionManagementService, remoteAgentConnection.getChannel<IChannel>('extensions'));
+      this.remoteExtensionManagementServer = {
+        id: 'remote',
+        extensionManagementService,
+        get label() { return labelService.getHostLabel(Schemas.vscodeRemote, remoteAgentConnection.remoteAuthority) || localize('remote', 'Remote'); },
+      };
+    }
 
-		// In Tauri, we use TauriExtensionManagementService which overrides
-		// getTargetPlatform() to return the native platform (e.g., darwin-arm64)
-		// instead of TargetPlatform.WEB. This allows installing ALL extensions
-		// from the gallery, not just web-compatible ones.
-		const extensionManagementService = instantiationService.createInstance(TauriExtensionManagementService);
-		this.localExtensionManagementServer = {
-			id: 'local',
-			extensionManagementService,
-			label: localize('local', "Local"),
-		};
-	}
+    // In Tauri, we use TauriExtensionManagementService which overrides
+    // getTargetPlatform() to return the native platform (e.g., darwin-arm64)
+    // instead of TargetPlatform.WEB. This allows installing ALL extensions
+    // from the gallery, not just web-compatible ones.
+    const extensionManagementService = instantiationService.createInstance(TauriExtensionManagementService);
+    this.localExtensionManagementServer = {
+      id: 'local',
+      extensionManagementService,
+      label: localize('local', 'Local'),
+    };
+  }
 
-	getExtensionManagementServer(extension: IExtension): IExtensionManagementServer {
-		if (extension.location.scheme === Schemas.vscodeRemote) {
-			return this.remoteExtensionManagementServer!;
-		}
-		return this.localExtensionManagementServer!;
-	}
+  getExtensionManagementServer(extension: IExtension): IExtensionManagementServer {
+    if (extension.location.scheme === Schemas.vscodeRemote) {
+      return this.remoteExtensionManagementServer!;
+    }
+    return this.localExtensionManagementServer!;
+  }
 
-	getExtensionInstallLocation(extension: IExtension): ExtensionInstallLocation | null {
-		const server = this.getExtensionManagementServer(extension);
-		if (server === this.remoteExtensionManagementServer) {
-			return ExtensionInstallLocation.Remote;
-		}
-		return ExtensionInstallLocation.Local;
-	}
+  getExtensionInstallLocation(extension: IExtension): ExtensionInstallLocation | null {
+    const server = this.getExtensionManagementServer(extension);
+    if (server === this.remoteExtensionManagementServer) {
+      return ExtensionInstallLocation.Remote;
+    }
+    return ExtensionInstallLocation.Local;
+  }
 }
 
 registerSingleton(IExtensionManagementServerService, TauriExtensionManagementServerService, InstantiationType.Delayed);

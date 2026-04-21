@@ -16,23 +16,23 @@ import { IMainProcessService } from '../common/mainProcessService.js';
  */
 export class TauriIPCMainProcessService extends Disposable implements IMainProcessService {
 
-	declare readonly _serviceBrand: undefined;
+  declare readonly _serviceBrand: undefined;
 
-	private mainProcessConnection: TauriIPCClient;
+  private mainProcessConnection: TauriIPCClient;
 
-	constructor(
-		windowId: number
-	) {
-		super();
+  constructor(
+    windowId: number,
+  ) {
+    super();
 
-		this.mainProcessConnection = this._register(new TauriIPCClient(windowId));
-	}
+    this.mainProcessConnection = this._register(new TauriIPCClient(windowId));
+  }
 
-	getChannel(channelName: string): IChannel {
-		return this.mainProcessConnection.getChannel(channelName);
-	}
+  getChannel(channelName: string): IChannel {
+    return this.mainProcessConnection.getChannel(channelName);
+  }
 
-	registerChannel(channelName: string, channel: IServerChannel<string>): void {
-		this.mainProcessConnection.registerChannel(channelName, channel);
-	}
+  registerChannel(channelName: string, channel: IServerChannel<string>): void {
+    this.mainProcessConnection.registerChannel(channelName, channel);
+  }
 }

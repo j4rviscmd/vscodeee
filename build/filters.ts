@@ -113,6 +113,9 @@ export const indentationFilter = Object.freeze<string[]>([
 	'!src/vs/code/tauri-browser/workbench/console-interceptor/tsconfig.json',
 	// contains embedded python snippet with space indentation
 	'!src/vs/workbench/contrib/webview/browser/pre/index.html',
+	// Tauri layer: uses space indentation (2-space, per .editorconfig)
+	'!src/**/tauri-browser/**/*.ts',
+	'!src/vs/sessions/**/*.ts',
 
 	// except multiple specific files
 	'!**/package.json',
