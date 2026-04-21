@@ -2326,13 +2326,13 @@ export default tseslint.config(
 		},
 		rules: {
 			'@stylistic/ts/indent': ['warn', 2, { 'SwitchCase': 1 }],
-			'@stylistic/ts/no-trailing-spaces': 'warn',
-			'@stylistic/ts/no-multiple-empty-lines': ['warn', { 'max': 1 }],
 			'@stylistic/ts/type-annotation-spacing': ['warn', {}],
 			'@stylistic/ts/object-curly-spacing': ['warn', 'always'],
-			'@stylistic/ts/eol-last': ['warn', 'always'],
 			'@stylistic/ts/quotes': ['warn', 'single', { 'avoidEscape': true }],
 			'@stylistic/ts/comma-dangle': ['warn', 'always-multiline'],
+			'no-trailing-spaces': 'warn',
+			'no-multiple-empty-lines': ['warn', { 'max': 1 }],
+			'eol-last': ['warn', 'always'],
 			'max-len': ['warn', { 'code': 80, 'ignoreUrls': true, 'ignoreStrings': true, 'ignoreTemplateLiterals': true, 'ignoreRegExpLiterals': true }],
 		}
 	}
