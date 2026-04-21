@@ -47,11 +47,40 @@ pub struct BuiltinExtensionsResult {
 
 /// Resolve the absolute path to the `extensions/` directory.
 ///
-/// In dev mode, `src-tauri/` is the CWD, so `../extensions` points to the repo root.
-fn resolve_extensions_dir() -> Option<PathBuf> {
-    let cwd = std::env::current_dir().ok()?;
-    let extensions_dir = cwd.join("../extensions");
-    extensions_dir.canonicalize().ok()
+/// During `cargo tauri dev`, `src-tauri/` is the CWD, so `../extensions` resolves
+/// to the repo root's extensions directory.
+///
+/// In built apps, CWD is unrelated to the project tree. Falls back to:
+/// 1. Tauri's resource directory + `_up_/extensions` (if bundled via bundle.resources)
+/// 2. `None` — the caller returns an empty extension list with a warning.
+fn resolve_extensions_dir(app_handle: &tauri::AppHandle) -> Option<PathBuf> {
+    use tauri::Manager;
+
+    // Try CWD-based resolution first (works during `cargo tauri dev`).
+    if let Some(dir) = std::env::current_dir()
+        .ok()
+        .map(|cwd| cwd.join("../extensions"))
+        .and_then(|p| p.canonicalize().ok())
+        .filter(|p| p.is_dir())
+    {
+        return Some(dir);
+    }
+
+    // Fall back to resource directory for built apps.
+    // Tauri maps `../extensions` (from bundle.resources) to `_up_/extensions`.
+    if let Ok(rd) = app_handle.path().resource_dir() {
+        let up_dir = rd.join("_up_/extensions");
+        if up_dir.is_dir() {
+            return Some(up_dir);
+        }
+        // Also check direct path in case bundled differently
+        let direct = rd.join("extensions");
+        if direct.is_dir() {
+            return Some(direct);
+        }
+    }
+
+    None
 }
 
 /// Try to read and parse a JSON file, returning `None` on any error.
@@ -82,10 +111,30 @@ fn should_include_extension(package_json: &serde_json::Value) -> bool {
 /// This is the Tauri equivalent of the web server's extension scanning
 /// in `webClientServer.ts`. The TypeScript side uses this to populate
 /// the `IBuiltinExtensionsScannerService`.
+///
+/// In built apps where extensions are not bundled, returns an empty list
+/// with a warning log rather than failing.
 #[tauri::command]
-pub fn list_builtin_extensions() -> Result<BuiltinExtensionsResult, String> {
-    let extensions_dir = resolve_extensions_dir()
-        .ok_or_else(|| "Could not resolve extensions directory".to_string())?;
+pub fn list_builtin_extensions(
+    app_handle: tauri::AppHandle,
+) -> Result<BuiltinExtensionsResult, String> {
+    let extensions_dir = match resolve_extensions_dir(&app_handle) {
+        Some(dir) => dir,
+        None => {
+            // In built apps without bundled extensions, return empty list.
+            // Built-in extensions will not be available, but the workbench
+            // can still function and user-installed extensions will load.
+            log::warn!(
+                target: "vscodeee::extensions",
+                "Could not resolve extensions directory. \
+                 Built-in extensions will not be available in this build."
+            );
+            return Ok(BuiltinExtensionsResult {
+                extensions_dir: String::new(),
+                extensions: Vec::new(),
+            });
+        }
+    };
 
     let entries = std::fs::read_dir(&extensions_dir)
         .map_err(|e| format!("Failed to read extensions directory: {e}"))?;
