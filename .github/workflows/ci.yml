@@ -179,8 +179,11 @@ jobs:
           persist-credentials: false
 
       # Create empty out/ directory so tauri::generate_context!() can resolve frontendDist: "../out"
+      # Create empty css-modules.json so bundle.resources validation passes
       - name: Create frontend dist stub
-        run: mkdir -p out
+        run: |
+          mkdir -p out
+          echo '[]' > src-tauri/css-modules.json
 
       - name: Install system dependencies
         run: |
