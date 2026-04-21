@@ -70,6 +70,37 @@ pub fn parse_vscode_file_uri(raw_uri: &str) -> Result<PathBuf, ProtocolError> {
     Ok(canonical)
 }
 
+/// Parse a `vscode-file://vscode-app/<path>` URI into a decoded path **without**
+/// filesystem canonicalization.
+///
+/// Used for embedded asset lookup when the file doesn't exist on disk (production
+/// builds where assets are bundled into the binary via `frontendDist`).
+/// Returns the percent-decoded absolute path string.
+pub fn parse_vscode_file_uri_raw(raw_uri: &str) -> Result<String, ProtocolError> {
+    let encoded_path = raw_uri
+        .strip_prefix(URI_PREFIX)
+        .or_else(|| raw_uri.strip_prefix("/"))
+        .unwrap_or(raw_uri);
+
+    // Strip query string and fragment
+    let encoded_path = encoded_path.split('?').next().unwrap_or(encoded_path);
+    let encoded_path = encoded_path.split('#').next().unwrap_or(encoded_path);
+
+    if encoded_path.is_empty() {
+        return Err(ProtocolError::BadUri("empty path".into()));
+    }
+
+    let decoded = percent_decode(encoded_path);
+
+    if !decoded.starts_with('/') {
+        return Err(ProtocolError::BadUri(format!(
+            "path is not absolute: {decoded}"
+        )));
+    }
+
+    Ok(decoded)
+}
+
 /// Simple percent-decoding for URI path components.
 ///
 /// Decodes `%XX` sequences where `XX` is a two-digit hex value.
@@ -198,5 +229,46 @@ mod tests {
         let result = parse_vscode_file_uri("vscode-file://vscode-app/tmp?id=test-id#section");
         assert!(result.is_ok());
         assert!(result.unwrap().is_absolute());
+    }
+
+    // ── parse_vscode_file_uri_raw tests ──
+
+    #[test]
+    fn raw_parse_returns_decoded_path_without_canonicalize() {
+        // This path doesn't exist on disk, but raw parse should succeed
+        let uri = "vscode-file://vscode-app/nonexistent/path/to/out/vs/code/foo.js";
+        let result = parse_vscode_file_uri_raw(uri);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "/nonexistent/path/to/out/vs/code/foo.js");
+    }
+
+    #[test]
+    fn raw_parse_decodes_percent_encoding() {
+        let uri = "vscode-file://vscode-app/path%20with%20spaces/out/file.js";
+        let result = parse_vscode_file_uri_raw(uri);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "/path with spaces/out/file.js");
+    }
+
+    #[test]
+    fn raw_parse_strips_query_and_fragment() {
+        let uri = "vscode-file://vscode-app/some/path?id=test#section";
+        let result = parse_vscode_file_uri_raw(uri);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "/some/path");
+    }
+
+    #[test]
+    fn raw_parse_rejects_empty_path() {
+        let result = parse_vscode_file_uri_raw("vscode-file://vscode-app");
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().status_code(), 400);
+    }
+
+    #[test]
+    fn raw_parse_rejects_relative_path() {
+        let result = parse_vscode_file_uri_raw("vscode-file://vscode-apprelative/path");
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().status_code(), 400);
     }
 }

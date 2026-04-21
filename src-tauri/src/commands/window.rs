@@ -65,9 +65,21 @@ pub async fn get_extended_window_configuration(
 
     let frontend_dist = std::env::current_dir()
         .ok()
-        .map(|cwd| {
+        .and_then(|cwd| {
+            // Development: CWD is src-tauri/, so ../out resolves to the repo's out/ dir
             let dist = cwd.join("../out");
-            dist.canonicalize().unwrap_or(dist)
+            dist.canonicalize().ok()
+        })
+        .or_else(|| {
+            // Production fallback: use resource_dir/out as a virtual path.
+            // The actual files are embedded via frontendDist, but the TypeScript
+            // side needs a path containing "/out/" so that the vscode-file://
+            // protocol handler can extract the asset key for embedded asset lookup.
+            app_handle
+                .path()
+                .resource_dir()
+                .ok()
+                .map(|rd| rd.join("out"))
         })
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
