@@ -2333,7 +2333,6 @@ export default tseslint.config(
 			'no-trailing-spaces': 'warn',
 			'no-multiple-empty-lines': ['warn', { 'max': 1 }],
 			'eol-last': ['warn', 'always'],
-			'max-len': ['warn', { 'code': 80, 'ignoreUrls': true, 'ignoreStrings': true, 'ignoreTemplateLiterals': true, 'ignoreRegExpLiterals': true, 'ignoreComments': true, 'ignoreTrailingComments': true }],
 		}
 	}
 );
