@@ -5,6 +5,12 @@
 	"author": {
 		"name": "Microsoft Corporation"
 	},
+	"contributors": [
+		{
+			"name": "j4rviscmd",
+			"url": "https://github.com/j4rviscmd"
+		}
+	],
 	"license": "MIT",
 	"main": "./out/main.js",
 	"type": "module",
