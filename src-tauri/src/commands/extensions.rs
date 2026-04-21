@@ -57,6 +57,17 @@ fn resolve_extensions_dir(app_handle: &tauri::AppHandle) -> Option<PathBuf> {
     use tauri::Manager;
 
     // Try CWD-based resolution first (works during `cargo tauri dev`).
+    // During development, the packaged extensions live in .build/extensions/.
+    // Fall back to the raw extensions/ source directory if .build/ doesn't exist
+    // (e.g., before `package-extensions` has been run).
+    if let Some(dir) = std::env::current_dir()
+        .ok()
+        .map(|cwd| cwd.join("../.build/extensions"))
+        .and_then(|p| p.canonicalize().ok())
+        .filter(|p| p.is_dir())
+    {
+        return Some(dir);
+    }
     if let Some(dir) = std::env::current_dir()
         .ok()
         .map(|cwd| cwd.join("../extensions"))
@@ -67,8 +78,14 @@ fn resolve_extensions_dir(app_handle: &tauri::AppHandle) -> Option<PathBuf> {
     }
 
     // Fall back to resource directory for built apps.
-    // Tauri maps `../extensions` (from bundle.resources) to `_up_/extensions`.
+    // Tauri maps `../.build/extensions` (from bundle.resources) to `_up_/.build/extensions`.
     if let Ok(rd) = app_handle.path().resource_dir() {
+        // Primary: packaged extensions in .build/extensions
+        let packaged = rd.join("_up_/.build/extensions");
+        if packaged.is_dir() {
+            return Some(packaged);
+        }
+        // Legacy: direct extensions path (from older bundle.resources config)
         let up_dir = rd.join("_up_/extensions");
         if up_dir.is_dir() {
             return Some(up_dir);
