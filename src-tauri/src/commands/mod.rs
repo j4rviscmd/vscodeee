@@ -189,7 +189,8 @@ fn collect_css_files(dir: &Path, root: &Path, result: &mut Vec<String>) {
     }
 }
 
-/// Read product.json and package.json from the project root.
+/// Read product.json and package.json from the project root (dev) or resource
+/// directory (release).
 ///
 /// Returns both files as raw JSON values so the bootstrap script can set
 /// `globalThis._VSCODE_PRODUCT_JSON` and `globalThis._VSCODE_PACKAGE_JSON`
@@ -197,8 +198,11 @@ fn collect_css_files(dir: &Path, root: &Path, result: &mut Vec<String>) {
 /// `product.ts` checks these globals to configure services like the
 /// Extension Gallery (marketplace).
 ///
-/// The project root is resolved as `../` relative to `src-tauri/` (the
-/// Tauri process working directory during `cargo tauri dev`).
+/// In development mode, the project root is resolved as `../` relative to
+/// `src-tauri/` (the Tauri process working directory during `cargo tauri dev`).
+/// In built apps, the files are read from Tauri's resource directory where
+/// they are bundled via `tauri.conf.json` `bundle.resources`.
+/// Detection is based on whether `../product.json` exists relative to CWD.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProductPackageJson {
@@ -209,10 +213,34 @@ pub struct ProductPackageJson {
 }
 
 #[tauri::command]
-pub fn get_product_json() -> Result<ProductPackageJson, String> {
+pub fn get_product_json(app_handle: tauri::AppHandle) -> Result<ProductPackageJson, String> {
+    use tauri::Manager;
+
+    // Try CWD-based resolution first (works during `cargo tauri dev` where
+    // CWD is `src-tauri/` and `../product.json` exists).
+    // Fall back to Tauri's resource directory for built apps where CWD is
+    // unrelated to the project tree. Tauri preserves `../` resource paths
+    // as `_up_/` subdirectories in the resource directory.
     let project_root = std::env::current_dir()
-        .map_err(|e| format!("Failed to get cwd: {e}"))?
-        .join("..");
+        .ok()
+        .map(|cwd| cwd.join(".."))
+        .filter(|root| root.join("product.json").exists())
+        .or_else(|| {
+            let rd = app_handle.path().resource_dir().ok()?;
+            // Tauri maps `../product.json` (from bundle.resources) to `_up_/product.json`
+            let up_dir = rd.join("_up_");
+            if up_dir.join("product.json").exists() {
+                Some(up_dir)
+            } else if rd.join("product.json").exists() {
+                Some(rd)
+            } else {
+                None
+            }
+        })
+        .ok_or_else(|| {
+            "Could not determine project root: CWD fallback and resource_dir both failed"
+                .to_string()
+        })?;
 
     let product_path = project_root.join("product.json");
     let package_path = project_root.join("package.json");
@@ -237,6 +265,7 @@ pub fn get_product_json() -> Result<ProductPackageJson, String> {
 
     // Inject commit hash from git at runtime if not already set in product.json.
     // This ensures the client's commit matches the REH server built from the same tree.
+    // NOTE: Only works in dev mode where a git repository is available.
     if product
         .get("commit")
         .and_then(|v| v.as_str())
@@ -283,18 +312,43 @@ pub fn get_product_json() -> Result<ProductPackageJson, String> {
 /// paths relative to `out/` (e.g., `vs/base/browser/ui/widget.css`).
 /// The bootstrap uses these to create a CSS import map, mirroring the
 /// Electron `cssModules` mechanism.
+///
+/// During `cargo tauri dev`, scans `../out` relative to `src-tauri/` (CWD).
+/// In built apps, reads from a pre-generated `css-modules.json` manifest
+/// bundled as a Tauri resource (since frontendDist assets are embedded in
+/// the binary and not accessible via filesystem).
 #[tauri::command]
-pub fn list_css_modules() -> Vec<String> {
-    let out_dir = std::env::current_dir()
+pub fn list_css_modules(app_handle: tauri::AppHandle) -> Vec<String> {
+    use tauri::Manager;
+
+    // Try CWD-based filesystem scan first (works during `cargo tauri dev`).
+    if let Some(out_dir) = std::env::current_dir()
         .ok()
         .map(|cwd| {
             let dir = cwd.join("../out");
             dir.canonicalize().unwrap_or(dir)
         })
-        .unwrap_or_default();
+        .filter(|dir| dir.is_dir())
+    {
+        let mut modules = Vec::new();
+        collect_css_files(&out_dir, &out_dir, &mut modules);
+        if !modules.is_empty() {
+            modules.sort();
+            return modules;
+        }
+    }
 
-    let mut modules = Vec::new();
-    collect_css_files(&out_dir, &out_dir, &mut modules);
-    modules.sort();
-    modules
+    // Fall back to css-modules.json manifest in the resource directory (built apps).
+    // The manifest is generated at build time by scripts/generate-css-modules.mjs
+    // and bundled via tauri.conf.json bundle.resources.
+    if let Ok(resource_dir) = app_handle.path().resource_dir() {
+        let json_path = resource_dir.join("css-modules.json");
+        if let Ok(data) = std::fs::read_to_string(&json_path) {
+            if let Ok(modules) = serde_json::from_str::<Vec<String>>(&data) {
+                return modules;
+            }
+        }
+    }
+
+    Vec::new()
 }
