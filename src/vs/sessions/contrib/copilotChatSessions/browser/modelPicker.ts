@@ -20,9 +20,9 @@ import { CopilotChatSessionsProvider, RemoteNewSession } from './copilotChatSess
 const FILTER_THRESHOLD = 10;
 
 interface IModelItem {
-	readonly id: string;
-	readonly name: string;
-	readonly description?: string;
+  readonly id: string;
+  readonly name: string;
+  readonly description?: string;
 }
 
 /**
@@ -32,188 +32,188 @@ interface IModelItem {
  */
 export class CloudModelPicker extends Disposable {
 
-	private readonly _onDidChange = this._register(new Emitter<IChatSessionProviderOptionItem>());
-	readonly onDidChange: Event<IChatSessionProviderOptionItem> = this._onDidChange.event;
+  private readonly _onDidChange = this._register(new Emitter<IChatSessionProviderOptionItem>());
+  readonly onDidChange: Event<IChatSessionProviderOptionItem> = this._onDidChange.event;
 
-	private _triggerElement: HTMLElement | undefined;
-	private _slotElement: HTMLElement | undefined;
-	private readonly _renderDisposables = this._register(new DisposableStore());
-	private readonly _sessionDisposables = this._register(new DisposableStore());
+  private _triggerElement: HTMLElement | undefined;
+  private _slotElement: HTMLElement | undefined;
+  private readonly _renderDisposables = this._register(new DisposableStore());
+  private readonly _sessionDisposables = this._register(new DisposableStore());
 
-	private _session: RemoteNewSession | undefined;
-	private _selectedModel: IModelItem | undefined;
-	private _models: IModelItem[] = [];
+  private _session: RemoteNewSession | undefined;
+  private _selectedModel: IModelItem | undefined;
+  private _models: IModelItem[] = [];
 
-	get selectedModel(): IModelItem | undefined {
-		return this._selectedModel;
-	}
+  get selectedModel(): IModelItem | undefined {
+    return this._selectedModel;
+  }
 
-	constructor(
-		@IActionWidgetService private readonly actionWidgetService: IActionWidgetService,
-		@ISessionsManagementService sessionsManagementService: ISessionsManagementService,
-		@ISessionsProvidersService sessionsProvidersService: ISessionsProvidersService,
-		@IChatSessionsService chatSessionsService: IChatSessionsService,
-	) {
-		super();
+  constructor(
+    @IActionWidgetService private readonly actionWidgetService: IActionWidgetService,
+    @ISessionsManagementService sessionsManagementService: ISessionsManagementService,
+    @ISessionsProvidersService sessionsProvidersService: ISessionsProvidersService,
+    @IChatSessionsService chatSessionsService: IChatSessionsService,
+  ) {
+    super();
 
-		this._register(autorun(reader => {
-			const session = sessionsManagementService.activeSession.read(reader);
-			const providerSession = session ? sessionsProvidersService.getProvider<CopilotChatSessionsProvider>(session.providerId)?.getSession(session.sessionId) : undefined;
-			if (providerSession instanceof RemoteNewSession) {
-				this._setSession(providerSession);
-			}
-		}));
+    this._register(autorun(reader => {
+      const session = sessionsManagementService.activeSession.read(reader);
+      const providerSession = session ? sessionsProvidersService.getProvider<CopilotChatSessionsProvider>(session.providerId)?.getSession(session.sessionId) : undefined;
+      if (providerSession instanceof RemoteNewSession) {
+        this._setSession(providerSession);
+      }
+    }));
 
-		// Also listen directly for option group changes from the extension host,
-		// in case they arrive before the RemoteNewSession relays the event.
-		this._register(chatSessionsService.onDidChangeOptionGroups(() => {
-			if (this._session) {
-				this._loadModels(this._session);
-			}
-		}));
-	}
+    // Also listen directly for option group changes from the extension host,
+    // in case they arrive before the RemoteNewSession relays the event.
+    this._register(chatSessionsService.onDidChangeOptionGroups(() => {
+      if (this._session) {
+        this._loadModels(this._session);
+      }
+    }));
+  }
 
-	private _setSession(session: RemoteNewSession): void {
-		this._session = session;
-		this._sessionDisposables.clear();
-		this._loadModels(session);
+  private _setSession(session: RemoteNewSession): void {
+    this._session = session;
+    this._sessionDisposables.clear();
+    this._loadModels(session);
 
-		// Sync selected model to the new session
-		if (this._selectedModel) {
-			session.setModelId(this._selectedModel.id);
-			session.setOptionValue('models', { id: this._selectedModel.id, name: this._selectedModel.name });
-		}
+    // Sync selected model to the new session
+    if (this._selectedModel) {
+      session.setModelId(this._selectedModel.id);
+      session.setOptionValue('models', { id: this._selectedModel.id, name: this._selectedModel.name });
+    }
 
-		// Re-load models when option groups change
-		this._sessionDisposables.add(session.onDidChangeOptionGroups(() => {
-			this._loadModels(session);
-		}));
-	}
+    // Re-load models when option groups change
+    this._sessionDisposables.add(session.onDidChangeOptionGroups(() => {
+      this._loadModels(session);
+    }));
+  }
 
-	/**
+  /**
 	 * Renders the model picker trigger button into the given container.
 	 */
-	render(container: HTMLElement): HTMLElement {
-		this._renderDisposables.clear();
+  render(container: HTMLElement): HTMLElement {
+    this._renderDisposables.clear();
 
-		const slot = dom.append(container, dom.$('.sessions-chat-picker-slot'));
-		this._slotElement = slot;
-		this._renderDisposables.add({ dispose: () => slot.remove() });
+    const slot = dom.append(container, dom.$('.sessions-chat-picker-slot'));
+    this._slotElement = slot;
+    this._renderDisposables.add({ dispose: () => slot.remove() });
 
-		const trigger = dom.append(slot, dom.$('a.action-label'));
-		trigger.tabIndex = 0;
-		trigger.role = 'button';
-		this._triggerElement = trigger;
+    const trigger = dom.append(slot, dom.$('a.action-label'));
+    trigger.tabIndex = 0;
+    trigger.role = 'button';
+    this._triggerElement = trigger;
 
-		this._updateTriggerLabel();
+    this._updateTriggerLabel();
 
-		this._renderDisposables.add(dom.addDisposableListener(trigger, dom.EventType.CLICK, (e) => {
-			dom.EventHelper.stop(e, true);
-			this._showPicker();
-		}));
+    this._renderDisposables.add(dom.addDisposableListener(trigger, dom.EventType.CLICK, (e) => {
+      dom.EventHelper.stop(e, true);
+      this._showPicker();
+    }));
 
-		this._renderDisposables.add(dom.addDisposableListener(trigger, dom.EventType.KEY_DOWN, (e) => {
-			if (e.key === 'Enter' || e.key === ' ') {
-				dom.EventHelper.stop(e, true);
-				this._showPicker();
-			}
-		}));
+    this._renderDisposables.add(dom.addDisposableListener(trigger, dom.EventType.KEY_DOWN, (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        dom.EventHelper.stop(e, true);
+        this._showPicker();
+      }
+    }));
 
-		return slot;
-	}
+    return slot;
+  }
 
-	private _loadModels(session: RemoteNewSession): void {
-		const modelOption = session.getModelOptionGroup();
-		if (modelOption?.group.items.length) {
-			this._models = modelOption.group.items.map(item => ({
-				id: item.id,
-				name: item.name,
-				description: item.description,
-			}));
+  private _loadModels(session: RemoteNewSession): void {
+    const modelOption = session.getModelOptionGroup();
+    if (modelOption?.group.items.length) {
+      this._models = modelOption.group.items.map(item => ({
+        id: item.id,
+        name: item.name,
+        description: item.description,
+      }));
 
-			// Select the session's current value, or the default, or the first
-			if (!this._selectedModel || !this._models.some(m => m.id === this._selectedModel!.id)) {
-				const value = modelOption.value;
-				this._selectedModel = value
-					? { id: value.id, name: value.name, description: value.description }
-					: this._models[0];
-			}
-		} else {
-			this._models = [];
-		}
-		this._updateTriggerLabel();
-	}
+      // Select the session's current value, or the default, or the first
+      if (!this._selectedModel || !this._models.some(m => m.id === this._selectedModel!.id)) {
+        const value = modelOption.value;
+        this._selectedModel = value
+          ? { id: value.id, name: value.name, description: value.description }
+          : this._models[0];
+      }
+    } else {
+      this._models = [];
+    }
+    this._updateTriggerLabel();
+  }
 
-	private _showPicker(): void {
-		if (!this._triggerElement || this.actionWidgetService.isVisible || this._models.length === 0) {
-			return;
-		}
+  private _showPicker(): void {
+    if (!this._triggerElement || this.actionWidgetService.isVisible || this._models.length === 0) {
+      return;
+    }
 
-		const items = this._buildItems();
-		const showFilter = items.filter(i => i.kind === ActionListItemKind.Action).length > FILTER_THRESHOLD;
+    const items = this._buildItems();
+    const showFilter = items.filter(i => i.kind === ActionListItemKind.Action).length > FILTER_THRESHOLD;
 
-		const triggerElement = this._triggerElement;
-		const delegate: IActionListDelegate<IModelItem> = {
-			onSelect: (item) => {
-				this.actionWidgetService.hide();
-				this._selectModel(item);
-			},
-			onHide: () => { triggerElement.focus(); },
-		};
+    const triggerElement = this._triggerElement;
+    const delegate: IActionListDelegate<IModelItem> = {
+      onSelect: (item) => {
+        this.actionWidgetService.hide();
+        this._selectModel(item);
+      },
+      onHide: () => { triggerElement.focus(); },
+    };
 
-		this.actionWidgetService.show<IModelItem>(
-			'remoteModelPicker',
-			false,
-			items,
-			delegate,
-			this._triggerElement,
-			undefined,
-			[],
-			{
-				getAriaLabel: (item) => item.label ?? '',
-				getWidgetAriaLabel: () => localize('modelPicker.ariaLabel', "Model Picker"),
-			},
-			showFilter ? { showFilter: true, filterPlaceholder: localize('modelPicker.filter', "Filter models...") } : undefined,
-		);
-	}
+    this.actionWidgetService.show<IModelItem>(
+      'remoteModelPicker',
+      false,
+      items,
+      delegate,
+      this._triggerElement,
+      undefined,
+      [],
+      {
+        getAriaLabel: (item) => item.label ?? '',
+        getWidgetAriaLabel: () => localize('modelPicker.ariaLabel', 'Model Picker'),
+      },
+      showFilter ? { showFilter: true, filterPlaceholder: localize('modelPicker.filter', 'Filter models...') } : undefined,
+    );
+  }
 
-	private _buildItems(): IActionListItem<IModelItem>[] {
-		return this._models.map(model => ({
-			kind: ActionListItemKind.Action,
-			label: model.name,
-			group: { title: '', icon: this._selectedModel?.id === model.id ? Codicon.check : Codicon.blank },
-			item: model,
-		}));
-	}
+  private _buildItems(): IActionListItem<IModelItem>[] {
+    return this._models.map(model => ({
+      kind: ActionListItemKind.Action,
+      label: model.name,
+      group: { title: '', icon: this._selectedModel?.id === model.id ? Codicon.check : Codicon.blank },
+      item: model,
+    }));
+  }
 
-	private _selectModel(item: IModelItem): void {
-		this._selectedModel = item;
-		this._updateTriggerLabel();
+  private _selectModel(item: IModelItem): void {
+    this._selectedModel = item;
+    this._updateTriggerLabel();
 
-		if (this._session) {
-			this._session.setModelId(item.id);
-			this._session.setOptionValue('models', { id: item.id, name: item.name });
-		}
-		this._onDidChange.fire({ id: item.id, name: item.name, description: item.description });
-	}
+    if (this._session) {
+      this._session.setModelId(item.id);
+      this._session.setOptionValue('models', { id: item.id, name: item.name });
+    }
+    this._onDidChange.fire({ id: item.id, name: item.name, description: item.description });
+  }
 
-	private _updateTriggerLabel(): void {
-		if (!this._triggerElement || !this._slotElement) {
-			return;
-		}
+  private _updateTriggerLabel(): void {
+    if (!this._triggerElement || !this._slotElement) {
+      return;
+    }
 
-		dom.clearNode(this._triggerElement);
-		const label = this._selectedModel?.name ?? localize('modelPicker.auto', "Auto");
+    dom.clearNode(this._triggerElement);
+    const label = this._selectedModel?.name ?? localize('modelPicker.auto', 'Auto');
 
-		const labelSpan = dom.append(this._triggerElement, dom.$('span.sessions-chat-dropdown-label'));
-		labelSpan.textContent = label;
-		dom.append(this._triggerElement, renderIcon(Codicon.chevronDown));
+    const labelSpan = dom.append(this._triggerElement, dom.$('span.sessions-chat-dropdown-label'));
+    labelSpan.textContent = label;
+    dom.append(this._triggerElement, renderIcon(Codicon.chevronDown));
 
-		const visible = this._models.length > 0;
-		dom.setVisibility(visible, this._slotElement);
-		this._slotElement.classList.toggle('disabled', false);
-		this._triggerElement.setAttribute('aria-hidden', String(!visible));
-		this._triggerElement.setAttribute('aria-disabled', String(!visible));
-		this._triggerElement.tabIndex = visible ? 0 : -1;
-	}
+    const visible = this._models.length > 0;
+    dom.setVisibility(visible, this._slotElement);
+    this._slotElement.classList.toggle('disabled', false);
+    this._triggerElement.setAttribute('aria-hidden', String(!visible));
+    this._triggerElement.setAttribute('aria-disabled', String(!visible));
+    this._triggerElement.tabIndex = visible ? 0 : -1;
+  }
 }

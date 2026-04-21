@@ -30,16 +30,16 @@ import { invoke } from '../../../../platform/tauri/common/tauriApi.js';
  * Result returned from the Rust `spawn_exthost_with_relay` command.
  */
 interface IExtHostSpawnResult {
-	/** Unique identifier for this Extension Host instance, used for cleanup via `kill_exthost`. */
-	readonly instanceId: number;
-	/** WebSocket port on which the Rust relay is listening. */
-	readonly wsPort: number;
-	/** PID of the spawned Node.js Extension Host child process. */
-	readonly extHostPid: number;
-	/** Unix domain socket path used for IPC with the Extension Host. */
-	readonly pipePath: string;
-	/** Absolute path to the application root directory (where `out/` lives). */
-	readonly appRoot: string;
+  /** Unique identifier for this Extension Host instance, used for cleanup via `kill_exthost`. */
+  readonly instanceId: number;
+  /** WebSocket port on which the Rust relay is listening. */
+  readonly wsPort: number;
+  /** PID of the spawned Node.js Extension Host child process. */
+  readonly extHostPid: number;
+  /** Unix domain socket path used for IPC with the Extension Host. */
+  readonly pipePath: string;
+  /** Absolute path to the application root directory (where `out/` lives). */
+  readonly appRoot: string;
 }
 
 /**
@@ -47,8 +47,8 @@ interface IExtHostSpawnResult {
  * Supplies the set of extensions to load during initialization.
  */
 export interface ITauriLocalProcessExtensionHostDataProvider {
-	/** Resolve the extensions to run in this extension host instance. */
-	getInitData(): Promise<{ extensions: ExtensionHostExtensions }>;
+  /** Resolve the extensions to run in this extension host instance. */
+  getInitData(): Promise<{ extensions: ExtensionHostExtensions }>;
 }
 
 /**
@@ -61,50 +61,50 @@ export interface ITauriLocalProcessExtensionHostDataProvider {
  */
 export class TauriLocalProcessExtensionHost extends Disposable implements IExtensionHost {
 
-	/** PID of the spawned Extension Host process, or `null` if not yet started. */
-	public pid: number | null = null;
-	/** Always `null` for a local process extension host (no remote authority). */
-	public readonly remoteAuthority = null;
-	/** The extension host is started eagerly on application launch. */
-	public readonly startup = ExtensionHostStartup.EagerAutoStart;
-	/** Extensions loaded in this extension host instance, populated after `start()` completes. */
-	public extensions: ExtensionHostExtensions | null = null;
+  /** PID of the spawned Extension Host process, or `null` if not yet started. */
+  public pid: number | null = null;
+  /** Always `null` for a local process extension host (no remote authority). */
+  public readonly remoteAuthority = null;
+  /** The extension host is started eagerly on application launch. */
+  public readonly startup = ExtensionHostStartup.EagerAutoStart;
+  /** Extensions loaded in this extension host instance, populated after `start()` completes. */
+  public extensions: ExtensionHostExtensions | null = null;
 
-	private readonly _onExit = this._register(new Emitter<[number, string | null]>());
-	/** Fires with `[code, signal]` when the Extension Host process exits unexpectedly. */
-	public readonly onExit: Event<[number, string | null]> = this._onExit.event;
+  private readonly _onExit = this._register(new Emitter<[number, string | null]>());
+  /** Fires with `[code, signal]` when the Extension Host process exits unexpectedly. */
+  public readonly onExit: Event<[number, string | null]> = this._onExit.event;
 
-	private _protocol: PersistentProtocol | null = null;
-	private readonly _extensionHostLogsLocation: URI;
-	/**
+  private _protocol: PersistentProtocol | null = null;
+  private readonly _extensionHostLogsLocation: URI;
+  /**
 	 * Instance ID assigned by the Rust side, used to clean up this specific
 	 * Extension Host instance via the `kill_exthost` command.
 	 */
-	private _instanceId: number | null = null;
-	/**
+  private _instanceId: number | null = null;
+  /**
 	 * Application root path received from the Rust spawn result.
 	 * Used to set `vscode.env.appRoot` in the extension host init data.
 	 */
-	private _appRoot: string | null = null;
+  private _appRoot: string | null = null;
 
-	constructor(
-		public readonly runningLocation: LocalProcessRunningLocation,
-		private readonly _initDataProvider: ITauriLocalProcessExtensionHostDataProvider,
-		@IWorkspaceContextService private readonly _contextService: IWorkspaceContextService,
-		@IWorkbenchEnvironmentService private readonly _environmentService: IWorkbenchEnvironmentService,
-		@ITelemetryService private readonly _telemetryService: ITelemetryService,
-		@ILogService private readonly _logService: ILogService,
-		@ILoggerService private readonly _loggerService: ILoggerService,
-		@ILabelService private readonly _labelService: ILabelService,
-		@IProductService private readonly _productService: IProductService,
-		@IUserDataProfilesService private readonly _userDataProfilesService: IUserDataProfilesService,
-		@IDefaultLogLevelsService private readonly _defaultLogLevelsService: IDefaultLogLevelsService,
-	) {
-		super();
-		this._extensionHostLogsLocation = joinPath(this._environmentService.extHostLogsPath, 'localProcess');
-	}
+  constructor(
+    public readonly runningLocation: LocalProcessRunningLocation,
+    private readonly _initDataProvider: ITauriLocalProcessExtensionHostDataProvider,
+    @IWorkspaceContextService private readonly _contextService: IWorkspaceContextService,
+    @IWorkbenchEnvironmentService private readonly _environmentService: IWorkbenchEnvironmentService,
+    @ITelemetryService private readonly _telemetryService: ITelemetryService,
+    @ILogService private readonly _logService: ILogService,
+    @ILoggerService private readonly _loggerService: ILoggerService,
+    @ILabelService private readonly _labelService: ILabelService,
+    @IProductService private readonly _productService: IProductService,
+    @IUserDataProfilesService private readonly _userDataProfilesService: IUserDataProfilesService,
+    @IDefaultLogLevelsService private readonly _defaultLogLevelsService: IDefaultLogLevelsService,
+  ) {
+    super();
+    this._extensionHostLogsLocation = joinPath(this._environmentService.extHostLogsPath, 'localProcess');
+  }
 
-	/**
+  /**
 	 * Start the extension host process and establish a protocol connection.
 	 *
 	 * Performs the following steps:
@@ -120,128 +120,128 @@ export class TauriLocalProcessExtensionHost extends Disposable implements IExten
 	 * @returns The connected message passing protocol for RPC communication.
 	 * @throws If the handshake does not complete within 60 seconds.
 	 */
-	public async start(): Promise<IMessagePassingProtocol> {
-		// 1) Ask Rust to spawn Node.js ExtHost + WS relay
-		this._logService.info('[TauriExtHost] Spawning extension host with WS relay...');
-		const result = await invoke<IExtHostSpawnResult>('spawn_exthost_with_relay');
-		this.pid = result.extHostPid;
-		this._instanceId = result.instanceId;
-		this._appRoot = result.appRoot;
-		this._logService.info(`[TauriExtHost] ExtHost instance=${result.instanceId}, PID=${result.extHostPid}, WS port=${result.wsPort}, pipe=${result.pipePath}, appRoot=${result.appRoot}`);
+  public async start(): Promise<IMessagePassingProtocol> {
+    // 1) Ask Rust to spawn Node.js ExtHost + WS relay
+    this._logService.info('[TauriExtHost] Spawning extension host with WS relay...');
+    const result = await invoke<IExtHostSpawnResult>('spawn_exthost_with_relay');
+    this.pid = result.extHostPid;
+    this._instanceId = result.instanceId;
+    this._appRoot = result.appRoot;
+    this._logService.info(`[TauriExtHost] ExtHost instance=${result.instanceId}, PID=${result.extHostPid}, WS port=${result.wsPort}, pipe=${result.pipePath}, appRoot=${result.appRoot}`);
 
-		// 2) Connect WebSocket to the relay
-		this._logService.info('[TauriExtHost] Connecting WS to relay...');
-		const socket = await connectToExtHostRelay(result.wsPort);
-		this._register(socket);
-		this._logService.info('[TauriExtHost] WS connected to relay');
+    // 2) Connect WebSocket to the relay
+    this._logService.info('[TauriExtHost] Connecting WS to relay...');
+    const socket = await connectToExtHostRelay(result.wsPort);
+    this._register(socket);
+    this._logService.info('[TauriExtHost] WS connected to relay');
 
-		// 3) Wrap in PersistentProtocol (byte-transparent relay — no WebSocket frames on the pipe side)
-		const protocol = new PersistentProtocol({ socket, initialChunk: null });
-		this._register(protocol);
-		this._protocol = protocol;
-		this._logService.info('[TauriExtHost] PersistentProtocol created, starting handshake...');
+    // 3) Wrap in PersistentProtocol (byte-transparent relay — no WebSocket frames on the pipe side)
+    const protocol = new PersistentProtocol({ socket, initialChunk: null });
+    this._register(protocol);
+    this._protocol = protocol;
+    this._logService.info('[TauriExtHost] PersistentProtocol created, starting handshake...');
 
-		// Monitor disconnection
-		protocol.onDidDispose(() => {
-			this._logService.info('[TauriExtHost] Protocol disposed');
-			this._onExit.fire([0, null]);
-		});
-		protocol.onSocketClose((e) => {
-			this._logService.info('[TauriExtHost] Socket closed', e);
-			this._onExit.fire([0, null]);
-		});
+    // Monitor disconnection
+    protocol.onDidDispose(() => {
+      this._logService.info('[TauriExtHost] Protocol disposed');
+      this._onExit.fire([0, null]);
+    });
+    protocol.onSocketClose((e) => {
+      this._logService.info('[TauriExtHost] Socket closed', e);
+      this._onExit.fire([0, null]);
+    });
 
-		// 4) Perform handshake: wait Ready → send InitData → wait Initialized
-		return new Promise<IMessagePassingProtocol>((resolve, reject) => {
-			const timeout = setTimeout(() => {
-				this._logService.error('[TauriExtHost] Handshake timeout — ExtHost did not send Ready within 60s');
-				disposable.dispose();
-				reject(new Error('The Tauri local extension host took longer than 60s to send its ready message.'));
-			}, 60 * 1000);
+    // 4) Perform handshake: wait Ready → send InitData → wait Initialized
+    return new Promise<IMessagePassingProtocol>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this._logService.error('[TauriExtHost] Handshake timeout — ExtHost did not send Ready within 60s');
+        disposable.dispose();
+        reject(new Error('The Tauri local extension host took longer than 60s to send its ready message.'));
+      }, 60 * 1000);
 
-			const disposable = protocol.onMessage(msg => {
-				this._logService.info(`[TauriExtHost] Handshake message received, length=${msg.byteLength}, first bytes=[${Array.from(msg.slice(0, Math.min(16, msg.byteLength)).buffer).join(',')}]`);
+      const disposable = protocol.onMessage(msg => {
+        this._logService.info(`[TauriExtHost] Handshake message received, length=${msg.byteLength}, first bytes=[${Array.from(msg.slice(0, Math.min(16, msg.byteLength)).buffer).join(',')}]`);
 
-				if (isMessageOfType(msg, MessageType.Ready)) {
-					this._logService.info('[TauriExtHost] Received Ready — sending init data...');
-					// Extension Host is ready — send initialization data
-					this._createExtHostInitData().then(data => {
-						const json = JSON.stringify(data);
-						this._logService.info(`[TauriExtHost] Sending init data (${json.length} chars)`);
-						protocol.send(VSBuffer.fromString(json));
-					}).catch(err => {
-						clearTimeout(timeout);
-						disposable.dispose();
-						reject(err);
-					});
-					return;
-				}
+        if (isMessageOfType(msg, MessageType.Ready)) {
+          this._logService.info('[TauriExtHost] Received Ready — sending init data...');
+          // Extension Host is ready — send initialization data
+          this._createExtHostInitData().then(data => {
+            const json = JSON.stringify(data);
+            this._logService.info(`[TauriExtHost] Sending init data (${json.length} chars)`);
+            protocol.send(VSBuffer.fromString(json));
+          }).catch(err => {
+            clearTimeout(timeout);
+            disposable.dispose();
+            reject(err);
+          });
+          return;
+        }
 
-				if (isMessageOfType(msg, MessageType.Initialized)) {
-					// Extension Host is initialized — handshake complete
-					this._logService.info('[TauriExtHost] Received Initialized — handshake complete!');
-					clearTimeout(timeout);
-					disposable.dispose();
-					resolve(protocol);
-					return;
-				}
+        if (isMessageOfType(msg, MessageType.Initialized)) {
+          // Extension Host is initialized — handshake complete
+          this._logService.info('[TauriExtHost] Received Initialized — handshake complete!');
+          clearTimeout(timeout);
+          disposable.dispose();
+          resolve(protocol);
+          return;
+        }
 
-				this._logService.warn(`[TauriExtHost] Unexpected message during handshake, length=${msg.byteLength}`);
-			});
-		});
-	}
+        this._logService.warn(`[TauriExtHost] Unexpected message during handshake, length=${msg.byteLength}`);
+      });
+    });
+  }
 
-	/**
+  /**
 	 * Returns debug/inspect information for the Extension Host process.
 	 *
 	 * Always returns `undefined` because the Node.js inspector is not
 	 * currently wired up in the Tauri sidecar launch path.
 	 */
-	public getInspectPort(): IExtensionInspectInfo | undefined {
-		return undefined;
-	}
+  public getInspectPort(): IExtensionInspectInfo | undefined {
+    return undefined;
+  }
 
-	/**
+  /**
 	 * Attempt to enable the Node.js inspector on the Extension Host.
 	 *
 	 * Always returns `false` because debug port forwarding is not
 	 * yet implemented for the Tauri sidecar architecture.
 	 */
-	public enableInspectPort(): Promise<boolean> {
-		return Promise.resolve(false);
-	}
+  public enableInspectPort(): Promise<boolean> {
+    return Promise.resolve(false);
+  }
 
-	/**
+  /**
 	 * Send a disconnect notification to the extension host and close the protocol.
 	 */
-	public async disconnect(): Promise<void> {
-		if (this._protocol) {
-			this._protocol.send(VSBuffer.fromString(JSON.stringify({ type: 'VSCODE_EXTHOST_DISCONNECT' })));
-			this._protocol.sendDisconnect();
-		}
-	}
+  public async disconnect(): Promise<void> {
+    if (this._protocol) {
+      this._protocol.send(VSBuffer.fromString(JSON.stringify({ type: 'VSCODE_EXTHOST_DISCONNECT' })));
+      this._protocol.sendDisconnect();
+    }
+  }
 
-	/**
+  /**
 	 * Send a termination message to the extension host, clean up the Rust-side
 	 * sidecar/relay, and dispose all resources.
 	 */
-	public override dispose(): void {
-		if (this._protocol) {
-			this._protocol.send(VSBuffer.fromString(JSON.stringify({ type: '__$terminate' })));
-		}
-		// Ask Rust to kill this specific ExtHost instance and its relay.
-		// Fire-and-forget: errors are logged but do not block disposal.
-		if (this._instanceId !== null) {
-			const instanceId = this._instanceId;
-			this._instanceId = null;
-			invoke('kill_exthost', { instanceId }).catch(err => {
-				this._logService.warn(`[TauriExtHost] Failed to kill ExtHost instance ${instanceId}: ${err}`);
-			});
-		}
-		super.dispose();
-	}
+  public override dispose(): void {
+    if (this._protocol) {
+      this._protocol.send(VSBuffer.fromString(JSON.stringify({ type: '__$terminate' })));
+    }
+    // Ask Rust to kill this specific ExtHost instance and its relay.
+    // Fire-and-forget: errors are logged but do not block disposal.
+    if (this._instanceId !== null) {
+      const instanceId = this._instanceId;
+      this._instanceId = null;
+      invoke('kill_exthost', { instanceId }).catch(err => {
+        this._logService.warn(`[TauriExtHost] Failed to kill ExtHost instance ${instanceId}: ${err}`);
+      });
+    }
+    super.dispose();
+  }
 
-	/**
+  /**
 	 * Build the {@link IExtensionHostInitData} payload sent to the Node.js
 	 * Extension Host during the handshake.
 	 *
@@ -252,71 +252,71 @@ export class TauriLocalProcessExtensionHost extends Disposable implements IExten
 	 * - `appHost` is `'desktop'` — distinguishes from browser-based hosts
 	 * - `remote.isRemote` is `false` — the ExtHost runs locally
 	 */
-	private async _createExtHostInitData(): Promise<IExtensionHostInitData> {
-		const initData = await this._initDataProvider.getInitData();
-		this.extensions = initData.extensions;
-		const workspace = this._contextService.getWorkspace();
-		const nlsBaseUrl = this._productService.extensionsGallery?.nlsBaseUrl;
-		let nlsUrlWithDetails: URI | undefined = undefined;
-		if (nlsBaseUrl && this._productService.commit && !platform.Language.isDefaultVariant()) {
-			nlsUrlWithDetails = URI.joinPath(URI.parse(nlsBaseUrl), this._productService.commit, this._productService.version, platform.Language.value());
-		}
-		return {
-			commit: this._productService.commit,
-			version: this._productService.version,
-			quality: this._productService.quality,
-			date: this._productService.date,
-			parentPid: 0, // Tauri has no equivalent to process.pid — the Rust sidecar monitors ExtHost lifecycle instead
-			environment: {
-				isExtensionDevelopmentDebug: this._environmentService.debugRenderer,
-				appRoot: this._appRoot ? URI.file(this._appRoot) : undefined,
-				appName: this._productService.nameLong,
-				appHost: 'desktop', // Tauri is a desktop app, not a web app
-				appUriScheme: this._productService.urlProtocol,
-				appLanguage: platform.language,
-				isExtensionTelemetryLoggingOnly: isLoggingOnly(this._productService, this._environmentService),
-				isPortable: false,
-				extensionDevelopmentLocationURI: this._environmentService.extensionDevelopmentLocationURI,
-				extensionTestsLocationURI: this._environmentService.extensionTestsLocationURI,
-				globalStorageHome: this._userDataProfilesService.defaultProfile.globalStorageHome,
-				workspaceStorageHome: this._environmentService.workspaceStorageHome,
-				extensionLogLevel: this._defaultLogLevelsService.defaultLogLevels.extensions,
-				isSessionsWindow: this._environmentService.isSessionsWindow,
-			},
-			workspace: this._contextService.getWorkbenchState() === WorkbenchState.EMPTY ? undefined : {
-				configuration: workspace.configuration || undefined,
-				id: workspace.id,
-				name: this._labelService.getWorkspaceLabel(workspace),
-				transient: workspace.transient,
-			},
-			consoleForward: {
-				includeStack: false,
-				logNative: this._environmentService.debugRenderer,
-			},
-			extensions: this.extensions.toSnapshot(),
-			// TODO(debug): zero-extensions test (uncomment below, comment above)
-			// extensions: { versionId: 0, allExtensions: [], activationEvents: {}, myExtensions: [] },
-			nlsBaseUrl: nlsUrlWithDetails,
-			telemetryInfo: {
-				sessionId: this._telemetryService.sessionId,
-				machineId: this._telemetryService.machineId,
-				sqmId: this._telemetryService.sqmId,
-				devDeviceId: this._telemetryService.devDeviceId ?? this._telemetryService.machineId,
-				firstSessionDate: this._telemetryService.firstSessionDate,
-				msftInternal: this._telemetryService.msftInternal,
-			},
-			remoteExtensionTips: this._productService.remoteExtensionTips,
-			virtualWorkspaceExtensionTips: this._productService.virtualWorkspaceExtensionTips,
-			logLevel: this._logService.getLevel(),
-			loggers: [...this._loggerService.getRegisteredLoggers()],
-			logsLocation: this._extensionHostLogsLocation,
-			autoStart: true,
-			remote: {
-				authority: this._environmentService.remoteAuthority,
-				connectionData: null,
-				isRemote: false,
-			},
-			uiKind: UIKind.Desktop, // MUST be Desktop — Tauri is a desktop app
-		};
-	}
+  private async _createExtHostInitData(): Promise<IExtensionHostInitData> {
+    const initData = await this._initDataProvider.getInitData();
+    this.extensions = initData.extensions;
+    const workspace = this._contextService.getWorkspace();
+    const nlsBaseUrl = this._productService.extensionsGallery?.nlsBaseUrl;
+    let nlsUrlWithDetails: URI | undefined = undefined;
+    if (nlsBaseUrl && this._productService.commit && !platform.Language.isDefaultVariant()) {
+      nlsUrlWithDetails = URI.joinPath(URI.parse(nlsBaseUrl), this._productService.commit, this._productService.version, platform.Language.value());
+    }
+    return {
+      commit: this._productService.commit,
+      version: this._productService.version,
+      quality: this._productService.quality,
+      date: this._productService.date,
+      parentPid: 0, // Tauri has no equivalent to process.pid — the Rust sidecar monitors ExtHost lifecycle instead
+      environment: {
+        isExtensionDevelopmentDebug: this._environmentService.debugRenderer,
+        appRoot: this._appRoot ? URI.file(this._appRoot) : undefined,
+        appName: this._productService.nameLong,
+        appHost: 'desktop', // Tauri is a desktop app, not a web app
+        appUriScheme: this._productService.urlProtocol,
+        appLanguage: platform.language,
+        isExtensionTelemetryLoggingOnly: isLoggingOnly(this._productService, this._environmentService),
+        isPortable: false,
+        extensionDevelopmentLocationURI: this._environmentService.extensionDevelopmentLocationURI,
+        extensionTestsLocationURI: this._environmentService.extensionTestsLocationURI,
+        globalStorageHome: this._userDataProfilesService.defaultProfile.globalStorageHome,
+        workspaceStorageHome: this._environmentService.workspaceStorageHome,
+        extensionLogLevel: this._defaultLogLevelsService.defaultLogLevels.extensions,
+        isSessionsWindow: this._environmentService.isSessionsWindow,
+      },
+      workspace: this._contextService.getWorkbenchState() === WorkbenchState.EMPTY ? undefined : {
+        configuration: workspace.configuration || undefined,
+        id: workspace.id,
+        name: this._labelService.getWorkspaceLabel(workspace),
+        transient: workspace.transient,
+      },
+      consoleForward: {
+        includeStack: false,
+        logNative: this._environmentService.debugRenderer,
+      },
+      extensions: this.extensions.toSnapshot(),
+      // TODO(debug): zero-extensions test (uncomment below, comment above)
+      // extensions: { versionId: 0, allExtensions: [], activationEvents: {}, myExtensions: [] },
+      nlsBaseUrl: nlsUrlWithDetails,
+      telemetryInfo: {
+        sessionId: this._telemetryService.sessionId,
+        machineId: this._telemetryService.machineId,
+        sqmId: this._telemetryService.sqmId,
+        devDeviceId: this._telemetryService.devDeviceId ?? this._telemetryService.machineId,
+        firstSessionDate: this._telemetryService.firstSessionDate,
+        msftInternal: this._telemetryService.msftInternal,
+      },
+      remoteExtensionTips: this._productService.remoteExtensionTips,
+      virtualWorkspaceExtensionTips: this._productService.virtualWorkspaceExtensionTips,
+      logLevel: this._logService.getLevel(),
+      loggers: [...this._loggerService.getRegisteredLoggers()],
+      logsLocation: this._extensionHostLogsLocation,
+      autoStart: true,
+      remote: {
+        authority: this._environmentService.remoteAuthority,
+        connectionData: null,
+        isRemote: false,
+      },
+      uiKind: UIKind.Desktop, // MUST be Desktop — Tauri is a desktop app
+    };
+  }
 }

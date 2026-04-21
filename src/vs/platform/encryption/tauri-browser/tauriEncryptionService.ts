@@ -24,39 +24,39 @@ import { invoke } from '../../tauri/common/tauriApi.js';
  */
 export class TauriEncryptionService implements IEncryptionService {
 
-	declare readonly _serviceBrand: undefined;
+  declare readonly _serviceBrand: undefined;
 
-	private _isAvailable: boolean | undefined;
+  private _isAvailable: boolean | undefined;
 
-	async encrypt(value: string): Promise<string> {
-		return invoke<string>('encryption_encrypt', { value });
-	}
+  async encrypt(value: string): Promise<string> {
+    return invoke<string>('encryption_encrypt', { value });
+  }
 
-	async decrypt(value: string): Promise<string> {
-		return invoke<string>('encryption_decrypt', { value });
-	}
+  async decrypt(value: string): Promise<string> {
+    return invoke<string>('encryption_decrypt', { value });
+  }
 
-	async isEncryptionAvailable(): Promise<boolean> {
-		if (this._isAvailable === undefined) {
-			try {
-				this._isAvailable = await invoke<boolean>('encryption_is_available');
-			} catch {
-				this._isAvailable = false;
-			}
-		}
-		return this._isAvailable;
-	}
+  async isEncryptionAvailable(): Promise<boolean> {
+    if (this._isAvailable === undefined) {
+      try {
+        this._isAvailable = await invoke<boolean>('encryption_is_available');
+      } catch {
+        this._isAvailable = false;
+      }
+    }
+    return this._isAvailable;
+  }
 
-	async getKeyStorageProvider(): Promise<KnownStorageProvider> {
-		if (await this.isEncryptionAvailable()) {
-			return KnownStorageProvider.keychainAccess;
-		}
-		return KnownStorageProvider.basicText;
-	}
+  async getKeyStorageProvider(): Promise<KnownStorageProvider> {
+    if (await this.isEncryptionAvailable()) {
+      return KnownStorageProvider.keychainAccess;
+    }
+    return KnownStorageProvider.basicText;
+  }
 
-	async setUsePlainTextEncryption(): Promise<void> {
-		// No-op — the encryption availability is determined by the OS credential store.
-	}
+  async setUsePlainTextEncryption(): Promise<void> {
+    // No-op — the encryption availability is determined by the OS credential store.
+  }
 }
 
 registerSingleton(IEncryptionService, TauriEncryptionService, InstantiationType.Delayed);

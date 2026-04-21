@@ -11,6 +11,6 @@ export type NewSessionChangeType = 'repoUri' | 'isolationMode' | 'branch' | 'opt
  * Represents a resolved option group with its current selected value.
  */
 export interface ISessionOptionGroup {
-	readonly group: IChatSessionProviderOptionGroup;
-	readonly value: IChatSessionProviderOptionItem | undefined;
+  readonly group: IChatSessionProviderOptionGroup;
+  readonly value: IChatSessionProviderOptionItem | undefined;
 }

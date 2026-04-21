@@ -73,254 +73,254 @@ import { TauriURLCallbackProvider } from './urlCallbackProvider.js';
 
 export class TauriDesktopMain extends Disposable {
 
-	private readonly workspace: IWorkspace;
+  private readonly workspace: IWorkspace;
 
-	constructor(
-		private readonly tauriConfig: ITauriWindowConfiguration,
-		folderUri?: string,
-		workspaceUri?: string,
-		private readonly remoteAuthority?: string
-	) {
-		super();
+  constructor(
+    private readonly tauriConfig: ITauriWindowConfiguration,
+    folderUri?: string,
+    workspaceUri?: string,
+    private readonly remoteAuthority?: string,
+  ) {
+    super();
 
-		// Determine initial workspace from URL query params
-		if (folderUri) {
-			this.workspace = { folderUri: URI.parse(folderUri) };
-		} else if (workspaceUri) {
-			this.workspace = { workspaceUri: URI.parse(workspaceUri) };
-		} else {
-			this.workspace = undefined;
-		}
-	}
+    // Determine initial workspace from URL query params
+    if (folderUri) {
+      this.workspace = { folderUri: URI.parse(folderUri) };
+    } else if (workspaceUri) {
+      this.workspace = { workspaceUri: URI.parse(workspaceUri) };
+    } else {
+      this.workspace = undefined;
+    }
+  }
 
-	async open(): Promise<void> {
+  async open(): Promise<void> {
 
-		// Init services and wait for DOM to be ready in parallel
-		const [services] = await Promise.all([this.initServices(), domContentLoaded(mainWindow)]);
+    // Init services and wait for DOM to be ready in parallel
+    const [services] = await Promise.all([this.initServices(), domContentLoaded(mainWindow)]);
 
-		// Create Workbench
-		const workbench = new Workbench(mainWindow.document.body, {
-			extraClasses: ['tauri']
-		}, services.serviceCollection, services.logService);
+    // Create Workbench
+    const workbench = new Workbench(mainWindow.document.body, {
+      extraClasses: ['tauri'],
+    }, services.serviceCollection, services.logService);
 
-		// Listeners
-		this.registerListeners(workbench, services.storageService);
+    // Listeners
+    this.registerListeners(workbench, services.storageService);
 
-		// Startup — returns the instantiation service with all resolved services
-		const instantiationService = workbench.startup();
+    // Startup — returns the instantiation service with all resolved services
+    const instantiationService = workbench.startup();
 
-		// Wire window events to trigger layout recalculation.
-		// Two listeners are needed for complete coverage:
-		// - tauri://resize: OS-level window resize (Tauri native API)
-		// - DOM resize: viewport changes that don't resize the window (e.g., DevTools dock/undock)
-		instantiationService.invokeFunction(accessor => {
-			const layoutService = accessor.get(IWorkbenchLayoutService);
-			const nativeHostService = accessor.get(INativeHostService);
-			const openerService = accessor.get(IOpenerService);
+    // Wire window events to trigger layout recalculation.
+    // Two listeners are needed for complete coverage:
+    // - tauri://resize: OS-level window resize (Tauri native API)
+    // - DOM resize: viewport changes that don't resize the window (e.g., DevTools dock/undock)
+    instantiationService.invokeFunction(accessor => {
+      const layoutService = accessor.get(IWorkbenchLayoutService);
+      const nativeHostService = accessor.get(INativeHostService);
+      const openerService = accessor.get(IOpenerService);
 
-			listen('tauri://resize', () => layoutService.layout())
-				.then(unlisten => this._register({ dispose: unlisten }));
-			this._register(addDisposableListener(mainWindow, EventType.RESIZE, () => layoutService.layout()));
+      listen('tauri://resize', () => layoutService.layout())
+        .then(unlisten => this._register({ dispose: unlisten }));
+      this._register(addDisposableListener(mainWindow, EventType.RESIZE, () => layoutService.layout()));
 
-			// Prevent native WebView behaviors — mirrors BrowserWindow in window.ts.
-			const mainContainer = layoutService.mainContainer;
-			const preventEvent = (e: Event) => EventHelper.stop(e, true);
-			this._register(addDisposableListener(mainContainer, EventType.CONTEXT_MENU, preventEvent));
-			this._register(addDisposableListener(mainContainer, EventType.DROP, preventEvent));
-			this._register(addDisposableListener(mainContainer, EventType.WHEEL, e => e.preventDefault(), { passive: false }));
+      // Prevent native WebView behaviors — mirrors BrowserWindow in window.ts.
+      const mainContainer = layoutService.mainContainer;
+      const preventEvent = (e: Event) => EventHelper.stop(e, true);
+      this._register(addDisposableListener(mainContainer, EventType.CONTEXT_MENU, preventEvent));
+      this._register(addDisposableListener(mainContainer, EventType.DROP, preventEvent));
+      this._register(addDisposableListener(mainContainer, EventType.WHEEL, e => e.preventDefault(), { passive: false }));
 
-			this._register(nativeHostService.onDidMaximizeWindow(() => {
-				layoutService.updateWindowMaximizedState(mainWindow, true);
-			}));
-			this._register(nativeHostService.onDidUnmaximizeWindow(() => {
-				layoutService.updateWindowMaximizedState(mainWindow, false);
-			}));
+      this._register(nativeHostService.onDidMaximizeWindow(() => {
+        layoutService.updateWindowMaximizedState(mainWindow, true);
+      }));
+      this._register(nativeHostService.onDidUnmaximizeWindow(() => {
+        layoutService.updateWindowMaximizedState(mainWindow, false);
+      }));
 
-			// Override the default external opener to use Tauri's native host service
-			// instead of window.open(), which doesn't work in Tauri WebView.
-			// This ensures OAuth sign-in flows (e.g., Copilot) open the system browser.
-			openerService.setDefaultExternalOpener({
-				openExternal: async (href: string) => {
-					await nativeHostService.openExternal(href);
-					return true;
-				}
-			});
-		});
-	}
+      // Override the default external opener to use Tauri's native host service
+      // instead of window.open(), which doesn't work in Tauri WebView.
+      // This ensures OAuth sign-in flows (e.g., Copilot) open the system browser.
+      openerService.setDefaultExternalOpener({
+        openExternal: async (href: string) => {
+          await nativeHostService.openExternal(href);
+          return true;
+        },
+      });
+    });
+  }
 
-	private registerListeners(workbench: Workbench, storageService: TauriStorageService): void {
-		// Close storage AFTER flush — onWillShutdown fires BEFORE the lifecycle
-		// service's flush(SHUTDOWN), so closing there would dispose the Storage
-		// instances and cause the flush to be a no-op (data loss).
-		// onDidShutdown fires AFTER flush, so close() is safe here.
-		this._register(workbench.onDidShutdown(() => storageService.close()));
-		this._register(workbench.onDidShutdown(() => this.dispose()));
-	}
+  private registerListeners(workbench: Workbench, storageService: TauriStorageService): void {
+    // Close storage AFTER flush — onWillShutdown fires BEFORE the lifecycle
+    // service's flush(SHUTDOWN), so closing there would dispose the Storage
+    // instances and cause the flush to be a no-op (data loss).
+    // onDidShutdown fires AFTER flush, so close() is safe here.
+    this._register(workbench.onDidShutdown(() => storageService.close()));
+    this._register(workbench.onDidShutdown(() => this.dispose()));
+  }
 
-	private async initServices(): Promise<{ serviceCollection: ServiceCollection; logService: ILogService; storageService: TauriStorageService }> {
-		const serviceCollection = new ServiceCollection();
+  private async initServices(): Promise<{ serviceCollection: ServiceCollection; logService: ILogService; storageService: TauriStorageService }> {
+    const serviceCollection = new ServiceCollection();
 
-		// --- Product ---
-		const productService: IProductService = { _serviceBrand: undefined, ...product };
-		serviceCollection.set(IProductService, productService);
+    // --- Product ---
+    const productService: IProductService = { _serviceBrand: undefined, ...product };
+    serviceCollection.set(IProductService, productService);
 
-		// --- Main Process (Tauri IPC) ---
-		const mainProcessService = this._register(new TauriIPCMainProcessService(this.tauriConfig.windowId));
-		serviceCollection.set(IMainProcessService, mainProcessService);
+    // --- Main Process (Tauri IPC) ---
+    const mainProcessService = this._register(new TauriIPCMainProcessService(this.tauriConfig.windowId));
+    serviceCollection.set(IMainProcessService, mainProcessService);
 
-		// --- Environment ---
-		const appDataDir = this.tauriConfig.appDataDir ?? this.tauriConfig.tmpDir;
-		if (!appDataDir) {
-			throw new Error('appDataDir or tmpDir must be provided in Tauri window configuration');
-		}
-		const logsHome = URI.file(`${appDataDir}/logs`);
-		const workspaceId = 'tauri-default';
+    // --- Environment ---
+    const appDataDir = this.tauriConfig.appDataDir ?? this.tauriConfig.tmpDir;
+    if (!appDataDir) {
+      throw new Error('appDataDir or tmpDir must be provided in Tauri window configuration');
+    }
+    const logsHome = URI.file(`${appDataDir}/logs`);
+    const workspaceId = 'tauri-default';
 
-		// Workspace provider handles Open Folder / Open Workspace by reloading
-		// the page with ?folder= or ?workspace= query params (same pattern as VS Code web).
-		const workspaceProvider = new TauriWorkspaceProvider(this.workspace);
+    // Workspace provider handles Open Folder / Open Workspace by reloading
+    // the page with ?folder= or ?workspace= query params (same pattern as VS Code web).
+    const workspaceProvider = new TauriWorkspaceProvider(this.workspace);
 
-		// URL callback provider — bridges Tauri deep-link events to VS Code's IURLService.
-		// This enables OAuth callback flows (GitHub authentication, etc.).
-		const urlCallbackProvider = new TauriURLCallbackProvider(product.urlProtocol, listen);
-		const deepLinkDisposable = await urlCallbackProvider.startListening();
-		this._register(deepLinkDisposable);
-		this._register(urlCallbackProvider);
+    // URL callback provider — bridges Tauri deep-link events to VS Code's IURLService.
+    // This enables OAuth callback flows (GitHub authentication, etc.).
+    const urlCallbackProvider = new TauriURLCallbackProvider(product.urlProtocol, listen);
+    const deepLinkDisposable = await urlCallbackProvider.startListening();
+    this._register(deepLinkDisposable);
+    this._register(urlCallbackProvider);
 
-		// Secret storage now uses master-key encryption (TauriEncryptionService)
-		// registered via the singleton pattern, so no explicit provider is needed here.
-		const workbenchOptions: IWorkbenchConstructionOptions = {
-			remoteAuthority: this.remoteAuthority,
-			workspaceProvider,
-			urlCallbackProvider,
-		};
+    // Secret storage now uses master-key encryption (TauriEncryptionService)
+    // registered via the singleton pattern, so no explicit provider is needed here.
+    const workbenchOptions: IWorkbenchConstructionOptions = {
+      remoteAuthority: this.remoteAuthority,
+      workspaceProvider,
+      urlCallbackProvider,
+    };
 
-		const environmentService = new TauriWorkbenchEnvironmentService(
-			this.tauriConfig,
-			workspaceId,
-			logsHome,
-			workbenchOptions,
-			productService,
-		);
-		serviceCollection.set(IBrowserWorkbenchEnvironmentService, environmentService);
+    const environmentService = new TauriWorkbenchEnvironmentService(
+      this.tauriConfig,
+      workspaceId,
+      logsHome,
+      workbenchOptions,
+      productService,
+    );
+    serviceCollection.set(IBrowserWorkbenchEnvironmentService, environmentService);
 
-		// --- Log ---
+    // --- Log ---
 
-		// Files — needed before logger service
-		const fileService = this._register(new FileService(new BufferLogger()));
-		serviceCollection.set(IFileService, fileService);
+    // Files — needed before logger service
+    const fileService = this._register(new FileService(new BufferLogger()));
+    serviceCollection.set(IFileService, fileService);
 
-		// Logger Service
-		const loggerService = new FileLoggerService(getLogLevel(environmentService), logsHome, fileService);
-		serviceCollection.set(ILoggerService, loggerService);
+    // Logger Service
+    const loggerService = new FileLoggerService(getLogLevel(environmentService), logsHome, fileService);
+    serviceCollection.set(ILoggerService, loggerService);
 
-		// Log Service
-		const consoleLogger = new ConsoleLogger(loggerService.getLogLevel());
-		const bufferLogger = new BufferLogger();
-		const logService = this._register(new LogService(bufferLogger, [consoleLogger]));
-		serviceCollection.set(ILogService, logService);
+    // Log Service
+    const consoleLogger = new ConsoleLogger(loggerService.getLogLevel());
+    const bufferLogger = new BufferLogger();
+    const logService = this._register(new LogService(bufferLogger, [consoleLogger]));
+    serviceCollection.set(ILogService, logService);
 
-		// --- Default Account ---
-		const defaultAccountService = this._register(new DefaultAccountService(productService));
-		serviceCollection.set(IDefaultAccountService, defaultAccountService);
+    // --- Default Account ---
+    const defaultAccountService = this._register(new DefaultAccountService(productService));
+    serviceCollection.set(IDefaultAccountService, defaultAccountService);
 
-		// --- Policy ---
-		const policyService = new NullPolicyService();
-		serviceCollection.set(IPolicyService, policyService);
+    // --- Policy ---
+    const policyService = new NullPolicyService();
+    serviceCollection.set(IPolicyService, policyService);
 
-		// --- NativeHost ---
-		const nativeHostService = this._register(new TauriNativeHostService(this.tauriConfig.windowId));
-		serviceCollection.set(INativeHostService, nativeHostService);
+    // --- NativeHost ---
+    const nativeHostService = this._register(new TauriNativeHostService(this.tauriConfig.windowId));
+    serviceCollection.set(INativeHostService, nativeHostService);
 
-		// --- Tauri Window Service ---
-		const tauriWindowService = this._register(new TauriWindowService());
-		serviceCollection.set(ITauriWindowService, tauriWindowService);
+    // --- Tauri Window Service ---
+    const tauriWindowService = this._register(new TauriWindowService());
+    serviceCollection.set(ITauriWindowService, tauriWindowService);
 
-		// --- Sign ---
-		const signService = new SignService(productService);
-		serviceCollection.set(ISignService, signService);
+    // --- Sign ---
+    const signService = new SignService(productService);
+    serviceCollection.set(ISignService, signService);
 
-		// Local files — real disk I/O via Rust Tauri commands
-		const diskFileSystemProvider = this._register(new TauriDiskFileSystemProvider(logService));
-		fileService.registerProvider(Schemas.file, diskFileSystemProvider);
+    // Local files — real disk I/O via Rust Tauri commands
+    const diskFileSystemProvider = this._register(new TauriDiskFileSystemProvider(logService));
+    fileService.registerProvider(Schemas.file, diskFileSystemProvider);
 
-		// URI Identity
-		const uriIdentityService = new UriIdentityService(fileService);
-		serviceCollection.set(IUriIdentityService, uriIdentityService);
+    // URI Identity
+    const uriIdentityService = new UriIdentityService(fileService);
+    serviceCollection.set(IUriIdentityService, uriIdentityService);
 
-		// --- User Data Profiles ---
-		const userDataProfilesService = new BrowserUserDataProfilesService(environmentService, fileService, uriIdentityService, logService);
-		serviceCollection.set(IUserDataProfilesService, userDataProfilesService);
+    // --- User Data Profiles ---
+    const userDataProfilesService = new BrowserUserDataProfilesService(environmentService, fileService, uriIdentityService, logService);
+    serviceCollection.set(IUserDataProfilesService, userDataProfilesService);
 
-		const userDataProfileService = new UserDataProfileService(userDataProfilesService.defaultProfile);
-		serviceCollection.set(IUserDataProfileService, userDataProfileService);
+    const userDataProfileService = new UserDataProfileService(userDataProfilesService.defaultProfile);
+    serviceCollection.set(IUserDataProfileService, userDataProfileService);
 
-		// User data provider — wraps the same disk provider for vscodeUserData scheme
-		fileService.registerProvider(Schemas.vscodeUserData, this._register(new FileUserDataProvider(Schemas.file, diskFileSystemProvider, Schemas.vscodeUserData, userDataProfilesService, uriIdentityService, logService)));
+    // User data provider — wraps the same disk provider for vscodeUserData scheme
+    fileService.registerProvider(Schemas.vscodeUserData, this._register(new FileUserDataProvider(Schemas.file, diskFileSystemProvider, Schemas.vscodeUserData, userDataProfilesService, uriIdentityService, logService)));
 
-		// --- Remote ---
-		const remoteAuthorityResolverService = new RemoteAuthorityResolverService(false, undefined, undefined, undefined, productService, logService);
-		serviceCollection.set(IRemoteAuthorityResolverService, remoteAuthorityResolverService);
+    // --- Remote ---
+    const remoteAuthorityResolverService = new RemoteAuthorityResolverService(false, undefined, undefined, undefined, productService, logService);
+    serviceCollection.set(IRemoteAuthorityResolverService, remoteAuthorityResolverService);
 
-		const remoteSocketFactoryService = new RemoteSocketFactoryService();
-		remoteSocketFactoryService.register(RemoteConnectionType.WebSocket, new BrowserSocketFactory(null));
-		serviceCollection.set(IRemoteSocketFactoryService, remoteSocketFactoryService);
+    const remoteSocketFactoryService = new RemoteSocketFactoryService();
+    remoteSocketFactoryService.register(RemoteConnectionType.WebSocket, new BrowserSocketFactory(null));
+    serviceCollection.set(IRemoteSocketFactoryService, remoteSocketFactoryService);
 
-		const remoteAgentService = this._register(new RemoteAgentService(remoteSocketFactoryService, userDataProfileService, environmentService, productService, remoteAuthorityResolverService, signService, logService));
-		serviceCollection.set(IRemoteAgentService, remoteAgentService);
+    const remoteAgentService = this._register(new RemoteAgentService(remoteSocketFactoryService, userDataProfileService, environmentService, productService, remoteAuthorityResolverService, signService, logService));
+    serviceCollection.set(IRemoteAgentService, remoteAgentService);
 
-		this._register(RemoteFileSystemProviderClient.register(remoteAgentService, fileService, logService));
+    this._register(RemoteFileSystemProviderClient.register(remoteAgentService, fileService, logService));
 
-		// --- Configuration ---
-		// Initialize workspace from the provider — folder, workspace file, or empty
-		const workspace = this.resolveWorkspaceIdentifier();
-		const configurationCache = new ConfigurationCache([Schemas.file, Schemas.vscodeUserData, Schemas.tmp], environmentService, fileService);
-		const configurationService = new WorkspaceService(
-			{ remoteAuthority: environmentService.remoteAuthority, configurationCache },
-			environmentService,
-			userDataProfileService,
-			userDataProfilesService,
-			fileService,
-			remoteAgentService,
-			uriIdentityService,
-			logService,
-			policyService,
-		);
-		await configurationService.initialize(workspace);
-		serviceCollection.set(IWorkspaceContextService, configurationService);
-		serviceCollection.set(IWorkbenchConfigurationService, configurationService);
+    // --- Configuration ---
+    // Initialize workspace from the provider — folder, workspace file, or empty
+    const workspace = this.resolveWorkspaceIdentifier();
+    const configurationCache = new ConfigurationCache([Schemas.file, Schemas.vscodeUserData, Schemas.tmp], environmentService, fileService);
+    const configurationService = new WorkspaceService(
+      { remoteAuthority: environmentService.remoteAuthority, configurationCache },
+      environmentService,
+      userDataProfileService,
+      userDataProfilesService,
+      fileService,
+      remoteAgentService,
+      uriIdentityService,
+      logService,
+      policyService,
+    );
+    await configurationService.initialize(workspace);
+    serviceCollection.set(IWorkspaceContextService, configurationService);
+    serviceCollection.set(IWorkbenchConfigurationService, configurationService);
 
-		// --- Request ---
-		const requestService = new BrowserRequestService(remoteAgentService, configurationService, loggerService);
-		serviceCollection.set(IRequestService, requestService);
+    // --- Request ---
+    const requestService = new BrowserRequestService(remoteAgentService, configurationService, loggerService);
+    serviceCollection.set(IRequestService, requestService);
 
-		// --- Storage ---
-		const storageService = new TauriStorageService(workspace, userDataProfileService, environmentService, logService);
-		await storageService.initialize();
-		serviceCollection.set(IStorageService, storageService);
+    // --- Storage ---
+    const storageService = new TauriStorageService(workspace, userDataProfileService, environmentService, logService);
+    await storageService.initialize();
+    serviceCollection.set(IStorageService, storageService);
 
-		// --- Workspace Trust ---
-		const workspaceTrustEnablementService = new WorkspaceTrustEnablementService(configurationService, environmentService);
-		serviceCollection.set(IWorkspaceTrustEnablementService, workspaceTrustEnablementService);
+    // --- Workspace Trust ---
+    const workspaceTrustEnablementService = new WorkspaceTrustEnablementService(configurationService, environmentService);
+    serviceCollection.set(IWorkspaceTrustEnablementService, workspaceTrustEnablementService);
 
-		const workspaceTrustManagementService = new WorkspaceTrustManagementService(configurationService, remoteAuthorityResolverService, storageService, uriIdentityService, environmentService, configurationService, workspaceTrustEnablementService, fileService);
-		serviceCollection.set(IWorkspaceTrustManagementService, workspaceTrustManagementService);
+    const workspaceTrustManagementService = new WorkspaceTrustManagementService(configurationService, remoteAuthorityResolverService, storageService, uriIdentityService, environmentService, configurationService, workspaceTrustEnablementService, fileService);
+    serviceCollection.set(IWorkspaceTrustManagementService, workspaceTrustManagementService);
 
-		configurationService.updateWorkspaceTrust(workspaceTrustManagementService.isWorkspaceTrusted());
-		this._register(workspaceTrustManagementService.onDidChangeTrust(() => configurationService.updateWorkspaceTrust(workspaceTrustManagementService.isWorkspaceTrusted())));
+    configurationService.updateWorkspaceTrust(workspaceTrustManagementService.isWorkspaceTrusted());
+    this._register(workspaceTrustManagementService.onDidChangeTrust(() => configurationService.updateWorkspaceTrust(workspaceTrustManagementService.isWorkspaceTrusted())));
 
-		return { serviceCollection, logService, storageService };
-	}
+    return { serviceCollection, logService, storageService };
+  }
 
-	private resolveWorkspaceIdentifier() {
-		if (this.workspace && isFolderToOpen(this.workspace)) {
-			return getSingleFolderWorkspaceIdentifier(this.workspace.folderUri);
-		}
-		if (this.workspace && isWorkspaceToOpen(this.workspace)) {
-			return getWorkspaceIdentifier(this.workspace.workspaceUri);
-		}
-		return UNKNOWN_EMPTY_WINDOW_WORKSPACE;
-	}
+  private resolveWorkspaceIdentifier() {
+    if (this.workspace && isFolderToOpen(this.workspace)) {
+      return getSingleFolderWorkspaceIdentifier(this.workspace.folderUri);
+    }
+    if (this.workspace && isWorkspaceToOpen(this.workspace)) {
+      return getWorkspaceIdentifier(this.workspace.workspaceUri);
+    }
+    return UNKNOWN_EMPTY_WINDOW_WORKSPACE;
+  }
 }
 
 /**
@@ -330,89 +330,89 @@ export class TauriDesktopMain extends Disposable {
  */
 class TauriWorkspaceProvider implements IWorkspaceProvider {
 
-	private static readonly QUERY_PARAM_FOLDER = 'folder';
-	private static readonly QUERY_PARAM_WORKSPACE = 'workspace';
-	private static readonly QUERY_PARAM_EMPTY_WINDOW = 'ew';
+  private static readonly QUERY_PARAM_FOLDER = 'folder';
+  private static readonly QUERY_PARAM_WORKSPACE = 'workspace';
+  private static readonly QUERY_PARAM_EMPTY_WINDOW = 'ew';
 
-	readonly trusted = true;
-	readonly payload: object | undefined = undefined;
+  readonly trusted = true;
+  readonly payload: object | undefined = undefined;
 
-	constructor(readonly workspace: IWorkspace) { }
+  constructor(readonly workspace: IWorkspace) { }
 
-	async open(workspace: IWorkspace, options?: { reuse?: boolean; payload?: object }): Promise<boolean> {
-		if (options?.reuse && this.isSame(this.workspace, workspace)) {
-			return true;
-		}
+  async open(workspace: IWorkspace, options?: { reuse?: boolean; payload?: object }): Promise<boolean> {
+    if (options?.reuse && this.isSame(this.workspace, workspace)) {
+      return true;
+    }
 
-		const targetHref = this.createTargetUrl(workspace);
-		if (!targetHref) {
-			return false;
-		}
+    const targetHref = this.createTargetUrl(workspace);
+    if (!targetHref) {
+      return false;
+    }
 
-		if (options?.reuse) {
-			// Reuse current window: navigate to new URL
-			mainWindow.location.href = targetHref;
-			return true;
-		}
+    if (options?.reuse) {
+      // Reuse current window: navigate to new URL
+      mainWindow.location.href = targetHref;
+      return true;
+    }
 
-		// Open a new Tauri window via Rust command
-		const folderUri = workspace && isFolderToOpen(workspace) ? workspace.folderUri.toString() : undefined;
-		const workspaceUri = workspace && isWorkspaceToOpen(workspace) ? workspace.workspaceUri.toString() : undefined;
+    // Open a new Tauri window via Rust command
+    const folderUri = workspace && isFolderToOpen(workspace) ? workspace.folderUri.toString() : undefined;
+    const workspaceUri = workspace && isWorkspaceToOpen(workspace) ? workspace.workspaceUri.toString() : undefined;
 
-		// Extract remoteAuthority from vscode-remote:// URIs so the new window
-		// can initialize its extension host with the correct remote resolver.
-		// e.g., vscode-remote://ssh-remote+raspi/home/user → "ssh-remote+raspi"
-		let remoteAuthority: string | undefined;
-		if (workspace && isFolderToOpen(workspace) && workspace.folderUri.scheme === Schemas.vscodeRemote) {
-			remoteAuthority = workspace.folderUri.authority;
-		} else if (workspace && isWorkspaceToOpen(workspace) && workspace.workspaceUri.scheme === Schemas.vscodeRemote) {
-			remoteAuthority = workspace.workspaceUri.authority;
-		}
+    // Extract remoteAuthority from vscode-remote:// URIs so the new window
+    // can initialize its extension host with the correct remote resolver.
+    // e.g., vscode-remote://ssh-remote+raspi/home/user → "ssh-remote+raspi"
+    let remoteAuthority: string | undefined;
+    if (workspace && isFolderToOpen(workspace) && workspace.folderUri.scheme === Schemas.vscodeRemote) {
+      remoteAuthority = workspace.folderUri.authority;
+    } else if (workspace && isWorkspaceToOpen(workspace) && workspace.workspaceUri.scheme === Schemas.vscodeRemote) {
+      remoteAuthority = workspace.workspaceUri.authority;
+    }
 
-		try {
-			await invoke('open_new_window', {
-				options: {
-					folderUri,
-					workspaceUri,
-					remoteAuthority,
-					forceNewWindow: true,
-				}
-			});
-			return true;
-		} catch (err) {
-			console.error('[TauriWorkspaceProvider] Failed to open new window:', err);
-			return false;
-		}
-	}
+    try {
+      await invoke('open_new_window', {
+        options: {
+          folderUri,
+          workspaceUri,
+          remoteAuthority,
+          forceNewWindow: true,
+        },
+      });
+      return true;
+    } catch (err) {
+      console.error('[TauriWorkspaceProvider] Failed to open new window:', err);
+      return false;
+    }
+  }
 
-	private createTargetUrl(workspace: IWorkspace): string | undefined {
-		const base = `${document.location.origin}${document.location.pathname}`;
+  private createTargetUrl(workspace: IWorkspace): string | undefined {
+    const base = `${document.location.origin}${document.location.pathname}`;
 
-		if (!workspace) {
-			return `${base}?${TauriWorkspaceProvider.QUERY_PARAM_EMPTY_WINDOW}=true`;
-		}
+    if (!workspace) {
+      return `${base}?${TauriWorkspaceProvider.QUERY_PARAM_EMPTY_WINDOW}=true`;
+    }
 
-		if (isFolderToOpen(workspace)) {
-			return `${base}?${TauriWorkspaceProvider.QUERY_PARAM_FOLDER}=${encodeURIComponent(workspace.folderUri.toString())}`;
-		}
+    if (isFolderToOpen(workspace)) {
+      return `${base}?${TauriWorkspaceProvider.QUERY_PARAM_FOLDER}=${encodeURIComponent(workspace.folderUri.toString())}`;
+    }
 
-		if (isWorkspaceToOpen(workspace)) {
-			return `${base}?${TauriWorkspaceProvider.QUERY_PARAM_WORKSPACE}=${encodeURIComponent(workspace.workspaceUri.toString())}`;
-		}
+    if (isWorkspaceToOpen(workspace)) {
+      return `${base}?${TauriWorkspaceProvider.QUERY_PARAM_WORKSPACE}=${encodeURIComponent(workspace.workspaceUri.toString())}`;
+    }
 
-		return undefined;
-	}
+    return undefined;
+  }
 
-	private isSame(a: IWorkspace, b: IWorkspace): boolean {
-		if (!a || !b) {
-			return a === b;
-		}
-		if (isFolderToOpen(a) && isFolderToOpen(b)) {
-			return a.folderUri.toString() === b.folderUri.toString();
-		}
-		if (isWorkspaceToOpen(a) && isWorkspaceToOpen(b)) {
-			return a.workspaceUri.toString() === b.workspaceUri.toString();
-		}
-		return false;
-	}
+  private isSame(a: IWorkspace, b: IWorkspace): boolean {
+    if (!a || !b) {
+      return a === b;
+    }
+    if (isFolderToOpen(a) && isFolderToOpen(b)) {
+      return a.folderUri.toString() === b.folderUri.toString();
+    }
+    if (isWorkspaceToOpen(a) && isWorkspaceToOpen(b)) {
+      return a.workspaceUri.toString() === b.workspaceUri.toString();
+    }
+    return false;
+  }
 }

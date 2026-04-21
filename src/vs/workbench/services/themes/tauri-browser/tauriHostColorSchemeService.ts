@@ -22,87 +22,87 @@ import { InstantiationType, registerSingleton } from '../../../../platform/insta
  */
 export class TauriHostColorSchemeService extends Disposable implements IHostColorSchemeService {
 
-	declare readonly _serviceBrand: undefined;
+  declare readonly _serviceBrand: undefined;
 
-	private readonly _onDidSchemeChangeEvent = this._register(new Emitter<void>());
+  private readonly _onDidSchemeChangeEvent = this._register(new Emitter<void>());
 
-	private _dark: boolean;
-	private _highContrast: boolean;
+  private _dark: boolean;
+  private _highContrast: boolean;
 
-	constructor() {
-		super();
+  constructor() {
+    super();
 
-		// Initialize from matchMedia
-		this._dark = mainWindow.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
-		this._highContrast = mainWindow.matchMedia?.('(forced-colors: active)').matches ?? false;
+    // Initialize from matchMedia
+    this._dark = mainWindow.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+    this._highContrast = mainWindow.matchMedia?.('(forced-colors: active)').matches ?? false;
 
-		this._registerMatchMediaListeners();
-		this._registerTauriThemeListener();
-	}
+    this._registerMatchMediaListeners();
+    this._registerTauriThemeListener();
+  }
 
-	private _registerMatchMediaListeners(): void {
-		const darkQuery = mainWindow.matchMedia?.('(prefers-color-scheme: dark)');
-		const hcQuery = mainWindow.matchMedia?.('(forced-colors: active)');
+  private _registerMatchMediaListeners(): void {
+    const darkQuery = mainWindow.matchMedia?.('(prefers-color-scheme: dark)');
+    const hcQuery = mainWindow.matchMedia?.('(forced-colors: active)');
 
-		if (darkQuery) {
-			const handler = () => {
-				this._dark = darkQuery.matches;
-				this._onDidSchemeChangeEvent.fire();
-			};
-			darkQuery.addEventListener('change', handler);
-			this._register({ dispose: () => darkQuery.removeEventListener('change', handler) });
-		}
-		if (hcQuery) {
-			const handler = () => {
-				this._highContrast = hcQuery.matches;
-				this._onDidSchemeChangeEvent.fire();
-			};
-			hcQuery.addEventListener('change', handler);
-			this._register({ dispose: () => hcQuery.removeEventListener('change', handler) });
-		}
-	}
+    if (darkQuery) {
+      const handler = () => {
+        this._dark = darkQuery.matches;
+        this._onDidSchemeChangeEvent.fire();
+      };
+      darkQuery.addEventListener('change', handler);
+      this._register({ dispose: () => darkQuery.removeEventListener('change', handler) });
+    }
+    if (hcQuery) {
+      const handler = () => {
+        this._highContrast = hcQuery.matches;
+        this._onDidSchemeChangeEvent.fire();
+      };
+      hcQuery.addEventListener('change', handler);
+      this._register({ dispose: () => hcQuery.removeEventListener('change', handler) });
+    }
+  }
 
-	/**
+  /**
 	 * Use Tauri's native `Window.onThemeChanged()` via the `__TAURI__` global
 	 * as a reliable fallback for detecting OS appearance changes, since
 	 * WKWebView's matchMedia change events may not fire on macOS.
 	 */
-	private _registerTauriThemeListener(): void {
-		const tauriGlobal = (globalThis as Record<string, unknown>).__TAURI__ as { window?: { getCurrentWindow?: () => { onThemeChanged?: (cb: (event: { payload: string }) => void) => Promise<() => void> } } } | undefined;
+  private _registerTauriThemeListener(): void {
+    const tauriGlobal = (globalThis as Record<string, unknown>).__TAURI__ as { window?: { getCurrentWindow?: () => { onThemeChanged?: (cb: (event: { payload: string }) => void) => Promise<() => void> } } } | undefined;
 
-		if (!tauriGlobal?.window?.getCurrentWindow) {
-			return;
-		}
+    if (!tauriGlobal?.window?.getCurrentWindow) {
+      return;
+    }
 
-		const currentWindow = tauriGlobal.window.getCurrentWindow();
+    const currentWindow = tauriGlobal.window.getCurrentWindow();
 
-		if (typeof currentWindow?.onThemeChanged !== 'function') {
-			return;
-		}
+    if (typeof currentWindow?.onThemeChanged !== 'function') {
+      return;
+    }
 
-		// Tauri v2 __TAURI__ global's onThemeChanged passes the full event object
-		// { event: 'tauri://theme-changed', payload: 'dark' | 'light', id: number }
-		currentWindow.onThemeChanged((event: { payload: string }) => {
-			this._dark = event.payload === 'dark';
-			this._onDidSchemeChangeEvent.fire();
-		}).then((unlisten: () => void) => {
-			this._register({ dispose: unlisten });
-		}).catch((_err: unknown) => {
-			// Fall back to matchMedia-only detection
-		});
-	}
+    // Tauri v2 __TAURI__ global's onThemeChanged passes the full event object
+    // { event: 'tauri://theme-changed', payload: 'dark' | 'light', id: number }
+    currentWindow.onThemeChanged((event: { payload: string }) => {
+      this._dark = event.payload === 'dark';
+      this._onDidSchemeChangeEvent.fire();
+    }).then((unlisten: () => void) => {
+      this._register({ dispose: unlisten });
+    }).catch((_err: unknown) => {
+      // Fall back to matchMedia-only detection
+    });
+  }
 
-	get onDidChangeColorScheme(): Event<void> {
-		return this._onDidSchemeChangeEvent.event;
-	}
+  get onDidChangeColorScheme(): Event<void> {
+    return this._onDidSchemeChangeEvent.event;
+  }
 
-	get dark(): boolean {
-		return this._dark;
-	}
+  get dark(): boolean {
+    return this._dark;
+  }
 
-	get highContrast(): boolean {
-		return this._highContrast;
-	}
+  get highContrast(): boolean {
+    return this._highContrast;
+  }
 }
 
 registerSingleton(IHostColorSchemeService, TauriHostColorSchemeService, InstantiationType.Delayed);

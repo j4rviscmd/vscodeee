@@ -32,166 +32,166 @@ export type IsolationMode = 'worktree' | 'workspace';
  */
 export class IsolationPicker extends Disposable {
 
-	private _hasGitRepo = false;
-	private _isolationOptionEnabled: boolean;
+  private _hasGitRepo = false;
+  private _isolationOptionEnabled: boolean;
 
-	private readonly _renderDisposables = this._register(new DisposableStore());
-	private _slotElement: HTMLElement | undefined;
-	private _triggerElement: HTMLElement | undefined;
+  private readonly _renderDisposables = this._register(new DisposableStore());
+  private _slotElement: HTMLElement | undefined;
+  private _triggerElement: HTMLElement | undefined;
 
-	constructor(
-		@IActionWidgetService private readonly actionWidgetService: IActionWidgetService,
-		@IConfigurationService private readonly configurationService: IConfigurationService,
-		@ISessionsManagementService private readonly sessionsManagementService: ISessionsManagementService,
-		@ISessionsProvidersService private readonly sessionsProvidersService: ISessionsProvidersService,
-	) {
-		super();
-		this._isolationOptionEnabled = this.configurationService.getValue<boolean>('github.copilot.chat.cli.isolationOption.enabled') !== false;
+  constructor(
+    @IActionWidgetService private readonly actionWidgetService: IActionWidgetService,
+    @IConfigurationService private readonly configurationService: IConfigurationService,
+    @ISessionsManagementService private readonly sessionsManagementService: ISessionsManagementService,
+    @ISessionsProvidersService private readonly sessionsProvidersService: ISessionsProvidersService,
+  ) {
+    super();
+    this._isolationOptionEnabled = this.configurationService.getValue<boolean>('github.copilot.chat.cli.isolationOption.enabled') !== false;
 
-		this._register(this.configurationService.onDidChangeConfiguration(e => {
-			if (e.affectsConfiguration('github.copilot.chat.cli.isolationOption.enabled')) {
-				this._isolationOptionEnabled = this.configurationService.getValue<boolean>('github.copilot.chat.cli.isolationOption.enabled') !== false;
-				if (!this._isolationOptionEnabled) {
-					this._setModeOnSession('worktree');
-				}
-				this._updateTriggerLabel();
-			}
-		}));
+    this._register(this.configurationService.onDidChangeConfiguration(e => {
+      if (e.affectsConfiguration('github.copilot.chat.cli.isolationOption.enabled')) {
+        this._isolationOptionEnabled = this.configurationService.getValue<boolean>('github.copilot.chat.cli.isolationOption.enabled') !== false;
+        if (!this._isolationOptionEnabled) {
+          this._setModeOnSession('worktree');
+        }
+        this._updateTriggerLabel();
+      }
+    }));
 
-		this._register(autorun(reader => {
-			const session = this.sessionsManagementService.activeSession.read(reader);
-			const isLoading = session?.loading.read(reader);
-			const providerSession = session ? this.sessionsProvidersService.getProvider<CopilotChatSessionsProvider>(session.providerId)?.getSession(session.sessionId) : undefined;
-			if (providerSession) {
-				this._hasGitRepo = !isLoading && !!providerSession.gitRepository;
-				// Read isolation mode from session — session is the source of truth
-				providerSession.isolationMode.read(reader);
-			} else {
-				this._hasGitRepo = false;
-			}
-			this._updateTriggerLabel();
-		}));
-	}
+    this._register(autorun(reader => {
+      const session = this.sessionsManagementService.activeSession.read(reader);
+      const isLoading = session?.loading.read(reader);
+      const providerSession = session ? this.sessionsProvidersService.getProvider<CopilotChatSessionsProvider>(session.providerId)?.getSession(session.sessionId) : undefined;
+      if (providerSession) {
+        this._hasGitRepo = !isLoading && !!providerSession.gitRepository;
+        // Read isolation mode from session — session is the source of truth
+        providerSession.isolationMode.read(reader);
+      } else {
+        this._hasGitRepo = false;
+      }
+      this._updateTriggerLabel();
+    }));
+  }
 
-	private _getSessionIsolationMode(): IsolationMode {
-		const session = this.sessionsManagementService.activeSession.get();
-		const providerSession = session ? this.sessionsProvidersService.getProvider<CopilotChatSessionsProvider>(session.providerId)?.getSession(session.sessionId) : undefined;
-		return providerSession?.isolationMode.get() ?? 'worktree';
-	}
+  private _getSessionIsolationMode(): IsolationMode {
+    const session = this.sessionsManagementService.activeSession.get();
+    const providerSession = session ? this.sessionsProvidersService.getProvider<CopilotChatSessionsProvider>(session.providerId)?.getSession(session.sessionId) : undefined;
+    return providerSession?.isolationMode.get() ?? 'worktree';
+  }
 
-	render(container: HTMLElement): void {
-		this._renderDisposables.clear();
+  render(container: HTMLElement): void {
+    this._renderDisposables.clear();
 
-		const slot = dom.append(container, dom.$('.sessions-chat-picker-slot'));
-		this._renderDisposables.add({ dispose: () => slot.remove() });
-		this._slotElement = slot;
+    const slot = dom.append(container, dom.$('.sessions-chat-picker-slot'));
+    this._renderDisposables.add({ dispose: () => slot.remove() });
+    this._slotElement = slot;
 
-		const trigger = dom.append(slot, dom.$('a.action-label'));
-		trigger.tabIndex = 0;
-		trigger.role = 'button';
-		this._triggerElement = trigger;
-		this._updateTriggerLabel();
+    const trigger = dom.append(slot, dom.$('a.action-label'));
+    trigger.tabIndex = 0;
+    trigger.role = 'button';
+    this._triggerElement = trigger;
+    this._updateTriggerLabel();
 
-		this._renderDisposables.add(dom.addDisposableListener(trigger, dom.EventType.CLICK, (e) => {
-			dom.EventHelper.stop(e, true);
-			this._showPicker();
-		}));
+    this._renderDisposables.add(dom.addDisposableListener(trigger, dom.EventType.CLICK, (e) => {
+      dom.EventHelper.stop(e, true);
+      this._showPicker();
+    }));
 
-		this._renderDisposables.add(dom.addDisposableListener(trigger, dom.EventType.KEY_DOWN, (e) => {
-			if (e.key === 'Enter' || e.key === ' ') {
-				dom.EventHelper.stop(e, true);
-				this._showPicker();
-			}
-		}));
-	}
+    this._renderDisposables.add(dom.addDisposableListener(trigger, dom.EventType.KEY_DOWN, (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        dom.EventHelper.stop(e, true);
+        this._showPicker();
+      }
+    }));
+  }
 
-	private _showPicker(): void {
-		if (!this._triggerElement || this.actionWidgetService.isVisible) {
-			return;
-		}
+  private _showPicker(): void {
+    if (!this._triggerElement || this.actionWidgetService.isVisible) {
+      return;
+    }
 
-		if (!this._hasGitRepo || !this._isolationOptionEnabled) {
-			return;
-		}
+    if (!this._hasGitRepo || !this._isolationOptionEnabled) {
+      return;
+    }
 
-		const items: IActionListItem<IsolationMode>[] = [
-			{
-				kind: ActionListItemKind.Action,
-				label: localize('isolationMode.worktree', "Worktree"),
-				group: { title: '', icon: Codicon.worktree },
-				item: 'worktree',
-			},
-			{
-				kind: ActionListItemKind.Action,
-				label: localize('isolationMode.folder', "Folder"),
-				group: { title: '', icon: Codicon.folder },
-				item: 'workspace',
-			},
-		];
+    const items: IActionListItem<IsolationMode>[] = [
+      {
+        kind: ActionListItemKind.Action,
+        label: localize('isolationMode.worktree', 'Worktree'),
+        group: { title: '', icon: Codicon.worktree },
+        item: 'worktree',
+      },
+      {
+        kind: ActionListItemKind.Action,
+        label: localize('isolationMode.folder', 'Folder'),
+        group: { title: '', icon: Codicon.folder },
+        item: 'workspace',
+      },
+    ];
 
-		const triggerElement = this._triggerElement;
-		const delegate: IActionListDelegate<IsolationMode> = {
-			onSelect: (mode) => {
-				this.actionWidgetService.hide();
-				this._setModeOnSession(mode);
-			},
-			onHide: () => { triggerElement.focus(); },
-		};
+    const triggerElement = this._triggerElement;
+    const delegate: IActionListDelegate<IsolationMode> = {
+      onSelect: (mode) => {
+        this.actionWidgetService.hide();
+        this._setModeOnSession(mode);
+      },
+      onHide: () => { triggerElement.focus(); },
+    };
 
-		this.actionWidgetService.show<IsolationMode>(
-			'isolationPicker',
-			false,
-			items,
-			delegate,
-			this._triggerElement,
-			undefined,
-			[],
-			{
-				getAriaLabel: (item) => item.label ?? '',
-				getWidgetAriaLabel: () => localize('isolationPicker.ariaLabel', "Isolation Mode"),
-			},
-		);
-	}
+    this.actionWidgetService.show<IsolationMode>(
+      'isolationPicker',
+      false,
+      items,
+      delegate,
+      this._triggerElement,
+      undefined,
+      [],
+      {
+        getAriaLabel: (item) => item.label ?? '',
+        getWidgetAriaLabel: () => localize('isolationPicker.ariaLabel', 'Isolation Mode'),
+      },
+    );
+  }
 
-	private _setModeOnSession(mode: IsolationMode): void {
-		const session = this.sessionsManagementService.activeSession.get();
-		const providerSession = session ? this.sessionsProvidersService.getProvider<CopilotChatSessionsProvider>(session.providerId)?.getSession(session.sessionId) : undefined;
-		providerSession?.setIsolationMode(mode);
-	}
+  private _setModeOnSession(mode: IsolationMode): void {
+    const session = this.sessionsManagementService.activeSession.get();
+    const providerSession = session ? this.sessionsProvidersService.getProvider<CopilotChatSessionsProvider>(session.providerId)?.getSession(session.sessionId) : undefined;
+    providerSession?.setIsolationMode(mode);
+  }
 
-	private _updateTriggerLabel(): void {
-		if (!this._triggerElement || !this._slotElement) {
-			return;
-		}
+  private _updateTriggerLabel(): void {
+    if (!this._triggerElement || !this._slotElement) {
+      return;
+    }
 
-		dom.clearNode(this._triggerElement);
+    dom.clearNode(this._triggerElement);
 
-		const isolationMode = this._getSessionIsolationMode();
-		let modeIcon;
-		let modeLabel: string;
+    const isolationMode = this._getSessionIsolationMode();
+    let modeIcon;
+    let modeLabel: string;
 
-		switch (isolationMode) {
-			case 'workspace':
-				modeIcon = Codicon.folder;
-				modeLabel = localize('isolationMode.folder', "Folder");
-				break;
-			case 'worktree':
-			default:
-				modeIcon = Codicon.worktree;
-				modeLabel = localize('isolationMode.worktree', "Worktree");
-				break;
-		}
+    switch (isolationMode) {
+      case 'workspace':
+        modeIcon = Codicon.folder;
+        modeLabel = localize('isolationMode.folder', 'Folder');
+        break;
+      case 'worktree':
+      default:
+        modeIcon = Codicon.worktree;
+        modeLabel = localize('isolationMode.worktree', 'Worktree');
+        break;
+    }
 
-		dom.append(this._triggerElement, renderIcon(modeIcon));
-		const labelSpan = dom.append(this._triggerElement, dom.$('span.sessions-chat-dropdown-label'));
-		labelSpan.textContent = modeLabel;
-		dom.append(this._triggerElement, renderIcon(Codicon.chevronDown));
+    dom.append(this._triggerElement, renderIcon(modeIcon));
+    const labelSpan = dom.append(this._triggerElement, dom.$('span.sessions-chat-dropdown-label'));
+    labelSpan.textContent = modeLabel;
+    dom.append(this._triggerElement, renderIcon(Codicon.chevronDown));
 
-		const visible = this._isolationOptionEnabled && this._hasGitRepo;
-		dom.setVisibility(visible, this._slotElement);
-		this._slotElement.classList.toggle('disabled', false);
-		this._triggerElement.setAttribute('aria-hidden', String(!visible));
-		this._triggerElement.setAttribute('aria-disabled', String(!visible));
-		this._triggerElement.tabIndex = visible ? 0 : -1;
-	}
+    const visible = this._isolationOptionEnabled && this._hasGitRepo;
+    dom.setVisibility(visible, this._slotElement);
+    this._slotElement.classList.toggle('disabled', false);
+    this._triggerElement.setAttribute('aria-hidden', String(!visible));
+    this._triggerElement.setAttribute('aria-disabled', String(!visible));
+    this._triggerElement.tabIndex = visible ? 0 : -1;
+  }
 }

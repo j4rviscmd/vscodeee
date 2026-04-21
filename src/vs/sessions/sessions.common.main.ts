@@ -12,7 +12,6 @@ import '../workbench/browser/workbench.contribution.js';
 
 //#endregion
 
-
 //#region --- workbench actions
 
 import '../workbench/browser/actions/textInputActions.js';
@@ -29,7 +28,6 @@ import '../workbench/browser/actions/widgetNavigationCommands.js';
 
 //#endregion
 
-
 //#region --- API Extension Points
 
 import '../workbench/services/actions/common/menusExtensionPoint.js';
@@ -37,7 +35,6 @@ import '../workbench/api/common/configurationExtensionPoint.js';
 import '../workbench/api/browser/viewsExtensionPoint.js';
 
 //#endregion
-
 
 //#region --- workbench parts
 
@@ -48,7 +45,6 @@ import '../workbench/browser/parts/banner/bannerPart.js';
 import '../workbench/browser/parts/statusbar/statusbarPart.js';
 
 //#endregion
-
 
 //#region --- workbench services
 
@@ -182,7 +178,6 @@ registerSingleton(IMcpGalleryService, McpGalleryService, InstantiationType.Delay
 registerSingleton(IAllowedMcpServersService, AllowedMcpServersService, InstantiationType.Delayed);
 
 //#endregion
-
 
 //#region --- workbench contributions
 

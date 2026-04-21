@@ -17,24 +17,24 @@ const LOG_PREFIX = '[GitHubRepositoryModel]';
  */
 export class GitHubRepositoryModel extends Disposable {
 
-	private readonly _repository = observableValue<IGitHubRepository | undefined>(this, undefined);
-	readonly repository: IObservable<IGitHubRepository | undefined> = this._repository;
+  private readonly _repository = observableValue<IGitHubRepository | undefined>(this, undefined);
+  readonly repository: IObservable<IGitHubRepository | undefined> = this._repository;
 
-	constructor(
-		readonly owner: string,
-		readonly repo: string,
-		private readonly _fetcher: GitHubRepositoryFetcher,
-		private readonly _logService: ILogService,
-	) {
-		super();
-	}
+  constructor(
+    readonly owner: string,
+    readonly repo: string,
+    private readonly _fetcher: GitHubRepositoryFetcher,
+    private readonly _logService: ILogService,
+  ) {
+    super();
+  }
 
-	async refresh(): Promise<void> {
-		try {
-			const data = await this._fetcher.getRepository(this.owner, this.repo);
-			this._repository.set(data, undefined);
-		} catch (err) {
-			this._logService.error(`${LOG_PREFIX} Failed to refresh repository ${this.owner}/${this.repo}:`, err);
-		}
-	}
+  async refresh(): Promise<void> {
+    try {
+      const data = await this._fetcher.getRepository(this.owner, this.repo);
+      this._repository.set(data, undefined);
+    } catch (err) {
+      this._logService.error(`${LOG_PREFIX} Failed to refresh repository ${this.owner}/${this.repo}:`, err);
+    }
+  }
 }

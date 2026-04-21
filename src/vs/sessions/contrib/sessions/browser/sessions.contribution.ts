@@ -19,30 +19,30 @@ import './views/sessionsViewActions.js';
 import './sessionsActions.js';
 
 const agentSessionsViewIcon = registerIcon('chat-sessions-icon', Codicon.commentDiscussionSparkle, localize('agentSessionsViewIcon', 'Icon for Agent Sessions View'));
-const AGENT_SESSIONS_VIEW_TITLE = localize2('agentSessions.view.label', "Sessions");
+const AGENT_SESSIONS_VIEW_TITLE = localize2('agentSessions.view.label', 'Sessions');
 const SessionsContainerId = 'agentic.workbench.view.sessionsContainer';
 
 const agentSessionsViewContainer: ViewContainer = Registry.as<IViewContainersRegistry>(ViewContainerExtensions.ViewContainersRegistry).registerViewContainer({
-	id: SessionsContainerId,
-	title: AGENT_SESSIONS_VIEW_TITLE,
-	icon: agentSessionsViewIcon,
-	ctorDescriptor: new SyncDescriptor(ViewPaneContainer, [SessionsContainerId, { mergeViewWithContainerWhenSingleView: true, }]),
-	storageId: SessionsContainerId,
-	hideIfEmpty: true,
-	order: 6,
-	windowVisibility: WindowVisibility.Sessions
+  id: SessionsContainerId,
+  title: AGENT_SESSIONS_VIEW_TITLE,
+  icon: agentSessionsViewIcon,
+  ctorDescriptor: new SyncDescriptor(ViewPaneContainer, [SessionsContainerId, { mergeViewWithContainerWhenSingleView: true }]),
+  storageId: SessionsContainerId,
+  hideIfEmpty: true,
+  order: 6,
+  windowVisibility: WindowVisibility.Sessions,
 }, ViewContainerLocation.Sidebar, { isDefault: true });
 
 const sessionsViewPaneDescriptor: IViewDescriptor = {
-	id: SessionsViewId,
-	containerIcon: agentSessionsViewIcon,
-	containerTitle: AGENT_SESSIONS_VIEW_TITLE.value,
-	singleViewPaneContainerTitle: AGENT_SESSIONS_VIEW_TITLE.value,
-	name: AGENT_SESSIONS_VIEW_TITLE,
-	canToggleVisibility: true,
-	canMoveView: false,
-	ctorDescriptor: new SyncDescriptor(SessionsView),
-	windowVisibility: WindowVisibility.Sessions
+  id: SessionsViewId,
+  containerIcon: agentSessionsViewIcon,
+  containerTitle: AGENT_SESSIONS_VIEW_TITLE.value,
+  singleViewPaneContainerTitle: AGENT_SESSIONS_VIEW_TITLE.value,
+  name: AGENT_SESSIONS_VIEW_TITLE,
+  canToggleVisibility: true,
+  canMoveView: false,
+  ctorDescriptor: new SyncDescriptor(SessionsView),
+  windowVisibility: WindowVisibility.Sessions,
 };
 
 Registry.as<IViewsRegistry>(ViewContainerExtensions.ViewsRegistry).registerViews([sessionsViewPaneDescriptor], agentSessionsViewContainer);

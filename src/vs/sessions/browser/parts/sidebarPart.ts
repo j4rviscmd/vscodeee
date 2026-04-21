@@ -46,287 +46,287 @@ import { isMacintosh, isNative } from '../../../base/common/platform.js';
  */
 export class SidebarPart extends AbstractPaneCompositePart {
 
-	static readonly activeViewletSettingsKey = 'workbench.agentsession.sidebar.activeviewletid';
-	static readonly pinnedViewContainersKey = 'workbench.agentsession.pinnedViewlets2';
-	static readonly placeholderViewContainersKey = 'workbench.agentsession.placeholderViewlets';
-	static readonly viewContainersWorkspaceStateKey = 'workbench.agentsession.viewletsWorkspaceState';
+  static readonly activeViewletSettingsKey = 'workbench.agentsession.sidebar.activeviewletid';
+  static readonly pinnedViewContainersKey = 'workbench.agentsession.pinnedViewlets2';
+  static readonly placeholderViewContainersKey = 'workbench.agentsession.placeholderViewlets';
+  static readonly viewContainersWorkspaceStateKey = 'workbench.agentsession.viewletsWorkspaceState';
 
-	/** Visual margin values - sidebar is flush (no card appearance) */
-	static readonly MARGIN_TOP = 0;
-	static readonly MARGIN_BOTTOM = 0;
-	static readonly MARGIN_LEFT = 0;
-	private static readonly FOOTER_ITEM_HEIGHT = 26;
-	private static readonly FOOTER_ITEM_GAP = 4;
-	private static readonly FOOTER_VERTICAL_PADDING = 6;
-	private static readonly FOOTER_BOTTOM_MARGIN = 2;
-	private static readonly FOOTER_BORDER_TOP = 1;
+  /** Visual margin values - sidebar is flush (no card appearance) */
+  static readonly MARGIN_TOP = 0;
+  static readonly MARGIN_BOTTOM = 0;
+  static readonly MARGIN_LEFT = 0;
+  private static readonly FOOTER_ITEM_HEIGHT = 26;
+  private static readonly FOOTER_ITEM_GAP = 4;
+  private static readonly FOOTER_VERTICAL_PADDING = 6;
+  private static readonly FOOTER_BOTTOM_MARGIN = 2;
+  private static readonly FOOTER_BORDER_TOP = 1;
 
-	private footerContainer: HTMLElement | undefined;
-	private sideBarTitleArea: HTMLElement | undefined;
-	private footerToolbar: MenuWorkbenchToolBar | undefined;
-	private previousLayoutDimensions: { width: number; height: number; top: number; left: number } | undefined;
+  private footerContainer: HTMLElement | undefined;
+  private sideBarTitleArea: HTMLElement | undefined;
+  private footerToolbar: MenuWorkbenchToolBar | undefined;
+  private previousLayoutDimensions: { width: number; height: number; top: number; left: number } | undefined;
 
-	//#region IView
+  //#region IView
 
-	readonly minimumWidth: number = 170;
-	readonly maximumWidth: number = Number.POSITIVE_INFINITY;
-	readonly minimumHeight: number = 0;
-	readonly maximumHeight: number = Number.POSITIVE_INFINITY;
-	override get snap(): boolean { return true; }
+  readonly minimumWidth: number = 170;
+  readonly maximumWidth: number = Number.POSITIVE_INFINITY;
+  readonly minimumHeight: number = 0;
+  readonly maximumHeight: number = Number.POSITIVE_INFINITY;
+  override get snap(): boolean { return true; }
 
-	readonly priority: LayoutPriority = LayoutPriority.Low;
+  readonly priority: LayoutPriority = LayoutPriority.Low;
 
-	get preferredWidth(): number | undefined {
-		const viewlet = this.getActivePaneComposite();
+  get preferredWidth(): number | undefined {
+    const viewlet = this.getActivePaneComposite();
 
-		if (!viewlet) {
-			return undefined;
-		}
+    if (!viewlet) {
+      return undefined;
+    }
 
-		const width = viewlet.getOptimalWidth();
-		if (typeof width !== 'number') {
-			return undefined;
-		}
+    const width = viewlet.getOptimalWidth();
+    if (typeof width !== 'number') {
+      return undefined;
+    }
 
-		return Math.max(width, 300);
-	}
+    return Math.max(width, 300);
+  }
 
-	//#endregion
+  //#endregion
 
-	constructor(
-		@INotificationService notificationService: INotificationService,
-		@IStorageService storageService: IStorageService,
-		@IContextMenuService contextMenuService: IContextMenuService,
-		@IWorkbenchLayoutService layoutService: IWorkbenchLayoutService,
-		@IKeybindingService keybindingService: IKeybindingService,
-		@IHoverService hoverService: IHoverService,
-		@IInstantiationService instantiationService: IInstantiationService,
-		@IThemeService themeService: IThemeService,
-		@IViewDescriptorService viewDescriptorService: IViewDescriptorService,
-		@IContextKeyService contextKeyService: IContextKeyService,
-		@IExtensionService extensionService: IExtensionService,
-		@IMenuService menuService: IMenuService,
-		@IConfigurationService private readonly configurationService: IConfigurationService,
-	) {
-		super(
-			Parts.SIDEBAR_PART,
-			{ hasTitle: true, trailingSeparator: false, borderWidth: () => 0 },
-			SidebarPart.activeViewletSettingsKey,
-			ActiveViewletContext.bindTo(contextKeyService),
-			SidebarFocusContext.bindTo(contextKeyService),
-			'sideBar',
-			'viewlet',
-			SIDE_BAR_TITLE_FOREGROUND,
-			SIDE_BAR_TITLE_BORDER,
-			ViewContainerLocation.Sidebar,
-			Extensions.Viewlets,
-			Menus.SidebarTitle,
-			Menus.TitleBarLeftLayout,
-			notificationService,
-			storageService,
-			contextMenuService,
-			layoutService,
-			keybindingService,
-			hoverService,
-			instantiationService,
-			themeService,
-			viewDescriptorService,
-			contextKeyService,
-			extensionService,
-			menuService,
-		);
-	}
+  constructor(
+    @INotificationService notificationService: INotificationService,
+    @IStorageService storageService: IStorageService,
+    @IContextMenuService contextMenuService: IContextMenuService,
+    @IWorkbenchLayoutService layoutService: IWorkbenchLayoutService,
+    @IKeybindingService keybindingService: IKeybindingService,
+    @IHoverService hoverService: IHoverService,
+    @IInstantiationService instantiationService: IInstantiationService,
+    @IThemeService themeService: IThemeService,
+    @IViewDescriptorService viewDescriptorService: IViewDescriptorService,
+    @IContextKeyService contextKeyService: IContextKeyService,
+    @IExtensionService extensionService: IExtensionService,
+    @IMenuService menuService: IMenuService,
+    @IConfigurationService private readonly configurationService: IConfigurationService,
+  ) {
+    super(
+      Parts.SIDEBAR_PART,
+      { hasTitle: true, trailingSeparator: false, borderWidth: () => 0 },
+      SidebarPart.activeViewletSettingsKey,
+      ActiveViewletContext.bindTo(contextKeyService),
+      SidebarFocusContext.bindTo(contextKeyService),
+      'sideBar',
+      'viewlet',
+      SIDE_BAR_TITLE_FOREGROUND,
+      SIDE_BAR_TITLE_BORDER,
+      ViewContainerLocation.Sidebar,
+      Extensions.Viewlets,
+      Menus.SidebarTitle,
+      Menus.TitleBarLeftLayout,
+      notificationService,
+      storageService,
+      contextMenuService,
+      layoutService,
+      keybindingService,
+      hoverService,
+      instantiationService,
+      themeService,
+      viewDescriptorService,
+      contextKeyService,
+      extensionService,
+      menuService,
+    );
+  }
 
-	override create(parent: HTMLElement): void {
-		super.create(parent);
-		this.createFooter(parent);
-	}
+  override create(parent: HTMLElement): void {
+    super.create(parent);
+    this.createFooter(parent);
+  }
 
-	protected override createTitleArea(parent: HTMLElement): HTMLElement | undefined {
-		const titleArea = super.createTitleArea(parent);
-		this.sideBarTitleArea = titleArea;
+  protected override createTitleArea(parent: HTMLElement): HTMLElement | undefined {
+    const titleArea = super.createTitleArea(parent);
+    this.sideBarTitleArea = titleArea;
 
-		if (titleArea) {
-			// Add a drag region so the sidebar title area can be used to move the window,
-			// matching the titlebar's drag behavior.
-			prepend(titleArea, $('div.titlebar-drag-region'));
-		}
+    if (titleArea) {
+      // Add a drag region so the sidebar title area can be used to move the window,
+      // matching the titlebar's drag behavior.
+      prepend(titleArea, $('div.titlebar-drag-region'));
+    }
 
-		// macOS native: the sidebar spans full height and the traffic lights
-		// overlay the top-left corner. Add a fixed-width spacer inside the
-		// title area to push content horizontally past the traffic lights.
-		if (titleArea && isMacintosh && isNative && !hasNativeTitlebar(this.configurationService, getTitleBarStyle(this.configurationService))) {
-			const spacer = $('div.window-controls-container');
-			spacer.style.width = '70px';
-			spacer.style.height = '100%';
-			spacer.style.flexShrink = '0';
-			spacer.style.order = '-1'; // match global-actions-left order so DOM order is respected
-			prepend(titleArea, spacer);
+    // macOS native: the sidebar spans full height and the traffic lights
+    // overlay the top-left corner. Add a fixed-width spacer inside the
+    // title area to push content horizontally past the traffic lights.
+    if (titleArea && isMacintosh && isNative && !hasNativeTitlebar(this.configurationService, getTitleBarStyle(this.configurationService))) {
+      const spacer = $('div.window-controls-container');
+      spacer.style.width = '70px';
+      spacer.style.height = '100%';
+      spacer.style.flexShrink = '0';
+      spacer.style.order = '-1'; // match global-actions-left order so DOM order is respected
+      prepend(titleArea, spacer);
 
-			// Hide spacer in fullscreen (traffic lights are not shown)
-			const updateSpacerVisibility = () => {
-				spacer.style.display = isFullscreen(mainWindow) ? 'none' : '';
-			};
-			updateSpacerVisibility();
-			this._register(onDidChangeFullscreen(windowId => {
-				if (windowId === getWindowId(mainWindow)) {
-					updateSpacerVisibility();
-				}
-			}));
-		}
+      // Hide spacer in fullscreen (traffic lights are not shown)
+      const updateSpacerVisibility = () => {
+        spacer.style.display = isFullscreen(mainWindow) ? 'none' : '';
+      };
+      updateSpacerVisibility();
+      this._register(onDidChangeFullscreen(windowId => {
+        if (windowId === getWindowId(mainWindow)) {
+          updateSpacerVisibility();
+        }
+      }));
+    }
 
-		return titleArea;
-	}
+    return titleArea;
+  }
 
-	private createFooter(parent: HTMLElement): void {
-		const footer = append(parent, $('.sidebar-footer.sidebar-action-list'));
-		this.footerContainer = footer;
+  private createFooter(parent: HTMLElement): void {
+    const footer = append(parent, $('.sidebar-footer.sidebar-action-list'));
+    this.footerContainer = footer;
 
-		this.footerToolbar = this._register(this.instantiationService.createInstance(MenuWorkbenchToolBar, footer, Menus.SidebarFooter, {
-			hiddenItemStrategy: HiddenItemStrategy.NoHide,
-			toolbarOptions: { primaryGroup: () => true },
-			telemetrySource: 'sidebarFooter',
-		}));
+    this.footerToolbar = this._register(this.instantiationService.createInstance(MenuWorkbenchToolBar, footer, Menus.SidebarFooter, {
+      hiddenItemStrategy: HiddenItemStrategy.NoHide,
+      toolbarOptions: { primaryGroup: () => true },
+      telemetrySource: 'sidebarFooter',
+    }));
 
-		this._register(this.footerToolbar.onDidChangeMenuItems(() => {
-			if (this.previousLayoutDimensions) {
-				const { width, height, top, left } = this.previousLayoutDimensions;
-				this.layout(width, height, top, left);
-			}
-		}));
-	}
+    this._register(this.footerToolbar.onDidChangeMenuItems(() => {
+      if (this.previousLayoutDimensions) {
+        const { width, height, top, left } = this.previousLayoutDimensions;
+        this.layout(width, height, top, left);
+      }
+    }));
+  }
 
-	private getFooterHeight(): number {
-		const actionCount = this.footerToolbar?.getItemsLength() ?? 0;
-		if (actionCount === 0) {
-			return 0;
-		}
+  private getFooterHeight(): number {
+    const actionCount = this.footerToolbar?.getItemsLength() ?? 0;
+    if (actionCount === 0) {
+      return 0;
+    }
 
-		return SidebarPart.FOOTER_VERTICAL_PADDING * 2
+    return SidebarPart.FOOTER_VERTICAL_PADDING * 2
 			+ (actionCount * SidebarPart.FOOTER_ITEM_HEIGHT)
 			+ ((actionCount - 1) * SidebarPart.FOOTER_ITEM_GAP)
 			+ SidebarPart.FOOTER_BOTTOM_MARGIN
 			+ SidebarPart.FOOTER_BORDER_TOP;
-	}
+  }
 
-	private updateFooterVisibility(): void {
-		const footer = this.footerContainer;
-		if (!footer) {
-			return;
-		}
+  private updateFooterVisibility(): void {
+    const footer = this.footerContainer;
+    if (!footer) {
+      return;
+    }
 
-		footer.style.display = this.getFooterHeight() > 0 ? '' : 'none';
-	}
+    footer.style.display = this.getFooterHeight() > 0 ? '' : 'none';
+  }
 
-	override updateStyles(): void {
-		super.updateStyles();
+  override updateStyles(): void {
+    super.updateStyles();
 
-		const container = assertReturnsDefined(this.getContainer());
+    const container = assertReturnsDefined(this.getContainer());
 
-		container.style.backgroundColor = this.getColor(sessionsSidebarBackground) || '';
-		container.style.color = this.getColor(SIDE_BAR_FOREGROUND) || '';
-		container.style.outlineColor = this.getColor(SIDE_BAR_DRAG_AND_DROP_BACKGROUND) ?? '';
+    container.style.backgroundColor = this.getColor(sessionsSidebarBackground) || '';
+    container.style.color = this.getColor(SIDE_BAR_FOREGROUND) || '';
+    container.style.outlineColor = this.getColor(SIDE_BAR_DRAG_AND_DROP_BACKGROUND) ?? '';
 
-		// No right border in sessions sidebar
-		container.style.borderRightWidth = '';
-		container.style.borderRightStyle = '';
-		container.style.borderRightColor = '';
+    // No right border in sessions sidebar
+    container.style.borderRightWidth = '';
+    container.style.borderRightStyle = '';
+    container.style.borderRightColor = '';
 
-		// Title area uses sessions-specific header colors
-		if (this.sideBarTitleArea) {
-			this.sideBarTitleArea.style.backgroundColor = this.getColor(sessionsSidebarHeaderBackground) || '';
-			this.sideBarTitleArea.style.color = this.getColor(sessionsSidebarHeaderForeground) || '';
-		}
-	}
+    // Title area uses sessions-specific header colors
+    if (this.sideBarTitleArea) {
+      this.sideBarTitleArea.style.backgroundColor = this.getColor(sessionsSidebarHeaderBackground) || '';
+      this.sideBarTitleArea.style.color = this.getColor(sessionsSidebarHeaderForeground) || '';
+    }
+  }
 
-	override layout(width: number, height: number, top: number, left: number): void {
-		this.previousLayoutDimensions = { width, height, top, left };
+  override layout(width: number, height: number, top: number, left: number): void {
+    this.previousLayoutDimensions = { width, height, top, left };
 
-		if (!this.layoutService.isVisible(Parts.SIDEBAR_PART)) {
-			return;
-		}
+    if (!this.layoutService.isVisible(Parts.SIDEBAR_PART)) {
+      return;
+    }
 
-		this.updateFooterVisibility();
-		const footerHeight = Math.min(height, this.getFooterHeight());
+    this.updateFooterVisibility();
+    const footerHeight = Math.min(height, this.getFooterHeight());
 
-		// Layout content with reduced height to account for footer
-		super.layout(
-			width,
-			height - footerHeight,
-			top, left
-		);
+    // Layout content with reduced height to account for footer
+    super.layout(
+      width,
+      height - footerHeight,
+      top, left,
+    );
 
-		// Restore the full grid-allocated dimensions so that Part.relayout() works correctly.
-		Part.prototype.layout.call(this, width, height, top, left);
-	}
+    // Restore the full grid-allocated dimensions so that Part.relayout() works correctly.
+    Part.prototype.layout.call(this, width, height, top, left);
+  }
 
-	protected override getTitleAreaDropDownAnchorAlignment(): AnchorAlignment {
-		return this.layoutService.getSideBarPosition() === SideBarPosition.LEFT ? AnchorAlignment.LEFT : AnchorAlignment.RIGHT;
-	}
+  protected override getTitleAreaDropDownAnchorAlignment(): AnchorAlignment {
+    return this.layoutService.getSideBarPosition() === SideBarPosition.LEFT ? AnchorAlignment.LEFT : AnchorAlignment.RIGHT;
+  }
 
-	protected override createTitleLabel(_parent: HTMLElement): ICompositeTitleLabel {
-		// No title label in agent sessions sidebar
-		return {
-			updateTitle: () => { },
-			updateStyles: () => { }
-		};
-	}
+  protected override createTitleLabel(_parent: HTMLElement): ICompositeTitleLabel {
+    // No title label in agent sessions sidebar
+    return {
+      updateTitle: () => { },
+      updateStyles: () => { },
+    };
+  }
 
-	protected getCompositeBarOptions(): IPaneCompositeBarOptions {
-		return {
-			partContainerClass: 'sidebar',
-			pinnedViewContainersKey: SidebarPart.pinnedViewContainersKey,
-			placeholderViewContainersKey: SidebarPart.placeholderViewContainersKey,
-			viewContainersWorkspaceStateKey: SidebarPart.viewContainersWorkspaceStateKey,
-			icon: false,
-			orientation: ActionsOrientation.HORIZONTAL,
-			recomputeSizes: true,
-			activityHoverOptions: {
-				position: () => this.getCompositeBarPosition() === CompositeBarPosition.BOTTOM ? HoverPosition.ABOVE : HoverPosition.BELOW,
-			},
-			fillExtraContextMenuActions: actions => {
-				if (this.getCompositeBarPosition() === CompositeBarPosition.TITLE) {
-					const viewsSubmenuAction = this.getViewsSubmenuAction();
-					if (viewsSubmenuAction) {
-						actions.push(new Separator());
-						actions.push(viewsSubmenuAction);
-					}
-				}
-			},
-			compositeSize: 0,
-			iconSize: 16,
-			overflowActionSize: 30,
-			colors: theme => ({
-				activeBackgroundColor: theme.getColor(sessionsSidebarBackground),
-				inactiveBackgroundColor: theme.getColor(sessionsSidebarBackground),
-				activeBorderBottomColor: theme.getColor(ACTIVITY_BAR_TOP_ACTIVE_BORDER),
-				activeForegroundColor: theme.getColor(ACTIVITY_BAR_TOP_FOREGROUND),
-				inactiveForegroundColor: theme.getColor(ACTIVITY_BAR_TOP_INACTIVE_FOREGROUND),
-				badgeBackground: theme.getColor(ACTIVITY_BAR_BADGE_BACKGROUND),
-				badgeForeground: theme.getColor(ACTIVITY_BAR_BADGE_FOREGROUND),
-				dragAndDropBorder: theme.getColor(ACTIVITY_BAR_TOP_DRAG_AND_DROP_BORDER)
-			}),
-			compact: true
-		};
-	}
+  protected getCompositeBarOptions(): IPaneCompositeBarOptions {
+    return {
+      partContainerClass: 'sidebar',
+      pinnedViewContainersKey: SidebarPart.pinnedViewContainersKey,
+      placeholderViewContainersKey: SidebarPart.placeholderViewContainersKey,
+      viewContainersWorkspaceStateKey: SidebarPart.viewContainersWorkspaceStateKey,
+      icon: false,
+      orientation: ActionsOrientation.HORIZONTAL,
+      recomputeSizes: true,
+      activityHoverOptions: {
+        position: () => this.getCompositeBarPosition() === CompositeBarPosition.BOTTOM ? HoverPosition.ABOVE : HoverPosition.BELOW,
+      },
+      fillExtraContextMenuActions: actions => {
+        if (this.getCompositeBarPosition() === CompositeBarPosition.TITLE) {
+          const viewsSubmenuAction = this.getViewsSubmenuAction();
+          if (viewsSubmenuAction) {
+            actions.push(new Separator());
+            actions.push(viewsSubmenuAction);
+          }
+        }
+      },
+      compositeSize: 0,
+      iconSize: 16,
+      overflowActionSize: 30,
+      colors: theme => ({
+        activeBackgroundColor: theme.getColor(sessionsSidebarBackground),
+        inactiveBackgroundColor: theme.getColor(sessionsSidebarBackground),
+        activeBorderBottomColor: theme.getColor(ACTIVITY_BAR_TOP_ACTIVE_BORDER),
+        activeForegroundColor: theme.getColor(ACTIVITY_BAR_TOP_FOREGROUND),
+        inactiveForegroundColor: theme.getColor(ACTIVITY_BAR_TOP_INACTIVE_FOREGROUND),
+        badgeBackground: theme.getColor(ACTIVITY_BAR_BADGE_BACKGROUND),
+        badgeForeground: theme.getColor(ACTIVITY_BAR_BADGE_FOREGROUND),
+        dragAndDropBorder: theme.getColor(ACTIVITY_BAR_TOP_DRAG_AND_DROP_BORDER),
+      }),
+      compact: true,
+    };
+  }
 
-	protected shouldShowCompositeBar(): boolean {
-		return false;
-	}
+  protected shouldShowCompositeBar(): boolean {
+    return false;
+  }
 
-	protected getCompositeBarPosition(): CompositeBarPosition {
-		return CompositeBarPosition.TITLE;
-	}
+  protected getCompositeBarPosition(): CompositeBarPosition {
+    return CompositeBarPosition.TITLE;
+  }
 
-	async focusActivityBar(): Promise<void> {
-		if (this.shouldShowCompositeBar()) {
-			this.focusCompositeBar();
-		}
-	}
+  async focusActivityBar(): Promise<void> {
+    if (this.shouldShowCompositeBar()) {
+      this.focusCompositeBar();
+    }
+  }
 
-	toJSON(): object {
-		return {
-			type: Parts.SIDEBAR_PART
-		};
-	}
+  toJSON(): object {
+    return {
+      type: Parts.SIDEBAR_PART,
+    };
+  }
 }

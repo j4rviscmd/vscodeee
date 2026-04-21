@@ -39,48 +39,48 @@ import { isFileToOpen, isWorkspaceToOpen } from '../../../../platform/window/com
  */
 export class TauriFileDialogService extends AbstractFileDialogService implements IFileDialogService {
 
-	constructor(
-		@IHostService hostService: IHostService,
-		@IWorkspaceContextService contextService: IWorkspaceContextService,
-		@IHistoryService historyService: IHistoryService,
-		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
-		@IInstantiationService instantiationService: IInstantiationService,
-		@IConfigurationService configurationService: IConfigurationService,
-		@IFileService fileService: IFileService,
-		@IOpenerService openerService: IOpenerService,
-		@INativeHostService private readonly nativeHostService: INativeHostService,
-		@IDialogService dialogService: IDialogService,
-		@ILanguageService languageService: ILanguageService,
-		@IWorkspacesService workspacesService: IWorkspacesService,
-		@ILabelService labelService: ILabelService,
-		@IPathService pathService: IPathService,
-		@ICommandService commandService: ICommandService,
-		@IEditorService editorService: IEditorService,
-		@ICodeEditorService codeEditorService: ICodeEditorService,
-		@ILogService logService: ILogService,
-		@IRemoteAgentService remoteAgentService: IRemoteAgentService
-	) {
-		super(hostService, contextService, historyService, environmentService, instantiationService,
-			configurationService, fileService, openerService, dialogService, languageService, workspacesService, labelService, pathService, commandService, editorService, codeEditorService, logService, remoteAgentService);
-	}
+  constructor(
+    @IHostService hostService: IHostService,
+    @IWorkspaceContextService contextService: IWorkspaceContextService,
+    @IHistoryService historyService: IHistoryService,
+    @IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
+    @IInstantiationService instantiationService: IInstantiationService,
+    @IConfigurationService configurationService: IConfigurationService,
+    @IFileService fileService: IFileService,
+    @IOpenerService openerService: IOpenerService,
+    @INativeHostService private readonly nativeHostService: INativeHostService,
+    @IDialogService dialogService: IDialogService,
+    @ILanguageService languageService: ILanguageService,
+    @IWorkspacesService workspacesService: IWorkspacesService,
+    @ILabelService labelService: ILabelService,
+    @IPathService pathService: IPathService,
+    @ICommandService commandService: ICommandService,
+    @IEditorService editorService: IEditorService,
+    @ICodeEditorService codeEditorService: ICodeEditorService,
+    @ILogService logService: ILogService,
+    @IRemoteAgentService remoteAgentService: IRemoteAgentService,
+  ) {
+    super(hostService, contextService, historyService, environmentService, instantiationService,
+      configurationService, fileService, openerService, dialogService, languageService, workspacesService, labelService, pathService, commandService, editorService, codeEditorService, logService, remoteAgentService);
+  }
 
-	/**
+  /**
 	 * Convert workbench pick-and-open options to native open dialog options.
 	 *
 	 * @param options - The workbench pick-and-open options.
 	 * @param properties - The native dialog properties (openFile, openDirectory, etc.).
 	 * @returns The native open dialog options targeting the active window.
 	 */
-	private toNativeOpenDialogOptions(options: IPickAndOpenOptions, properties: Array<'openFile' | 'openDirectory' | 'multiSelections' | 'showHiddenFiles' | 'createDirectory' | 'promptToCreate' | 'noResolveAliases' | 'treatPackageAsDirectory' | 'dontAddToRecent'>): OpenDialogOptions & INativeHostOptions {
-		return {
-			title: undefined,
-			defaultPath: options.defaultUri?.fsPath,
-			properties,
-			targetWindowId: getActiveWindow().vscodeWindowId
-		};
-	}
+  private toNativeOpenDialogOptions(options: IPickAndOpenOptions, properties: Array<'openFile' | 'openDirectory' | 'multiSelections' | 'showHiddenFiles' | 'createDirectory' | 'promptToCreate' | 'noResolveAliases' | 'treatPackageAsDirectory' | 'dontAddToRecent'>): OpenDialogOptions & INativeHostOptions {
+    return {
+      title: undefined,
+      defaultPath: options.defaultUri?.fsPath,
+      properties,
+      targetWindowId: getActiveWindow().vscodeWindowId,
+    };
+  }
 
-	/**
+  /**
 	 * Determines whether to use the simplified (web-based) dialog instead of the
 	 * native dialog. The simplified dialog is used for non-file schemas or when
 	 * the `files.simpleDialog.enable` setting is enabled.
@@ -88,191 +88,191 @@ export class TauriFileDialogService extends AbstractFileDialogService implements
 	 * @param schema - The URI scheme of the target file system.
 	 * @returns `true` if the simplified dialog should be used.
 	 */
-	private shouldUseSimplified(schema: string): boolean {
-		const setting = this.configurationService.getValue('files.simpleDialog.enable') === true;
-		return (schema !== Schemas.file && schema !== Schemas.vscodeUserData) || setting;
-	}
+  private shouldUseSimplified(schema: string): boolean {
+    const setting = this.configurationService.getValue('files.simpleDialog.enable') === true;
+    return (schema !== Schemas.file && schema !== Schemas.vscodeUserData) || setting;
+  }
 
-	async pickFileFolderAndOpen(options: IPickAndOpenOptions): Promise<void> {
-		const schema = this.getFileSystemSchema(options);
+  async pickFileFolderAndOpen(options: IPickAndOpenOptions): Promise<void> {
+    const schema = this.getFileSystemSchema(options);
 
-		if (!options.defaultUri) {
-			options.defaultUri = await this.defaultFilePath(schema);
-		}
+    if (!options.defaultUri) {
+      options.defaultUri = await this.defaultFilePath(schema);
+    }
 
-		if (this.shouldUseSimplified(schema)) {
-			return this.pickFileFolderAndOpenSimplified(schema, options, false);
-		}
+    if (this.shouldUseSimplified(schema)) {
+      return this.pickFileFolderAndOpenSimplified(schema, options, false);
+    }
 
-		const result = await this.nativeHostService.showOpenDialog(
-			this.toNativeOpenDialogOptions(options, ['openFile', 'openDirectory', 'createDirectory'])
-		);
+    const result = await this.nativeHostService.showOpenDialog(
+      this.toNativeOpenDialogOptions(options, ['openFile', 'openDirectory', 'createDirectory']),
+    );
 
-		if (result && Array.isArray(result.filePaths) && result.filePaths.length > 0) {
-			const uri = URI.file(result.filePaths[0]);
-			const stat = await this.fileService.stat(uri);
-			const toOpen = stat.isDirectory ? { folderUri: uri } : { fileUri: uri };
+    if (result && Array.isArray(result.filePaths) && result.filePaths.length > 0) {
+      const uri = URI.file(result.filePaths[0]);
+      const stat = await this.fileService.stat(uri);
+      const toOpen = stat.isDirectory ? { folderUri: uri } : { fileUri: uri };
 
-			if (!isWorkspaceToOpen(toOpen) && isFileToOpen(toOpen)) {
-				this.addFileToRecentlyOpened(toOpen.fileUri);
-			}
+      if (!isWorkspaceToOpen(toOpen) && isFileToOpen(toOpen)) {
+        this.addFileToRecentlyOpened(toOpen.fileUri);
+      }
 
-			if (stat.isDirectory || options.forceNewWindow) {
-				await this.hostService.openWindow([toOpen], { forceNewWindow: options.forceNewWindow, remoteAuthority: options.remoteAuthority });
-			} else {
-				await this.editorService.openEditors([{ resource: uri, options: { source: EditorOpenSource.USER, pinned: true } }], undefined, { validateTrust: true });
-			}
-		}
-	}
+      if (stat.isDirectory || options.forceNewWindow) {
+        await this.hostService.openWindow([toOpen], { forceNewWindow: options.forceNewWindow, remoteAuthority: options.remoteAuthority });
+      } else {
+        await this.editorService.openEditors([{ resource: uri, options: { source: EditorOpenSource.USER, pinned: true } }], undefined, { validateTrust: true });
+      }
+    }
+  }
 
-	async pickFileAndOpen(options: IPickAndOpenOptions): Promise<void> {
-		const schema = this.getFileSystemSchema(options);
+  async pickFileAndOpen(options: IPickAndOpenOptions): Promise<void> {
+    const schema = this.getFileSystemSchema(options);
 
-		if (!options.defaultUri) {
-			options.defaultUri = await this.defaultFilePath(schema);
-		}
+    if (!options.defaultUri) {
+      options.defaultUri = await this.defaultFilePath(schema);
+    }
 
-		if (this.shouldUseSimplified(schema)) {
-			return this.pickFileAndOpenSimplified(schema, options, false);
-		}
+    if (this.shouldUseSimplified(schema)) {
+      return this.pickFileAndOpenSimplified(schema, options, false);
+    }
 
-		const result = await this.nativeHostService.showOpenDialog(
-			this.toNativeOpenDialogOptions(options, ['openFile', 'createDirectory'])
-		);
+    const result = await this.nativeHostService.showOpenDialog(
+      this.toNativeOpenDialogOptions(options, ['openFile', 'createDirectory']),
+    );
 
-		if (result && Array.isArray(result.filePaths) && result.filePaths.length > 0) {
-			const uri = URI.file(result.filePaths[0]);
-			this.addFileToRecentlyOpened(uri);
+    if (result && Array.isArray(result.filePaths) && result.filePaths.length > 0) {
+      const uri = URI.file(result.filePaths[0]);
+      this.addFileToRecentlyOpened(uri);
 
-			if (options.forceNewWindow) {
-				await this.hostService.openWindow([{ fileUri: uri }], { forceNewWindow: options.forceNewWindow, remoteAuthority: options.remoteAuthority });
-			} else {
-				await this.editorService.openEditors([{ resource: uri, options: { source: EditorOpenSource.USER, pinned: true } }], undefined, { validateTrust: true });
-			}
-		}
-	}
+      if (options.forceNewWindow) {
+        await this.hostService.openWindow([{ fileUri: uri }], { forceNewWindow: options.forceNewWindow, remoteAuthority: options.remoteAuthority });
+      } else {
+        await this.editorService.openEditors([{ resource: uri, options: { source: EditorOpenSource.USER, pinned: true } }], undefined, { validateTrust: true });
+      }
+    }
+  }
 
-	async pickFolderAndOpen(options: IPickAndOpenOptions): Promise<void> {
-		const schema = this.getFileSystemSchema(options);
+  async pickFolderAndOpen(options: IPickAndOpenOptions): Promise<void> {
+    const schema = this.getFileSystemSchema(options);
 
-		if (!options.defaultUri) {
-			options.defaultUri = await this.defaultFolderPath(schema);
-		}
+    if (!options.defaultUri) {
+      options.defaultUri = await this.defaultFolderPath(schema);
+    }
 
-		if (this.shouldUseSimplified(schema)) {
-			return this.pickFolderAndOpenSimplified(schema, options);
-		}
+    if (this.shouldUseSimplified(schema)) {
+      return this.pickFolderAndOpenSimplified(schema, options);
+    }
 
-		const result = await this.nativeHostService.showOpenDialog(
-			this.toNativeOpenDialogOptions(options, ['openDirectory', 'createDirectory'])
-		);
+    const result = await this.nativeHostService.showOpenDialog(
+      this.toNativeOpenDialogOptions(options, ['openDirectory', 'createDirectory']),
+    );
 
-		if (result && Array.isArray(result.filePaths) && result.filePaths.length > 0) {
-			const uri = URI.file(result.filePaths[0]);
-			await this.hostService.openWindow([{ folderUri: uri }], { forceNewWindow: options.forceNewWindow, remoteAuthority: options.remoteAuthority });
-		}
-	}
+    if (result && Array.isArray(result.filePaths) && result.filePaths.length > 0) {
+      const uri = URI.file(result.filePaths[0]);
+      await this.hostService.openWindow([{ folderUri: uri }], { forceNewWindow: options.forceNewWindow, remoteAuthority: options.remoteAuthority });
+    }
+  }
 
-	async pickWorkspaceAndOpen(options: IPickAndOpenOptions): Promise<void> {
-		options.availableFileSystems = this.getWorkspaceAvailableFileSystems(options);
-		const schema = this.getFileSystemSchema(options);
+  async pickWorkspaceAndOpen(options: IPickAndOpenOptions): Promise<void> {
+    options.availableFileSystems = this.getWorkspaceAvailableFileSystems(options);
+    const schema = this.getFileSystemSchema(options);
 
-		if (!options.defaultUri) {
-			options.defaultUri = await this.defaultWorkspacePath(schema);
-		}
+    if (!options.defaultUri) {
+      options.defaultUri = await this.defaultWorkspacePath(schema);
+    }
 
-		if (this.shouldUseSimplified(schema)) {
-			return this.pickWorkspaceAndOpenSimplified(schema, options);
-		}
+    if (this.shouldUseSimplified(schema)) {
+      return this.pickWorkspaceAndOpenSimplified(schema, options);
+    }
 
-		const result = await this.nativeHostService.showOpenDialog(
-			this.toNativeOpenDialogOptions(options, ['openFile', 'createDirectory'])
-		);
+    const result = await this.nativeHostService.showOpenDialog(
+      this.toNativeOpenDialogOptions(options, ['openFile', 'createDirectory']),
+    );
 
-		if (result && Array.isArray(result.filePaths) && result.filePaths.length > 0) {
-			const uri = URI.file(result.filePaths[0]);
-			await this.hostService.openWindow([{ workspaceUri: uri }], { forceNewWindow: options.forceNewWindow, remoteAuthority: options.remoteAuthority });
-		}
-	}
+    if (result && Array.isArray(result.filePaths) && result.filePaths.length > 0) {
+      const uri = URI.file(result.filePaths[0]);
+      await this.hostService.openWindow([{ workspaceUri: uri }], { forceNewWindow: options.forceNewWindow, remoteAuthority: options.remoteAuthority });
+    }
+  }
 
-	async pickFileToSave(defaultUri: URI, availableFileSystems?: string[]): Promise<URI | undefined> {
-		const schema = this.getFileSystemSchema({ defaultUri, availableFileSystems });
-		const options = this.getPickFileToSaveDialogOptions(defaultUri, availableFileSystems);
-		if (this.shouldUseSimplified(schema)) {
-			return this.pickFileToSaveSimplified(schema, options);
-		}
+  async pickFileToSave(defaultUri: URI, availableFileSystems?: string[]): Promise<URI | undefined> {
+    const schema = this.getFileSystemSchema({ defaultUri, availableFileSystems });
+    const options = this.getPickFileToSaveDialogOptions(defaultUri, availableFileSystems);
+    if (this.shouldUseSimplified(schema)) {
+      return this.pickFileToSaveSimplified(schema, options);
+    }
 
-		const result = await this.nativeHostService.showSaveDialog(this.toNativeSaveDialogOptions(options));
-		if (result && !result.canceled && result.filePath) {
-			const uri = URI.file(result.filePath);
-			this.addFileToRecentlyOpened(uri);
-			return uri;
-		}
-		return;
-	}
+    const result = await this.nativeHostService.showSaveDialog(this.toNativeSaveDialogOptions(options));
+    if (result && !result.canceled && result.filePath) {
+      const uri = URI.file(result.filePath);
+      this.addFileToRecentlyOpened(uri);
+      return uri;
+    }
+    return;
+  }
 
-	/**
+  /**
 	 * Convert workbench save dialog options to native save dialog options.
 	 *
 	 * @param options - The workbench save dialog options.
 	 * @returns The native save dialog options targeting the active window.
 	 */
-	private toNativeSaveDialogOptions(options: ISaveDialogOptions): SaveDialogOptions & INativeHostOptions {
-		options.defaultUri = options.defaultUri ? URI.file(options.defaultUri.path) : undefined;
-		return {
-			defaultPath: options.defaultUri?.fsPath,
-			buttonLabel: typeof options.saveLabel === 'string' ? options.saveLabel : options.saveLabel?.withMnemonic,
-			filters: options.filters,
-			title: options.title,
-			targetWindowId: getActiveWindow().vscodeWindowId
-		};
-	}
+  private toNativeSaveDialogOptions(options: ISaveDialogOptions): SaveDialogOptions & INativeHostOptions {
+    options.defaultUri = options.defaultUri ? URI.file(options.defaultUri.path) : undefined;
+    return {
+      defaultPath: options.defaultUri?.fsPath,
+      buttonLabel: typeof options.saveLabel === 'string' ? options.saveLabel : options.saveLabel?.withMnemonic,
+      filters: options.filters,
+      title: options.title,
+      targetWindowId: getActiveWindow().vscodeWindowId,
+    };
+  }
 
-	async showSaveDialog(options: ISaveDialogOptions): Promise<URI | undefined> {
-		const schema = this.getFileSystemSchema(options);
-		if (this.shouldUseSimplified(schema)) {
-			return this.showSaveDialogSimplified(schema, options);
-		}
+  async showSaveDialog(options: ISaveDialogOptions): Promise<URI | undefined> {
+    const schema = this.getFileSystemSchema(options);
+    if (this.shouldUseSimplified(schema)) {
+      return this.showSaveDialogSimplified(schema, options);
+    }
 
-		const result = await this.nativeHostService.showSaveDialog(this.toNativeSaveDialogOptions(options));
-		if (result && !result.canceled && result.filePath) {
-			return URI.file(result.filePath);
-		}
-		return;
-	}
+    const result = await this.nativeHostService.showSaveDialog(this.toNativeSaveDialogOptions(options));
+    if (result && !result.canceled && result.filePath) {
+      return URI.file(result.filePath);
+    }
+    return;
+  }
 
-	async showOpenDialog(options: IOpenDialogOptions): Promise<URI[] | undefined> {
-		const schema = this.getFileSystemSchema(options);
-		if (this.shouldUseSimplified(schema)) {
-			return this.showOpenDialogSimplified(schema, options);
-		}
+  async showOpenDialog(options: IOpenDialogOptions): Promise<URI[] | undefined> {
+    const schema = this.getFileSystemSchema(options);
+    if (this.shouldUseSimplified(schema)) {
+      return this.showOpenDialogSimplified(schema, options);
+    }
 
-		const newOptions: OpenDialogOptions & { properties: string[] } & INativeHostOptions = {
-			title: options.title,
-			defaultPath: options.defaultUri?.fsPath,
-			buttonLabel: typeof options.openLabel === 'string' ? options.openLabel : options.openLabel?.withMnemonic,
-			filters: options.filters,
-			properties: [],
-			targetWindowId: getActiveWindow().vscodeWindowId
-		};
+    const newOptions: OpenDialogOptions & { properties: string[] } & INativeHostOptions = {
+      title: options.title,
+      defaultPath: options.defaultUri?.fsPath,
+      buttonLabel: typeof options.openLabel === 'string' ? options.openLabel : options.openLabel?.withMnemonic,
+      filters: options.filters,
+      properties: [],
+      targetWindowId: getActiveWindow().vscodeWindowId,
+    };
 
-		newOptions.properties.push('createDirectory');
+    newOptions.properties.push('createDirectory');
 
-		if (options.canSelectFiles) {
-			newOptions.properties.push('openFile');
-		}
+    if (options.canSelectFiles) {
+      newOptions.properties.push('openFile');
+    }
 
-		if (options.canSelectFolders) {
-			newOptions.properties.push('openDirectory');
-		}
+    if (options.canSelectFolders) {
+      newOptions.properties.push('openDirectory');
+    }
 
-		if (options.canSelectMany) {
-			newOptions.properties.push('multiSelections');
-		}
+    if (options.canSelectMany) {
+      newOptions.properties.push('multiSelections');
+    }
 
-		const result = await this.nativeHostService.showOpenDialog(newOptions);
-		return result && Array.isArray(result.filePaths) && result.filePaths.length > 0 ? result.filePaths.map(URI.file) : undefined;
-	}
+    const result = await this.nativeHostService.showOpenDialog(newOptions);
+    return result && Array.isArray(result.filePaths) && result.filePaths.length > 0 ? result.filePaths.map(URI.file) : undefined;
+  }
 }
 
 registerSingleton(IFileDialogService, TauriFileDialogService, InstantiationType.Delayed);

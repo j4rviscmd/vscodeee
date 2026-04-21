@@ -17,13 +17,13 @@
  * standard Tauri v2 WebView API.
  */
 export function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-	const w = globalThis as unknown as {
-		__TAURI_INTERNALS__?: {
-			invoke: (cmd: string, args?: Record<string, unknown>) => Promise<T>;
-		};
-	};
-	if (w.__TAURI_INTERNALS__?.invoke) {
-		return w.__TAURI_INTERNALS__.invoke(cmd, args);
-	}
-	throw new Error('Tauri IPC not available');
+  const w = globalThis as unknown as {
+    __TAURI_INTERNALS__?: {
+      invoke: (cmd: string, args?: Record<string, unknown>) => Promise<T>;
+    };
+  };
+  if (w.__TAURI_INTERNALS__?.invoke) {
+    return w.__TAURI_INTERNALS__.invoke(cmd, args);
+  }
+  throw new Error('Tauri IPC not available');
 }

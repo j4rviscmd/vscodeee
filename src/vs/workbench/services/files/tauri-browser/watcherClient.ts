@@ -22,18 +22,18 @@ import { TauriWatcher } from '../../../../platform/files/tauri-browser/tauriWatc
  */
 export class TauriUniversalWatcherClient extends AbstractUniversalWatcherClient {
 
-	constructor(
-		onFileChanges: (changes: IFileChange[]) => void,
-		onLogMessage: (msg: ILogMessage) => void,
-		verboseLogging: boolean,
-	) {
-		super(onFileChanges, onLogMessage, verboseLogging);
+  constructor(
+    onFileChanges: (changes: IFileChange[]) => void,
+    onLogMessage: (msg: ILogMessage) => void,
+    verboseLogging: boolean,
+  ) {
+    super(onFileChanges, onLogMessage, verboseLogging);
 
-		this.init();
-	}
+    this.init();
+  }
 
-	protected override createWatcher(disposables: DisposableStore): IUniversalWatcher {
-		const watcher = disposables.add(new TauriWatcher());
-		return watcher;
-	}
+  protected override createWatcher(disposables: DisposableStore): IUniversalWatcher {
+    const watcher = disposables.add(new TauriWatcher());
+    return watcher;
+  }
 }

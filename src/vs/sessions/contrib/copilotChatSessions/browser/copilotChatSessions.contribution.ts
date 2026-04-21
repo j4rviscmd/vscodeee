@@ -16,40 +16,40 @@ import { IConfigurationService } from '../../../../platform/configuration/common
 import { AgentHostEnabledSettingId } from '../../../../platform/agentHost/common/agentService.js';
 
 Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).registerConfiguration({
-	id: 'sessions',
-	properties: {
-		[COPILOT_MULTI_CHAT_SETTING]: {
-			type: 'boolean',
-			default: false,
-			tags: ['preview'],
-			description: localize('sessions.github.copilot.multiChatSessions', "Whether to enable multiple chats within a single session in the Copilot Chat sessions provider."),
-		},
-	},
+  id: 'sessions',
+  properties: {
+    [COPILOT_MULTI_CHAT_SETTING]: {
+      type: 'boolean',
+      default: false,
+      tags: ['preview'],
+      description: localize('sessions.github.copilot.multiChatSessions', 'Whether to enable multiple chats within a single session in the Copilot Chat sessions provider.'),
+    },
+  },
 });
 
 /**
  * Registers the {@link CopilotChatSessionsProvider} as a sessions provider.
  */
 class DefaultSessionsProviderContribution extends Disposable implements IWorkbenchContribution {
-	static readonly ID = 'sessions.defaultSessionsProvider';
+  static readonly ID = 'sessions.defaultSessionsProvider';
 
-	constructor(
-		@IInstantiationService instantiationService: IInstantiationService,
-		@ISessionsProvidersService sessionsProvidersService: ISessionsProvidersService,
-		@IConfigurationService configurationService: IConfigurationService,
-	) {
-		super();
+  constructor(
+    @IInstantiationService instantiationService: IInstantiationService,
+    @ISessionsProvidersService sessionsProvidersService: ISessionsProvidersService,
+    @IConfigurationService configurationService: IConfigurationService,
+  ) {
+    super();
 
-		// When the local agent host is enabled, skip registering the
-		// default CopilotChat provider so only the local agent host
-		// provider is active.
-		if (configurationService.getValue<boolean>(AgentHostEnabledSettingId)) {
-			return;
-		}
+    // When the local agent host is enabled, skip registering the
+    // default CopilotChat provider so only the local agent host
+    // provider is active.
+    if (configurationService.getValue<boolean>(AgentHostEnabledSettingId)) {
+      return;
+    }
 
-		const provider = this._register(instantiationService.createInstance(CopilotChatSessionsProvider));
-		this._register(sessionsProvidersService.registerProvider(provider));
-	}
+    const provider = this._register(instantiationService.createInstance(CopilotChatSessionsProvider));
+    this._register(sessionsProvidersService.registerProvider(provider));
+  }
 }
 
 registerWorkbenchContribution2(DefaultSessionsProviderContribution.ID, DefaultSessionsProviderContribution, WorkbenchPhase.AfterRestored);

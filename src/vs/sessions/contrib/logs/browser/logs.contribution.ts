@@ -21,47 +21,47 @@ const logsViewIcon = registerIcon('sessions-logs-view-icon', Codicon.output, loc
 
 class RegisterLogsViewContainerContribution implements IWorkbenchContribution {
 
-	static readonly ID = 'sessions.registerLogsViewContainer';
+  static readonly ID = 'sessions.registerLogsViewContainer';
 
-	constructor(
-		@IContextKeyService contextKeyService: IContextKeyService,
-	) {
-		const viewContainerRegistry = Registry.as<IViewContainersRegistry>(ViewContainerExtensions.ViewContainersRegistry);
-		const viewsRegistry = Registry.as<IViewsRegistry>(ViewContainerExtensions.ViewsRegistry);
+  constructor(
+    @IContextKeyService contextKeyService: IContextKeyService,
+  ) {
+    const viewContainerRegistry = Registry.as<IViewContainersRegistry>(ViewContainerExtensions.ViewContainersRegistry);
+    const viewsRegistry = Registry.as<IViewsRegistry>(ViewContainerExtensions.ViewsRegistry);
 
-		// Deregister the output view and its container from the original registration
-		const outputViewContainer = viewContainerRegistry.get(OUTPUT_VIEW_ID);
-		if (outputViewContainer) {
-			const view = viewsRegistry.getView(OUTPUT_VIEW_ID);
-			if (view) {
-				viewsRegistry.deregisterViews([view], outputViewContainer);
-			}
-			viewContainerRegistry.deregisterViewContainer(outputViewContainer);
-		}
+    // Deregister the output view and its container from the original registration
+    const outputViewContainer = viewContainerRegistry.get(OUTPUT_VIEW_ID);
+    if (outputViewContainer) {
+      const view = viewsRegistry.getView(OUTPUT_VIEW_ID);
+      if (view) {
+        viewsRegistry.deregisterViews([view], outputViewContainer);
+      }
+      viewContainerRegistry.deregisterViewContainer(outputViewContainer);
+    }
 
-		// Register a new logs view container in the Panel for the sessions window
-		const logsViewContainer = viewContainerRegistry.registerViewContainer({
-			id: SESSIONS_LOGS_CONTAINER_ID,
-			title: localize2('logs', "Logs"),
-			icon: logsViewIcon,
-			order: 2,
-			ctorDescriptor: new SyncDescriptor(ViewPaneContainer, [SESSIONS_LOGS_CONTAINER_ID, { mergeViewWithContainerWhenSingleView: true }]),
-			storageId: SESSIONS_LOGS_CONTAINER_ID,
-			hideIfEmpty: true,
-			windowVisibility: WindowVisibility.Sessions,
-		}, ViewContainerLocation.Panel, { doNotRegisterOpenCommand: true });
+    // Register a new logs view container in the Panel for the sessions window
+    const logsViewContainer = viewContainerRegistry.registerViewContainer({
+      id: SESSIONS_LOGS_CONTAINER_ID,
+      title: localize2('logs', 'Logs'),
+      icon: logsViewIcon,
+      order: 2,
+      ctorDescriptor: new SyncDescriptor(ViewPaneContainer, [SESSIONS_LOGS_CONTAINER_ID, { mergeViewWithContainerWhenSingleView: true }]),
+      storageId: SESSIONS_LOGS_CONTAINER_ID,
+      hideIfEmpty: true,
+      windowVisibility: WindowVisibility.Sessions,
+    }, ViewContainerLocation.Panel, { doNotRegisterOpenCommand: true });
 
-		// Re-register the output view inside the new logs container with a `when` context
-		viewsRegistry.registerViews([{
-			id: OUTPUT_VIEW_ID,
-			name: localize2('logs', "Logs"),
-			containerIcon: logsViewIcon,
-			ctorDescriptor: new SyncDescriptor(OutputViewPane),
-			canToggleVisibility: true,
-			canMoveView: false,
-			windowVisibility: WindowVisibility.Sessions,
-		}], logsViewContainer);
-	}
+    // Re-register the output view inside the new logs container with a `when` context
+    viewsRegistry.registerViews([{
+      id: OUTPUT_VIEW_ID,
+      name: localize2('logs', 'Logs'),
+      containerIcon: logsViewIcon,
+      ctorDescriptor: new SyncDescriptor(OutputViewPane),
+      canToggleVisibility: true,
+      canMoveView: false,
+      windowVisibility: WindowVisibility.Sessions,
+    }], logsViewContainer);
+  }
 }
 
 registerWorkbenchContribution2(RegisterLogsViewContainerContribution.ID, RegisterLogsViewContainerContribution, WorkbenchPhase.BlockStartup);

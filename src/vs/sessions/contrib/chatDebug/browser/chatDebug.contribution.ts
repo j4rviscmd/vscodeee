@@ -21,68 +21,68 @@ const chatDebugViewIcon = registerIcon('sessions-chat-debug-view-icon', Codicon.
 
 class RegisterChatDebugViewContribution extends Disposable implements IWorkbenchContribution {
 
-	static readonly ID = 'sessions.registerChatDebugView';
+  static readonly ID = 'sessions.registerChatDebugView';
 
-	constructor() {
-		super();
+  constructor() {
+    super();
 
-		const viewContainerRegistry = Registry.as<IViewContainersRegistry>(ViewContainerExtensions.ViewContainersRegistry);
-		const viewsRegistry = Registry.as<IViewsRegistry>(ViewContainerExtensions.ViewsRegistry);
+    const viewContainerRegistry = Registry.as<IViewContainersRegistry>(ViewContainerExtensions.ViewContainersRegistry);
+    const viewsRegistry = Registry.as<IViewsRegistry>(ViewContainerExtensions.ViewsRegistry);
 
-		// The copilot-chat view is contributed by the Copilot Chat extension,
-		// which may register after this contribution runs. Handle both cases.
-		if (!this.tryMoveView(viewContainerRegistry, viewsRegistry)) {
-			const listener = viewsRegistry.onViewsRegistered(e => {
-				for (const { views } of e) {
-					if (views.some(v => v.id === COPILOT_CHAT_VIEW_ID)) {
-						if (this.tryMoveView(viewContainerRegistry, viewsRegistry)) {
-							listener.dispose();
-						}
-						break;
-					}
-				}
-			});
-			this._register(listener);
-		}
-	}
+    // The copilot-chat view is contributed by the Copilot Chat extension,
+    // which may register after this contribution runs. Handle both cases.
+    if (!this.tryMoveView(viewContainerRegistry, viewsRegistry)) {
+      const listener = viewsRegistry.onViewsRegistered(e => {
+        for (const { views } of e) {
+          if (views.some(v => v.id === COPILOT_CHAT_VIEW_ID)) {
+            if (this.tryMoveView(viewContainerRegistry, viewsRegistry)) {
+              listener.dispose();
+            }
+            break;
+          }
+        }
+      });
+      this._register(listener);
+    }
+  }
 
-	private tryMoveView(viewContainerRegistry: IViewContainersRegistry, viewsRegistry: IViewsRegistry): boolean {
-		const viewContainer = viewContainerRegistry.get(COPILOT_CHAT_VIEW_CONTAINER_ID);
-		if (!viewContainer) {
-			return false;
-		}
+  private tryMoveView(viewContainerRegistry: IViewContainersRegistry, viewsRegistry: IViewsRegistry): boolean {
+    const viewContainer = viewContainerRegistry.get(COPILOT_CHAT_VIEW_CONTAINER_ID);
+    if (!viewContainer) {
+      return false;
+    }
 
-		const view = viewsRegistry.getView(COPILOT_CHAT_VIEW_ID);
-		if (!view) {
-			return false;
-		}
+    const view = viewsRegistry.getView(COPILOT_CHAT_VIEW_ID);
+    if (!view) {
+      return false;
+    }
 
-		// Deregister the view from its original extension container
-		viewsRegistry.deregisterViews([view], viewContainer);
-		viewContainerRegistry.deregisterViewContainer(viewContainer);
+    // Deregister the view from its original extension container
+    viewsRegistry.deregisterViews([view], viewContainer);
+    viewContainerRegistry.deregisterViewContainer(viewContainer);
 
-		// Register a new chat debug view container in the Panel for the sessions window
-		const chatDebugViewContainer = viewContainerRegistry.registerViewContainer({
-			id: SESSIONS_CHAT_DEBUG_CONTAINER_ID,
-			title: localize2('chatDebug', "Chat Debug"),
-			icon: chatDebugViewIcon,
-			order: 3,
-			ctorDescriptor: new SyncDescriptor(ViewPaneContainer, [SESSIONS_CHAT_DEBUG_CONTAINER_ID, { mergeViewWithContainerWhenSingleView: true }]),
-			storageId: SESSIONS_CHAT_DEBUG_CONTAINER_ID,
-			hideIfEmpty: true,
-			windowVisibility: WindowVisibility.Sessions,
-		}, ViewContainerLocation.Panel, { doNotRegisterOpenCommand: true });
+    // Register a new chat debug view container in the Panel for the sessions window
+    const chatDebugViewContainer = viewContainerRegistry.registerViewContainer({
+      id: SESSIONS_CHAT_DEBUG_CONTAINER_ID,
+      title: localize2('chatDebug', 'Chat Debug'),
+      icon: chatDebugViewIcon,
+      order: 3,
+      ctorDescriptor: new SyncDescriptor(ViewPaneContainer, [SESSIONS_CHAT_DEBUG_CONTAINER_ID, { mergeViewWithContainerWhenSingleView: true }]),
+      storageId: SESSIONS_CHAT_DEBUG_CONTAINER_ID,
+      hideIfEmpty: true,
+      windowVisibility: WindowVisibility.Sessions,
+    }, ViewContainerLocation.Panel, { doNotRegisterOpenCommand: true });
 
-		// Re-register the view inside the new sessions container
-		const sessionsView: IViewDescriptor = {
-			...view,
-			canMoveView: false,
-			windowVisibility: WindowVisibility.Sessions,
-		};
-		viewsRegistry.registerViews([sessionsView], chatDebugViewContainer);
+    // Re-register the view inside the new sessions container
+    const sessionsView: IViewDescriptor = {
+      ...view,
+      canMoveView: false,
+      windowVisibility: WindowVisibility.Sessions,
+    };
+    viewsRegistry.registerViews([sessionsView], chatDebugViewContainer);
 
-		return true;
-	}
+    return true;
+  }
 }
 
 registerWorkbenchContribution2(RegisterChatDebugViewContribution.ID, RegisterChatDebugViewContribution, WorkbenchPhase.BlockRestore);

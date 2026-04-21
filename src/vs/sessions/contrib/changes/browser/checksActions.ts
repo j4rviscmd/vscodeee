@@ -26,71 +26,71 @@ export const hasActiveSessionFailedCIChecks = new RawContextKey<boolean>('sessio
 // --- Shared CI check utilities ------------------------------------------------
 
 export const enum CICheckGroup {
-	Running,
-	Pending,
-	Failed,
-	Successful,
+  Running,
+  Pending,
+  Failed,
+  Successful,
 }
 
 export function isFailedConclusion(conclusion: GitHubCheckConclusion | undefined): boolean {
-	return conclusion === GitHubCheckConclusion.Failure
+  return conclusion === GitHubCheckConclusion.Failure
 		|| conclusion === GitHubCheckConclusion.TimedOut
 		|| conclusion === GitHubCheckConclusion.ActionRequired;
 }
 
 export function getCheckGroup(check: IGitHubCICheck): CICheckGroup {
-	switch (check.status) {
-		case GitHubCheckStatus.InProgress:
-			return CICheckGroup.Running;
-		case GitHubCheckStatus.Queued:
-			return CICheckGroup.Pending;
-		case GitHubCheckStatus.Completed:
-			return isFailedConclusion(check.conclusion) ? CICheckGroup.Failed : CICheckGroup.Successful;
-	}
+  switch (check.status) {
+    case GitHubCheckStatus.InProgress:
+      return CICheckGroup.Running;
+    case GitHubCheckStatus.Queued:
+      return CICheckGroup.Pending;
+    case GitHubCheckStatus.Completed:
+      return isFailedConclusion(check.conclusion) ? CICheckGroup.Failed : CICheckGroup.Successful;
+  }
 }
 
 export function getCheckStateLabel(check: IGitHubCICheck): string {
-	switch (getCheckGroup(check)) {
-		case CICheckGroup.Running:
-			return localize('ci.runningState', "running");
-		case CICheckGroup.Pending:
-			return localize('ci.pendingState', "pending");
-		case CICheckGroup.Failed:
-			return localize('ci.failedState', "failed");
-		case CICheckGroup.Successful:
-			return localize('ci.successfulState', "successful");
-	}
+  switch (getCheckGroup(check)) {
+    case CICheckGroup.Running:
+      return localize('ci.runningState', 'running');
+    case CICheckGroup.Pending:
+      return localize('ci.pendingState', 'pending');
+    case CICheckGroup.Failed:
+      return localize('ci.failedState', 'failed');
+    case CICheckGroup.Successful:
+      return localize('ci.successfulState', 'successful');
+  }
 }
 
 export function getFailedChecks(checks: readonly IGitHubCICheck[]): readonly IGitHubCICheck[] {
-	return checks.filter(check => getCheckGroup(check) === CICheckGroup.Failed);
+  return checks.filter(check => getCheckGroup(check) === CICheckGroup.Failed);
 }
 
 export function buildFixChecksPrompt(failedChecks: ReadonlyArray<{ check: IGitHubCICheck; annotations: string }>): string {
-	const sections = failedChecks.map(({ check, annotations }) => {
-		const parts = [
-			`Check: ${check.name}`,
-			`Status: ${getCheckStateLabel(check)}`,
-			`Conclusion: ${check.conclusion ?? 'unknown'}`,
-		];
+  const sections = failedChecks.map(({ check, annotations }) => {
+    const parts = [
+      `Check: ${check.name}`,
+      `Status: ${getCheckStateLabel(check)}`,
+      `Conclusion: ${check.conclusion ?? 'unknown'}`,
+    ];
 
-		if (check.detailsUrl) {
-			parts.push(`Details: ${check.detailsUrl}`);
-		}
+    if (check.detailsUrl) {
+      parts.push(`Details: ${check.detailsUrl}`);
+    }
 
-		parts.push('', 'Annotations and output:', annotations || 'No output available for this check run.');
-		return parts.join('\n');
-	});
+    parts.push('', 'Annotations and output:', annotations || 'No output available for this check run.');
+    return parts.join('\n');
+  });
 
-	return [
-		'Please fix the failed CI checks for this session immediately.',
-		'Use the failed check information below, including annotations and check output, to identify the root causes and make the necessary code changes.',
-		'Focus on resolving these CI failures. Avoid unrelated changes unless they are required to fix the checks.',
-		'',
-		'Failed CI checks:',
-		'',
-		sections.join('\n\n---\n\n'),
-	].join('\n');
+  return [
+    'Please fix the failed CI checks for this session immediately.',
+    'Use the failed check information below, including annotations and check output, to identify the root causes and make the necessary code changes.',
+    'Focus on resolving these CI failures. Avoid unrelated changes unless they are required to fix the checks.',
+    '',
+    'Failed CI checks:',
+    '',
+    sections.join('\n\n---\n\n'),
+  ].join('\n');
 }
 
 /**
@@ -99,108 +99,108 @@ export function buildFixChecksPrompt(failedChecks: ReadonlyArray<{ check: IGitHu
  */
 class ActiveSessionFailedCIChecksContextContribution extends Disposable implements IWorkbenchContribution {
 
-	static readonly ID = 'workbench.contrib.activeSessionFailedCIChecksContext';
+  static readonly ID = 'workbench.contrib.activeSessionFailedCIChecksContext';
 
-	constructor(
-		@IContextKeyService contextKeyService: IContextKeyService,
-		@ISessionsManagementService sessionManagementService: ISessionsManagementService,
-		@IGitHubService gitHubService: IGitHubService,
-	) {
-		super();
+  constructor(
+    @IContextKeyService contextKeyService: IContextKeyService,
+    @ISessionsManagementService sessionManagementService: ISessionsManagementService,
+    @IGitHubService gitHubService: IGitHubService,
+  ) {
+    super();
 
-		const ciModelObs = derived(this, reader => {
-			const session = sessionManagementService.activeSession.read(reader);
-			if (!session) {
-				return undefined;
-			}
-			const gitHubInfo = session.gitHubInfo.read(reader);
-			if (!gitHubInfo?.pullRequest) {
-				return undefined;
-			}
-			const prModel = gitHubService.getPullRequest(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequest.number);
-			const pr = prModel.pullRequest.read(reader);
-			if (!pr) {
-				return undefined;
-			}
-			return gitHubService.getPullRequestCI(gitHubInfo.owner, gitHubInfo.repo, pr.headRef);
-		});
+    const ciModelObs = derived(this, reader => {
+      const session = sessionManagementService.activeSession.read(reader);
+      if (!session) {
+        return undefined;
+      }
+      const gitHubInfo = session.gitHubInfo.read(reader);
+      if (!gitHubInfo?.pullRequest) {
+        return undefined;
+      }
+      const prModel = gitHubService.getPullRequest(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequest.number);
+      const pr = prModel.pullRequest.read(reader);
+      if (!pr) {
+        return undefined;
+      }
+      return gitHubService.getPullRequestCI(gitHubInfo.owner, gitHubInfo.repo, pr.headRef);
+    });
 
-		this._register(bindContextKey(hasActiveSessionFailedCIChecks, contextKeyService, reader => {
-			const ciModel = ciModelObs.read(reader);
-			if (!ciModel) {
-				return false;
-			}
-			const checks = ciModel.checks.read(reader);
-			return getFailedChecks(checks).length > 0;
-		}));
-	}
+    this._register(bindContextKey(hasActiveSessionFailedCIChecks, contextKeyService, reader => {
+      const ciModel = ciModelObs.read(reader);
+      if (!ciModel) {
+        return false;
+      }
+      const checks = ciModel.checks.read(reader);
+      return getFailedChecks(checks).length > 0;
+    }));
+  }
 }
 
 class FixCIChecksAction extends Action2 {
 
-	static readonly ID = 'sessions.action.fixCIChecks';
+  static readonly ID = 'sessions.action.fixCIChecks';
 
-	constructor() {
-		super({
-			id: FixCIChecksAction.ID,
-			title: localize2('fixCIChecks', 'Fix CI Checks'),
-			icon: Codicon.lightbulbAutofix,
-			category: CHAT_CATEGORY,
-			precondition: ContextKeyExpr.and(ChatContextKeys.enabled, hasActiveSessionFailedCIChecks),
-			menu: [{
-				id: MenuId.ChatEditingSessionApplySubmenu,
-				group: 'navigation',
-				order: 4,
-				when: ContextKeyExpr.and(IsSessionsWindowContext, hasActiveSessionFailedCIChecks),
-			}],
-		});
-	}
+  constructor() {
+    super({
+      id: FixCIChecksAction.ID,
+      title: localize2('fixCIChecks', 'Fix CI Checks'),
+      icon: Codicon.lightbulbAutofix,
+      category: CHAT_CATEGORY,
+      precondition: ContextKeyExpr.and(ChatContextKeys.enabled, hasActiveSessionFailedCIChecks),
+      menu: [{
+        id: MenuId.ChatEditingSessionApplySubmenu,
+        group: 'navigation',
+        order: 4,
+        when: ContextKeyExpr.and(IsSessionsWindowContext, hasActiveSessionFailedCIChecks),
+      }],
+    });
+  }
 
-	override async run(accessor: ServicesAccessor): Promise<void> {
-		const sessionManagementService = accessor.get(ISessionsManagementService);
-		const gitHubService = accessor.get(IGitHubService);
-		const chatWidgetService = accessor.get(IChatWidgetService);
-		const logService = accessor.get(ILogService);
+  override async run(accessor: ServicesAccessor): Promise<void> {
+    const sessionManagementService = accessor.get(ISessionsManagementService);
+    const gitHubService = accessor.get(IGitHubService);
+    const chatWidgetService = accessor.get(IChatWidgetService);
+    const logService = accessor.get(ILogService);
 
-		const activeSession = sessionManagementService.activeSession.get();
-		if (!activeSession) {
-			return;
-		}
+    const activeSession = sessionManagementService.activeSession.get();
+    if (!activeSession) {
+      return;
+    }
 
-		const gitHubInfo = activeSession.gitHubInfo.get();
-		if (!gitHubInfo?.pullRequest) {
-			return;
-		}
+    const gitHubInfo = activeSession.gitHubInfo.get();
+    if (!gitHubInfo?.pullRequest) {
+      return;
+    }
 
-		const prModel = gitHubService.getPullRequest(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequest.number);
-		const pr = prModel.pullRequest.get();
-		if (!pr) {
-			return;
-		}
+    const prModel = gitHubService.getPullRequest(gitHubInfo.owner, gitHubInfo.repo, gitHubInfo.pullRequest.number);
+    const pr = prModel.pullRequest.get();
+    if (!pr) {
+      return;
+    }
 
-		const ciModel = gitHubService.getPullRequestCI(gitHubInfo.owner, gitHubInfo.repo, pr.headRef);
-		const checks = ciModel.checks.get();
-		const failedChecks = getFailedChecks(checks);
-		if (failedChecks.length === 0) {
-			return;
-		}
+    const ciModel = gitHubService.getPullRequestCI(gitHubInfo.owner, gitHubInfo.repo, pr.headRef);
+    const checks = ciModel.checks.get();
+    const failedChecks = getFailedChecks(checks);
+    if (failedChecks.length === 0) {
+      return;
+    }
 
-		const failedCheckDetails = await Promise.all(failedChecks.map(async check => {
-			const annotations = await ciModel.getCheckRunAnnotations(check.id);
-			return { check, annotations };
-		}));
+    const failedCheckDetails = await Promise.all(failedChecks.map(async check => {
+      const annotations = await ciModel.getCheckRunAnnotations(check.id);
+      return { check, annotations };
+    }));
 
-		const prompt = buildFixChecksPrompt(failedCheckDetails);
-		const sessionResource = activeSession.resource;
-		const chatWidget = chatWidgetService.getWidgetBySessionResource(sessionResource)
+    const prompt = buildFixChecksPrompt(failedCheckDetails);
+    const sessionResource = activeSession.resource;
+    const chatWidget = chatWidgetService.getWidgetBySessionResource(sessionResource)
 			?? await chatWidgetService.openSession(sessionResource, ChatViewPaneTarget);
-		if (!chatWidget) {
-			logService.error('[FixCIChecks] Cannot fix CI checks: no chat widget found for session', sessionResource.toString());
-			return;
-		}
+    if (!chatWidget) {
+      logService.error('[FixCIChecks] Cannot fix CI checks: no chat widget found for session', sessionResource.toString());
+      return;
+    }
 
-		await chatWidget.acceptInput(prompt, { noCommandDetection: true });
-	}
+    await chatWidget.acceptInput(prompt, { noCommandDetection: true });
+  }
 }
 
 registerWorkbenchContribution2(ActiveSessionFailedCIChecksContextContribution.ID, ActiveSessionFailedCIChecksContextContribution, WorkbenchPhase.AfterRestored);

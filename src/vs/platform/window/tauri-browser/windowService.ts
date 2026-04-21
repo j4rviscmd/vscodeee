@@ -12,10 +12,10 @@ import { invoke, listen } from '../../tauri/common/tauriApi.js';
  * Information about a Tauri window, as returned by the Rust WindowManager.
  */
 export interface ITauriWindowInfo {
-	readonly id: number;
-	readonly label: string;
-	readonly workspace?: string;
-	readonly isFocused: boolean;
+  readonly id: number;
+  readonly label: string;
+  readonly workspace?: string;
+  readonly isFocused: boolean;
 }
 
 /**
@@ -27,34 +27,34 @@ export interface ITauriWindowInfo {
 export const ITauriWindowService = createDecorator<ITauriWindowService>('tauriWindowService');
 
 export interface ITauriWindowService {
-	readonly _serviceBrand: undefined;
+  readonly _serviceBrand: undefined;
 
-	/** Fires when a window gains focus. Payload is the window ID. */
-	readonly onDidFocusWindow: Event<number>;
+  /** Fires when a window gains focus. Payload is the window ID. */
+  readonly onDidFocusWindow: Event<number>;
 
-	/** Fires when a window loses focus. Payload is the window ID. */
-	readonly onDidBlurWindow: Event<number>;
+  /** Fires when a window loses focus. Payload is the window ID. */
+  readonly onDidBlurWindow: Event<number>;
 
-	/** Fires when a window is maximized. Payload is the window ID. */
-	readonly onDidMaximizeWindow: Event<number>;
+  /** Fires when a window is maximized. Payload is the window ID. */
+  readonly onDidMaximizeWindow: Event<number>;
 
-	/** Fires when a window is unmaximized. Payload is the window ID. */
-	readonly onDidUnmaximizeWindow: Event<number>;
+  /** Fires when a window is unmaximized. Payload is the window ID. */
+  readonly onDidUnmaximizeWindow: Event<number>;
 
-	/** Fires when a new window is opened. Payload is the window ID. */
-	readonly onDidOpenWindow: Event<number>;
+  /** Fires when a new window is opened. Payload is the window ID. */
+  readonly onDidOpenWindow: Event<number>;
 
-	/** Fires when a window is closed. Payload is the window ID. */
-	readonly onDidCloseWindow: Event<number>;
+  /** Fires when a window is closed. Payload is the window ID. */
+  readonly onDidCloseWindow: Event<number>;
 
-	/** Get all open windows from the Rust WindowManager. */
-	getWindows(): Promise<ITauriWindowInfo[]>;
+  /** Get all open windows from the Rust WindowManager. */
+  getWindows(): Promise<ITauriWindowInfo[]>;
 
-	/** Get the number of open windows. */
-	getWindowCount(): Promise<number>;
+  /** Get the number of open windows. */
+  getWindowCount(): Promise<number>;
 
-	/** Get the ID of the currently focused window, or undefined. */
-	getFocusedWindowId(): number | undefined;
+  /** Get the ID of the currently focused window, or undefined. */
+  getFocusedWindowId(): number | undefined;
 }
 
 /**
@@ -69,90 +69,90 @@ export interface ITauriWindowService {
  * automatically via the `Disposable` base class.
  */
 export class TauriWindowService extends Disposable implements ITauriWindowService {
-	declare readonly _serviceBrand: undefined;
+  declare readonly _serviceBrand: undefined;
 
-	private readonly _onDidFocusWindow = this._register(new Emitter<number>());
-	readonly onDidFocusWindow = this._onDidFocusWindow.event;
+  private readonly _onDidFocusWindow = this._register(new Emitter<number>());
+  readonly onDidFocusWindow = this._onDidFocusWindow.event;
 
-	private readonly _onDidBlurWindow = this._register(new Emitter<number>());
-	readonly onDidBlurWindow = this._onDidBlurWindow.event;
+  private readonly _onDidBlurWindow = this._register(new Emitter<number>());
+  readonly onDidBlurWindow = this._onDidBlurWindow.event;
 
-	private readonly _onDidMaximizeWindow = this._register(new Emitter<number>());
-	readonly onDidMaximizeWindow = this._onDidMaximizeWindow.event;
+  private readonly _onDidMaximizeWindow = this._register(new Emitter<number>());
+  readonly onDidMaximizeWindow = this._onDidMaximizeWindow.event;
 
-	private readonly _onDidUnmaximizeWindow = this._register(new Emitter<number>());
-	readonly onDidUnmaximizeWindow = this._onDidUnmaximizeWindow.event;
+  private readonly _onDidUnmaximizeWindow = this._register(new Emitter<number>());
+  readonly onDidUnmaximizeWindow = this._onDidUnmaximizeWindow.event;
 
-	private readonly _onDidOpenWindow = this._register(new Emitter<number>());
-	readonly onDidOpenWindow = this._onDidOpenWindow.event;
+  private readonly _onDidOpenWindow = this._register(new Emitter<number>());
+  readonly onDidOpenWindow = this._onDidOpenWindow.event;
 
-	private readonly _onDidCloseWindow = this._register(new Emitter<number>());
-	readonly onDidCloseWindow = this._onDidCloseWindow.event;
+  private readonly _onDidCloseWindow = this._register(new Emitter<number>());
+  readonly onDidCloseWindow = this._onDidCloseWindow.event;
 
-	/** Tracks the currently focused window ID, updated by focus/blur events. */
-	private _focusedWindowId: number | undefined;
+  /** Tracks the currently focused window ID, updated by focus/blur events. */
+  private _focusedWindowId: number | undefined;
 
-	constructor() {
-		super();
-		this._wireEvents();
-	}
+  constructor() {
+    super();
+    this._wireEvents();
+  }
 
-	/**
+  /**
 	 * Subscribe to Tauri window events and forward them to the corresponding emitters.
 	 *
 	 * Each `listen()` call returns an `unlisten` function that is registered as a
 	 * disposable so it is cleaned up when this service is disposed.
 	 */
-	private _wireEvents(): void {
-		listen<number>('vscodeee:window:focus', (event) => {
-			this._focusedWindowId = event.payload;
-			this._onDidFocusWindow.fire(event.payload);
-		}).then(unlisten => this._register({ dispose: unlisten }));
+  private _wireEvents(): void {
+    listen<number>('vscodeee:window:focus', (event) => {
+      this._focusedWindowId = event.payload;
+      this._onDidFocusWindow.fire(event.payload);
+    }).then(unlisten => this._register({ dispose: unlisten }));
 
-		listen<number>('vscodeee:window:blur', (event) => {
-			if (this._focusedWindowId === event.payload) {
-				this._focusedWindowId = undefined;
-			}
-			this._onDidBlurWindow.fire(event.payload);
-		}).then(unlisten => this._register({ dispose: unlisten }));
+    listen<number>('vscodeee:window:blur', (event) => {
+      if (this._focusedWindowId === event.payload) {
+        this._focusedWindowId = undefined;
+      }
+      this._onDidBlurWindow.fire(event.payload);
+    }).then(unlisten => this._register({ dispose: unlisten }));
 
-		listen<number>('vscodeee:window:maximize', (event) => {
-			this._onDidMaximizeWindow.fire(event.payload);
-		}).then(unlisten => this._register({ dispose: unlisten }));
+    listen<number>('vscodeee:window:maximize', (event) => {
+      this._onDidMaximizeWindow.fire(event.payload);
+    }).then(unlisten => this._register({ dispose: unlisten }));
 
-		listen<number>('vscodeee:window:unmaximize', (event) => {
-			this._onDidUnmaximizeWindow.fire(event.payload);
-		}).then(unlisten => this._register({ dispose: unlisten }));
+    listen<number>('vscodeee:window:unmaximize', (event) => {
+      this._onDidUnmaximizeWindow.fire(event.payload);
+    }).then(unlisten => this._register({ dispose: unlisten }));
 
-		listen<number>('vscodeee:window:opened', (event) => {
-			this._onDidOpenWindow.fire(event.payload);
-		}).then(unlisten => this._register({ dispose: unlisten }));
+    listen<number>('vscodeee:window:opened', (event) => {
+      this._onDidOpenWindow.fire(event.payload);
+    }).then(unlisten => this._register({ dispose: unlisten }));
 
-		listen<number>('vscodeee:window:close', (event) => {
-			this._onDidCloseWindow.fire(event.payload);
-		}).then(unlisten => this._register({ dispose: unlisten }));
-	}
+    listen<number>('vscodeee:window:close', (event) => {
+      this._onDidCloseWindow.fire(event.payload);
+    }).then(unlisten => this._register({ dispose: unlisten }));
+  }
 
-	/** Retrieve all open windows from the Rust `WindowManager` via `get_all_windows`. */
-	async getWindows(): Promise<ITauriWindowInfo[]> {
-		try {
-			return await invoke<ITauriWindowInfo[]>('get_all_windows');
-		} catch {
-			return [];
-		}
-	}
+  /** Retrieve all open windows from the Rust `WindowManager` via `get_all_windows`. */
+  async getWindows(): Promise<ITauriWindowInfo[]> {
+    try {
+      return await invoke<ITauriWindowInfo[]>('get_all_windows');
+    } catch {
+      return [];
+    }
+  }
 
-	/** Return the number of currently open windows via `get_window_count`. Falls back to 1 on error. */
-	async getWindowCount(): Promise<number> {
-		try {
-			return await invoke<number>('get_window_count');
-		} catch {
-			return 1;
-		}
-	}
+  /** Return the number of currently open windows via `get_window_count`. Falls back to 1 on error. */
+  async getWindowCount(): Promise<number> {
+    try {
+      return await invoke<number>('get_window_count');
+    } catch {
+      return 1;
+    }
+  }
 
-	/** Return the ID of the currently focused window, or `undefined` if no window has focus. */
-	getFocusedWindowId(): number | undefined {
-		return this._focusedWindowId;
-	}
+  /** Return the ID of the currently focused window, or `undefined` if no window has focus. */
+  getFocusedWindowId(): number | undefined {
+    return this._focusedWindowId;
+  }
 }

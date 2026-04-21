@@ -19,63 +19,63 @@ import { IPowerService, PowerSaveBlockerType, SystemIdleState, ThermalState } fr
  */
 export class TauriPowerService extends Disposable implements IPowerService {
 
-	declare readonly _serviceBrand: undefined;
+  declare readonly _serviceBrand: undefined;
 
-	readonly onDidSuspend: Event<void>;
-	readonly onDidResume: Event<void>;
-	readonly onDidChangeOnBatteryPower: Event<boolean>;
-	readonly onDidChangeThermalState: Event<ThermalState>;
-	readonly onDidChangeSpeedLimit: Event<number>;
-	readonly onWillShutdown: Event<void>;
-	readonly onDidLockScreen: Event<void>;
-	readonly onDidUnlockScreen: Event<void>;
+  readonly onDidSuspend: Event<void>;
+  readonly onDidResume: Event<void>;
+  readonly onDidChangeOnBatteryPower: Event<boolean>;
+  readonly onDidChangeThermalState: Event<ThermalState>;
+  readonly onDidChangeSpeedLimit: Event<number>;
+  readonly onWillShutdown: Event<void>;
+  readonly onDidLockScreen: Event<void>;
+  readonly onDidUnlockScreen: Event<void>;
 
-	private readonly nativeHostService: INativeHostService;
+  private readonly nativeHostService: INativeHostService;
 
-	constructor(
-		@INativeHostService nativeHostService: INativeHostService,
-	) {
-		super();
-		this.nativeHostService = nativeHostService;
+  constructor(
+    @INativeHostService nativeHostService: INativeHostService,
+  ) {
+    super();
+    this.nativeHostService = nativeHostService;
 
-		// Forward all events from INativeHostService
-		this.onDidSuspend = nativeHostService.onDidSuspendOS;
-		this.onDidResume = nativeHostService.onDidResumeOS as Event<void>;
-		this.onDidChangeOnBatteryPower = nativeHostService.onDidChangeOnBatteryPower;
-		this.onDidChangeThermalState = nativeHostService.onDidChangeThermalState;
-		this.onDidChangeSpeedLimit = nativeHostService.onDidChangeSpeedLimit;
-		this.onWillShutdown = nativeHostService.onWillShutdownOS;
-		this.onDidLockScreen = nativeHostService.onDidLockScreen;
-		this.onDidUnlockScreen = nativeHostService.onDidUnlockScreen;
-	}
+    // Forward all events from INativeHostService
+    this.onDidSuspend = nativeHostService.onDidSuspendOS;
+    this.onDidResume = nativeHostService.onDidResumeOS as Event<void>;
+    this.onDidChangeOnBatteryPower = nativeHostService.onDidChangeOnBatteryPower;
+    this.onDidChangeThermalState = nativeHostService.onDidChangeThermalState;
+    this.onDidChangeSpeedLimit = nativeHostService.onDidChangeSpeedLimit;
+    this.onWillShutdown = nativeHostService.onWillShutdownOS;
+    this.onDidLockScreen = nativeHostService.onDidLockScreen;
+    this.onDidUnlockScreen = nativeHostService.onDidUnlockScreen;
+  }
 
-	getSystemIdleState(idleThreshold: number): Promise<SystemIdleState> {
-		return this.nativeHostService.getSystemIdleState(idleThreshold);
-	}
+  getSystemIdleState(idleThreshold: number): Promise<SystemIdleState> {
+    return this.nativeHostService.getSystemIdleState(idleThreshold);
+  }
 
-	getSystemIdleTime(): Promise<number> {
-		return this.nativeHostService.getSystemIdleTime();
-	}
+  getSystemIdleTime(): Promise<number> {
+    return this.nativeHostService.getSystemIdleTime();
+  }
 
-	getCurrentThermalState(): Promise<ThermalState> {
-		return this.nativeHostService.getCurrentThermalState();
-	}
+  getCurrentThermalState(): Promise<ThermalState> {
+    return this.nativeHostService.getCurrentThermalState();
+  }
 
-	isOnBatteryPower(): Promise<boolean> {
-		return this.nativeHostService.isOnBatteryPower();
-	}
+  isOnBatteryPower(): Promise<boolean> {
+    return this.nativeHostService.isOnBatteryPower();
+  }
 
-	startPowerSaveBlocker(type: PowerSaveBlockerType): Promise<number> {
-		return this.nativeHostService.startPowerSaveBlocker(type);
-	}
+  startPowerSaveBlocker(type: PowerSaveBlockerType): Promise<number> {
+    return this.nativeHostService.startPowerSaveBlocker(type);
+  }
 
-	stopPowerSaveBlocker(id: number): Promise<boolean> {
-		return this.nativeHostService.stopPowerSaveBlocker(id);
-	}
+  stopPowerSaveBlocker(id: number): Promise<boolean> {
+    return this.nativeHostService.stopPowerSaveBlocker(id);
+  }
 
-	isPowerSaveBlockerStarted(id: number): Promise<boolean> {
-		return this.nativeHostService.isPowerSaveBlockerStarted(id);
-	}
+  isPowerSaveBlockerStarted(id: number): Promise<boolean> {
+    return this.nativeHostService.isPowerSaveBlockerStarted(id);
+  }
 }
 
 registerSingleton(IPowerService, TauriPowerService, InstantiationType.Delayed);

@@ -23,46 +23,46 @@ import { InstantiationType, registerSingleton } from '../../../../platform/insta
 
 export class TauriDiagnosticsService implements IDiagnosticsService {
 
-	declare readonly _serviceBrand: undefined;
+  declare readonly _serviceBrand: undefined;
 
-	async getPerformanceInfo(_mainProcessInfo: IMainProcessDiagnostics, _remoteInfo: (IRemoteDiagnosticInfo | IRemoteDiagnosticError)[]): Promise<PerformanceInfo> {
-		return {};
-	}
+  async getPerformanceInfo(_mainProcessInfo: IMainProcessDiagnostics, _remoteInfo: (IRemoteDiagnosticInfo | IRemoteDiagnosticError)[]): Promise<PerformanceInfo> {
+    return {};
+  }
 
-	async getSystemInfo(_mainProcessInfo: IMainProcessDiagnostics, _remoteInfo: (IRemoteDiagnosticInfo | IRemoteDiagnosticError)[]): Promise<SystemInfo> {
-		return {
-			processArgs: '',
-			gpuStatus: '',
-			screenReader: 'no',
-			remoteData: [],
-			os: 'Tauri',
-			memory: 'n/a',
-			vmHint: '',
-		};
-	}
+  async getSystemInfo(_mainProcessInfo: IMainProcessDiagnostics, _remoteInfo: (IRemoteDiagnosticInfo | IRemoteDiagnosticError)[]): Promise<SystemInfo> {
+    return {
+      processArgs: '',
+      gpuStatus: '',
+      screenReader: 'no',
+      remoteData: [],
+      os: 'Tauri',
+      memory: 'n/a',
+      vmHint: '',
+    };
+  }
 
-	async getDiagnostics(_mainProcessInfo: IMainProcessDiagnostics, _remoteInfo: (IRemoteDiagnosticInfo | IRemoteDiagnosticError)[]): Promise<string> {
-		return 'Tauri VS Codeee — diagnostics not available (Shared Process removed).';
-	}
+  async getDiagnostics(_mainProcessInfo: IMainProcessDiagnostics, _remoteInfo: (IRemoteDiagnosticInfo | IRemoteDiagnosticError)[]): Promise<string> {
+    return 'Tauri VS Codeee — diagnostics not available (Shared Process removed).';
+  }
 
-	async getWorkspaceFileExtensions(_workspace: IWorkspace): Promise<{ extensions: string[] }> {
-		return { extensions: [] };
-	}
+  async getWorkspaceFileExtensions(_workspace: IWorkspace): Promise<{ extensions: string[] }> {
+    return { extensions: [] };
+  }
 
-	async reportWorkspaceStats(_workspace: IWorkspaceInformation): Promise<void> {
-		// Shared Process diagnostics are not available in Tauri.
-		// Show toast to inform developers this is not implemented.
-		try {
-			const { invoke } = await import('../../../../platform/tauri/common/tauriApi.js');
-			await invoke('show_toast', {
-				title: 'Diagnostics Unavailable',
-				body: 'reportWorkspaceStats is not available: Shared Process has been removed in the Tauri migration.',
-				kind: 'error',
-			});
-		} catch {
-			// Toast not available — silent fallback
-		}
-	}
+  async reportWorkspaceStats(_workspace: IWorkspaceInformation): Promise<void> {
+    // Shared Process diagnostics are not available in Tauri.
+    // Show toast to inform developers this is not implemented.
+    try {
+      const { invoke } = await import('../../../../platform/tauri/common/tauriApi.js');
+      await invoke('show_toast', {
+        title: 'Diagnostics Unavailable',
+        body: 'reportWorkspaceStats is not available: Shared Process has been removed in the Tauri migration.',
+        kind: 'error',
+      });
+    } catch {
+      // Toast not available — silent fallback
+    }
+  }
 }
 
 registerSingleton(IDiagnosticsService, TauriDiagnosticsService, InstantiationType.Delayed);
