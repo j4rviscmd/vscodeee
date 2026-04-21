@@ -472,8 +472,9 @@ async fn spawn_and_handshake(
 /// Resolve the VS Code repository root (where `out/` and `product.json` live).
 ///
 /// Searches up to 5 parent directories from the Tauri resource directory,
-/// then falls back to the current working directory. Returns the first
-/// directory that contains `out/bootstrap-fork.js`.
+/// then falls back to the current working directory, and finally checks
+/// Tauri's `_up_` resource mapping for production builds.
+/// Returns the first directory that contains `out/bootstrap-fork.js`.
 fn resolve_app_root(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     use tauri::Manager;
 
@@ -496,9 +497,18 @@ fn resolve_app_root(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     }
 
     // Fallback: try current working directory
-    let cwd = std::env::current_dir().map_err(|e| format!("No CWD: {e}"))?;
-    if cwd.join("out/bootstrap-fork.js").exists() {
-        return Ok(cwd);
+    if let Ok(cwd) = std::env::current_dir() {
+        if cwd.join("out/bootstrap-fork.js").exists() {
+            return Ok(cwd);
+        }
+    }
+
+    // Production fallback: Tauri maps `../out` (from bundle.resources) to
+    // `_up_/out` inside the resource directory. The "app root" is then
+    // `{resource_dir}/_up_/` since `out/bootstrap-fork.js` lives under it.
+    let up_dir = resource_dir.join("_up_");
+    if up_dir.join("out/bootstrap-fork.js").exists() {
+        return Ok(up_dir);
     }
 
     Err(format!(

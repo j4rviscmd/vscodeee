@@ -110,11 +110,14 @@ pub fn init_protocol_state(app: &tauri::App) -> Arc<ProtocolState> {
 /// 1. Parses and canonicalizes the URI.
 /// 2. Validates the path against registered roots + extension whitelist.
 /// 3. Reads the file and returns it with appropriate security headers.
+/// 4. If the file is not found on disk, falls back to Tauri's embedded
+///    asset resolver (for production builds where `frontendDist` assets
+///    are bundled into the binary).
 pub fn handle_vscode_file_protocol<R: tauri::Runtime>(
     state: Arc<ProtocolState>,
 ) -> impl Fn(UriSchemeContext<'_, R>, Request<Vec<u8>>) -> Response<Vec<u8>> + Send + Sync + 'static
 {
-    move |_ctx: UriSchemeContext<'_, R>, request: Request<Vec<u8>>| {
+    move |ctx: UriSchemeContext<'_, R>, request: Request<Vec<u8>>| {
         let raw_uri = request.uri().to_string();
         let request_origin = request
             .headers()
@@ -124,6 +127,34 @@ pub fn handle_vscode_file_protocol<R: tauri::Runtime>(
 
         match serve_file(&state, &raw_uri, request_origin.as_deref()) {
             Ok(response) => response,
+            Err(ProtocolError::NotFound(_)) => {
+                // File not found on disk — try embedded asset fallback.
+                // In production builds, frontendDist assets are embedded in the
+                // binary and not available on the filesystem.
+                log::debug!(
+                    target: "vscodeee::protocol",
+                    "File not found on disk, trying embedded asset: {raw_uri}"
+                );
+                match serve_embedded_asset(
+                    ctx.app_handle(),
+                    &raw_uri,
+                    request_origin.as_deref(),
+                    state.is_dev,
+                ) {
+                    Ok(response) => response,
+                    Err(fallback_err) => {
+                        log::warn!(
+                            target: "vscodeee::protocol",
+                            "Embedded asset fallback also failed: {fallback_err}"
+                        );
+                        error_response(
+                            fallback_err.status_code(),
+                            fallback_err.reason().as_bytes(),
+                            request_origin.as_deref(),
+                        )
+                    }
+                }
+            }
             Err(e) => {
                 log::error!(target: "vscodeee::protocol", "{e}");
                 error_response(
@@ -177,6 +208,82 @@ fn serve_file(
 
     builder
         .body(content)
+        .map_err(|e| ProtocolError::Internal(format!("failed to build response: {e}")))
+}
+
+/// Extract the Tauri embedded asset key from a decoded URI path.
+///
+/// The `frontendDist` config is `"../out"`, so assets are keyed by their
+/// relative path within the `out/` directory. For example:
+///   `/Users/foo/work/vscodeee/out/vs/code/foo.js` → `"vs/code/foo.js"`
+///   `/Applications/VS Codeee.app/Contents/Resources/out/vs/base/worker/...` → `"vs/base/worker/..."`
+///
+/// Returns `None` if the path does not contain `/out/`.
+fn extract_asset_key(decoded_path: &str) -> Option<&str> {
+    // Find the last occurrence of "/out/" to handle paths like
+    // `/foo/checkout/out/vs/...` or `/app/Resources/out/vs/...`
+    if let Some(idx) = decoded_path.rfind("/out/") {
+        let key = &decoded_path[idx + 5..]; // skip "/out/"
+        if !key.is_empty() {
+            return Some(key);
+        }
+    }
+    None
+}
+
+/// Serve a file from Tauri's embedded asset resolver.
+///
+/// This is the fallback path for production builds where `frontendDist` assets
+/// are compiled into the binary and not present on the filesystem. The function:
+///
+/// 1. Parses the raw URI without canonicalization (the file doesn't exist on disk).
+/// 2. Extracts the asset key (relative path after `/out/`).
+/// 3. Resolves the asset via `AppHandle::asset_resolver().get()`.
+/// 4. Returns the response with correct MIME type and security headers.
+fn serve_embedded_asset<R: tauri::Runtime>(
+    app_handle: &tauri::AppHandle<R>,
+    raw_uri: &str,
+    request_origin: Option<&str>,
+    is_dev: bool,
+) -> Result<Response<Vec<u8>>, ProtocolError> {
+    // 1. Parse URI without filesystem canonicalization
+    let decoded_path = uri::parse_vscode_file_uri_raw(raw_uri)?;
+
+    // 2. Extract asset key: relative path after "/out/"
+    let asset_key = extract_asset_key(&decoded_path).ok_or_else(|| {
+        ProtocolError::NotFound(format!(
+            "no embedded asset path (missing /out/ segment): {decoded_path}"
+        ))
+    })?;
+
+    // 3. Resolve from Tauri's embedded assets
+    let asset = app_handle
+        .asset_resolver()
+        .get(asset_key.to_string())
+        .ok_or_else(|| ProtocolError::NotFound(format!("embedded asset not found: {asset_key}")))?;
+
+    log::info!(
+        target: "vscodeee::protocol",
+        "Serving embedded asset: {asset_key} (mime: {})",
+        asset.mime_type()
+    );
+
+    // 4. Build response with security headers
+    // Use a synthetic path for header computation so COOP/COEP etc. are applied correctly
+    let path = std::path::PathBuf::from(asset_key);
+    let mime_type = mime::mime_from_path(&path);
+    let security_headers = headers::headers_for_path(&path, is_dev, request_origin);
+
+    let mut builder = Response::builder()
+        .status(200)
+        .header("Content-Type", mime_type);
+
+    for (key, value) in &security_headers {
+        builder = builder.header(key.as_str(), value.as_str());
+    }
+
+    builder
+        .body(asset.bytes().to_vec())
         .map_err(|e| ProtocolError::Internal(format!("failed to build response: {e}")))
 }
 
@@ -336,5 +443,55 @@ mod tests {
             .to_str()
             .unwrap();
         assert_eq!(cors, "http://127.0.0.1:1430");
+    }
+
+    // ── extract_asset_key tests ──
+
+    #[test]
+    fn extract_asset_key_from_typical_path() {
+        let path = "/Users/foo/work/vscodeee/out/vs/code/foo.js";
+        assert_eq!(extract_asset_key(path), Some("vs/code/foo.js"));
+    }
+
+    #[test]
+    fn extract_asset_key_from_production_path() {
+        let path = "/Applications/VS Codeee.app/Contents/Resources/out/vs/base/common/lifecycle.js";
+        assert_eq!(extract_asset_key(path), Some("vs/base/common/lifecycle.js"));
+    }
+
+    #[test]
+    fn extract_asset_key_bootstrap_fork() {
+        let path = "/some/path/out/bootstrap-fork.js";
+        assert_eq!(extract_asset_key(path), Some("bootstrap-fork.js"));
+    }
+
+    #[test]
+    fn extract_asset_key_uses_last_out_segment() {
+        // If path contains multiple /out/ segments, use the last one
+        let path = "/checkout/out/build/out/vs/code/foo.js";
+        assert_eq!(extract_asset_key(path), Some("vs/code/foo.js"));
+    }
+
+    #[test]
+    fn extract_asset_key_no_out_segment() {
+        let path = "/Users/foo/work/vscodeee/src/vs/code/foo.js";
+        assert_eq!(extract_asset_key(path), None);
+    }
+
+    #[test]
+    fn extract_asset_key_out_at_end() {
+        // "/out/" at end with nothing after it
+        let path = "/some/path/out/";
+        assert_eq!(extract_asset_key(path), None);
+    }
+
+    #[test]
+    fn extract_asset_key_html_with_query() {
+        // Query should already be stripped by URI parser, but test the key extraction
+        let path = "/some/path/out/vs/code/tauri-browser/workbench/workbench-tauri.html";
+        assert_eq!(
+            extract_asset_key(path),
+            Some("vs/code/tauri-browser/workbench/workbench-tauri.html")
+        );
     }
 }
