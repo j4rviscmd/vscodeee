@@ -2326,7 +2326,6 @@ export default tseslint.config(
 		},
 		rules: {
 			'@stylistic/ts/indent': ['warn', 2, { 'SwitchCase': 1 }],
-			'@stylistic/ts/no-tabs': 'warn',
 			'@stylistic/ts/no-trailing-spaces': 'warn',
 			'@stylistic/ts/no-multiple-empty-lines': ['warn', { 'max': 1 }],
 			'@stylistic/ts/type-annotation-spacing': ['warn', {}],
