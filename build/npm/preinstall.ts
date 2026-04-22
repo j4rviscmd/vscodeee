@@ -156,12 +156,19 @@ function installHeaders() {
 			const headerPath = path.join(nodeGypCache, header.target, 'include', 'node');
 			if (fs.existsSync(headerPath)) {
 				console.log('Applying v8-source-location.patch to', headerPath);
-				try {
-					child_process.execFileSync('patch', ['-p0', '-i', patchFile], {
-						cwd: headerPath
-					});
-				} catch (error) {
-					throw new Error(`Error applying v8-source-location.patch: ${(error as Error).message}`);
+				// Use -N (--forward) to skip already-applied patches gracefully.
+				// Node.js >= 22.x ships V8 headers that already include this fix,
+				// so the patch may have nothing to do.
+				const result = child_process.spawnSync('patch', ['-p0', '-N', '-i', patchFile], {
+					cwd: headerPath
+				});
+				if (result.status !== 0) {
+					const output = (result.stdout?.toString() ?? '') + (result.stderr?.toString() ?? '');
+					if (/already applied|Reversed.*patch detected|previously applied/i.test(output)) {
+						console.log('Patch already applied, skipping.');
+					} else {
+						throw new Error(`Error applying v8-source-location.patch: ${output}`);
+					}
 				}
 			}
 		}
