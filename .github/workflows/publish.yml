@@ -17,7 +17,7 @@ on:
     branches: [main]
 
 concurrency:
-  group: release-${{ github.sha }}
+  group: release
   cancel-in-progress: false
 
 jobs:
@@ -176,7 +176,10 @@ jobs:
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
           ELECTRON_SKIP_BINARY_DOWNLOAD: 1
-        run: npm ci --ignore-scripts
+        run: |
+          # Create placeholder to prevent postinstall symlink error
+          touch .github/copilot-instructions.md
+          npm ci
 
       - name: Download Node.js sidecar binary
         shell: bash
@@ -284,7 +287,7 @@ jobs:
               apt-get install -y --no-install-recommends \
                 libxkbfile-dev libkrb5-dev libsecret-1-dev python3 make g++ && \
               rm -rf node_modules && \
-              npm install --production
+              npm install --omit=dev
             "
 
           # Copy cross-compiled modules into the package
