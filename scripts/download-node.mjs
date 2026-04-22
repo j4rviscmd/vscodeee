@@ -213,11 +213,23 @@ async function main() {
 	const destPath = path.join(BINARIES_DIR, `node-${targetTriple}${ext}`);
 
 	// Check if already downloaded
+	// A valid Node.js binary is at least 10 MB. Anything smaller is likely a
+	// stub / placeholder (e.g. created by `touch` in CI) and should be replaced.
+	const MIN_VALID_SIZE = 10 * 1024 * 1024; // 10 MB
+
 	if (fs.existsSync(destPath)) {
 		const stat = fs.statSync(destPath);
-		console.log(`[download-node] Node.js binary already exists: ${destPath} (${(stat.size / 1024 / 1024).toFixed(1)} MB)`);
-		console.log(`[download-node] Delete it to re-download.`);
-		return;
+		const sizeMB = stat.size / 1024 / 1024;
+
+		if (stat.size >= MIN_VALID_SIZE) {
+			console.log(`[download-node] Node.js binary already exists: ${destPath} (${sizeMB.toFixed(1)} MB)`);
+			console.log(`[download-node] Delete it to re-download.`);
+			return;
+		}
+
+		// File exists but is too small – remove and re-download
+		console.log(`[download-node] Existing binary is too small (${sizeMB.toFixed(1)} MB), re-downloading...`);
+		fs.unlinkSync(destPath);
 	}
 
 	// Ensure binaries directory exists
