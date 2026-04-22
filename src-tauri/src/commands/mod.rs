@@ -116,17 +116,33 @@ pub async fn get_window_configuration(
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
 
-    // In dev mode, frontendDist is "../out" relative to src-tauri/.
-    // This matches tauri.conf.json and is where transpiled output lives.
+    // Resolve frontendDist: the absolute path to the `out/` directory where
+    // transpiled VS Code modules live. Module IDs like
+    // `vs/../../node_modules/vscode-oniguruma/release/onig.wasm` are resolved
+    // relative to this path.
+    //
+    // Development: CWD is src-tauri/, so `../out` resolves to the repo's out/ dir.
+    // Production: CWD is typically `/` (macOS Finder launch), so `../out` doesn't
+    //   exist. Fall back to `resource_dir/out` — a virtual path. The actual `out/`
+    //   assets are embedded in the binary via frontendDist, but the TypeScript side
+    //   needs a path containing `/out/` for vscode-file:// URI construction.
+    //   Paths like `resource_dir/out/vs/../../node_modules/...` are normalized by
+    //   the protocol handler's `normalize_dot_segments()` before canonicalization.
     let frontend_dist = std::env::current_dir()
         .ok()
-        .map(|cwd| {
+        .and_then(|cwd| {
             let dist = cwd.join("../out");
-            dist.canonicalize()
-                .unwrap_or(dist)
-                .to_string_lossy()
-                .to_string()
+            dist.canonicalize().ok()
         })
+        .or_else(|| {
+            // Production fallback: use resource_dir/out as a virtual path.
+            app_handle
+                .path()
+                .resource_dir()
+                .ok()
+                .map(|rd| rd.join("out"))
+        })
+        .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
 
     // Application data directory for user settings/state.

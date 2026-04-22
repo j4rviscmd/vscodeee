@@ -9,7 +9,7 @@
 //! into canonicalized [`PathBuf`]s. Handles percent-decoding and path normalization
 //! to prevent traversal attacks (e.g. `..` components).
 
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 
 use super::error::ProtocolError;
 
@@ -59,12 +59,30 @@ pub fn parse_vscode_file_uri(raw_uri: &str) -> Result<PathBuf, ProtocolError> {
         )));
     }
 
-    // Canonicalize to resolve symlinks and `..` components.
-    let canonical = std::fs::canonicalize(&decoded).map_err(|e| match e.kind() {
+    // Normalize `..` and `.` segments logically before calling canonicalize().
+    //
+    // In production builds, `frontendDist` assets (e.g. `out/`) are embedded in
+    // the binary and don't exist on disk. However, module paths like
+    // `<resource_dir>/out/vs/../../node_modules/vscode-oniguruma/release/onig.wasm`
+    // traverse through these non-existent intermediate directories via `..`.
+    // `std::fs::canonicalize()` fails because it requires every path component
+    // to exist. By resolving `..` first, the path becomes
+    // `<resource_dir>/node_modules/vscode-oniguruma/release/onig.wasm` which
+    // does exist on disk (bundled via `bundle.resources`).
+    //
+    // Security: canonicalize() is still called on the normalized path to resolve
+    // symlinks and verify the final path exists, and roots validation follows.
+    let normalized = normalize_dot_segments(&decoded);
+
+    // Canonicalize to resolve symlinks and verify the path exists.
+    let canonical = std::fs::canonicalize(&normalized).map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => {
-            ProtocolError::NotFound(format!("path does not exist: {decoded}"))
+            ProtocolError::NotFound(format!("path does not exist: {}", normalized.display()))
         }
-        _ => ProtocolError::Internal(format!("canonicalize failed for {decoded}: {e}")),
+        _ => ProtocolError::Internal(format!(
+            "canonicalize failed for {}: {e}",
+            normalized.display()
+        )),
     })?;
 
     Ok(canonical)
@@ -99,6 +117,36 @@ pub fn parse_vscode_file_uri_raw(raw_uri: &str) -> Result<String, ProtocolError>
     }
 
     Ok(decoded)
+}
+
+/// Normalize `.` and `..` path segments without touching the filesystem.
+///
+/// Unlike [`std::fs::canonicalize`], this does NOT require intermediate
+/// directories to exist. It purely resolves `.` and `..` based on the
+/// string representation, similar to POSIX `realpath -m` (logical mode).
+///
+/// This is critical for production builds where `frontendDist` (e.g. `out/`)
+/// is embedded in the binary and doesn't exist on disk, but paths traverse
+/// through it via `..` to reach bundled resources like `node_modules/`.
+fn normalize_dot_segments(path: &str) -> PathBuf {
+    let mut result = PathBuf::new();
+    for component in Path::new(path).components() {
+        match component {
+            Component::ParentDir => {
+                // Pop the last component (go up one directory).
+                // If we're at root, this is a no-op (can't go above root).
+                result.pop();
+            }
+            Component::CurDir => {
+                // Skip `.` — it refers to the current directory.
+            }
+            other => {
+                // RootDir, Prefix, or Normal — push as-is.
+                result.push(other);
+            }
+        }
+    }
+    result
 }
 
 /// Simple percent-decoding for URI path components.
@@ -270,5 +318,49 @@ mod tests {
         let result = parse_vscode_file_uri_raw("vscode-file://vscode-apprelative/path");
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().status_code(), 400);
+    }
+
+    // ── normalize_dot_segments tests ──
+
+    #[test]
+    fn normalize_resolves_parent_dir() {
+        let result = normalize_dot_segments("/a/b/c/../../d");
+        assert_eq!(result, PathBuf::from("/a/d"));
+    }
+
+    #[test]
+    fn normalize_resolves_current_dir() {
+        let result = normalize_dot_segments("/a/./b/./c");
+        assert_eq!(result, PathBuf::from("/a/b/c"));
+    }
+
+    #[test]
+    fn normalize_node_modules_traversal() {
+        // Simulates: <resource_dir>/out/vs/../../node_modules/vscode-oniguruma/release/onig.wasm
+        let result = normalize_dot_segments(
+            "/Applications/VS Codeee.app/Contents/Resources/out/vs/../../node_modules/vscode-oniguruma/release/onig.wasm"
+        );
+        assert_eq!(
+            result,
+            PathBuf::from("/Applications/VS Codeee.app/Contents/Resources/node_modules/vscode-oniguruma/release/onig.wasm")
+        );
+    }
+
+    #[test]
+    fn normalize_does_not_go_above_root() {
+        let result = normalize_dot_segments("/a/../../b");
+        assert_eq!(result, PathBuf::from("/b"));
+    }
+
+    #[test]
+    fn normalize_preserves_root() {
+        let result = normalize_dot_segments("/");
+        assert_eq!(result, PathBuf::from("/"));
+    }
+
+    #[test]
+    fn normalize_simple_path_unchanged() {
+        let result = normalize_dot_segments("/a/b/c");
+        assert_eq!(result, PathBuf::from("/a/b/c"));
     }
 }
