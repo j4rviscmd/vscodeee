@@ -31,7 +31,7 @@ const REPO_ROOT = path.resolve(import.meta.dirname, '..');
 const SOURCE_DIR = path.join(REPO_ROOT, 'node_modules');
 const TARGET_DIR = path.join(REPO_ROOT, 'src-tauri', 'node_modules');
 
-// ── Manifest of required node_modules ──────────────────────────────────
+// Manifest of required node_modules
 //
 // Each entry is either:
 //   - A specific file:      "pkg/path/to/file.ext"
@@ -41,16 +41,16 @@ const TARGET_DIR = path.join(REPO_ROOT, 'src-tauri', 'node_modules');
 // resolveAmdNodeModulePath() in src/vs/**/*.ts.
 
 const REQUIRED_MODULES = [
-	// ── TextMate syntax highlighting (critical) ──
+	// TextMate syntax highlighting (critical)
 	'vscode-oniguruma/release/main.js',
 	'vscode-oniguruma/release/onig.wasm',
 	'vscode-textmate/release/main.js',
 
-	// ── Text encoding ──
+	// Text encoding
 	'@vscode/iconv-lite-umd/lib/iconv-lite-umd.js',
 	'jschardet/dist/jschardet.min.js',
 
-	// ── Terminal (xterm) ──
+	// Terminal (xterm)
 	'@xterm/xterm/lib/xterm.js',
 	'@xterm/addon-clipboard/lib/addon-clipboard.js',
 	'@xterm/addon-image/lib/addon-image.js',
@@ -61,26 +61,24 @@ const REQUIRED_MODULES = [
 	'@xterm/addon-unicode11/lib/addon-unicode11.js',
 	'@xterm/addon-webgl/lib/addon-webgl.js',
 
-	// ── Math rendering (Markdown preview) ──
+	// Math rendering (Markdown preview)
 	'katex/dist/katex.min.js',
 	'katex/dist/katex.min.css',
 
-	// ── Telemetry ──
+	// Telemetry
 	'@microsoft/1ds-core-js/bundle/ms.core.min.js',
 	'@microsoft/1ds-post-js/bundle/ms.post.min.js',
 
-	// ── Experimentation service ──
+	// Experimentation service
 	'tas-client/dist/tas-client.min.js',
 
-	// ── Tree-sitter (syntax parsing) ──
+	// Tree-sitter (syntax parsing)
 	'@vscode/tree-sitter-wasm/wasm/',
 
-	// ── Language detection ──
+	// Language detection
 	'@vscode/vscode-languagedetection/dist/',
 	'@vscode/vscode-languagedetection/model/',
 ];
-
-// ────────────────────────────────────────────────────────────────────────
 
 const args = process.argv.slice(2);
 const clean = args.includes('--clean');
