@@ -239,7 +239,7 @@ jobs:
 
       - name: Set up QEMU (Linux ARM cross-compilation)
         if: matrix.os == 'linux' && matrix.arch != 'x64'
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Install dependencies
         env:
