@@ -150,15 +150,19 @@ function installHeaders() {
 		const homedir = os.homedir();
 		const cachePath = process.env.XDG_CACHE_HOME || path.join(homedir, '.cache');
 		const nodeGypCache = path.join(cachePath, 'node-gyp');
-		const localHeaderPath = path.join(nodeGypCache, local!.target, 'include', 'node');
-		if (fs.existsSync(localHeaderPath)) {
-			console.log('Applying v8-source-location.patch to', localHeaderPath);
-			try {
-				child_process.execFileSync('patch', ['-p0', '-i', path.join(import.meta.dirname, 'gyp', 'custom-headers', 'v8-source-location.patch')], {
-					cwd: localHeaderPath
-				});
-			} catch (error) {
-				throw new Error(`Error applying v8-source-location.patch: ${(error as Error).message}`);
+		const patchFile = path.join(import.meta.dirname, 'gyp', 'custom-headers', 'v8-source-location.patch');
+		const targets = [local, remote].filter((h): h is { disturl: string; target: string } => h !== undefined);
+		for (const header of targets) {
+			const headerPath = path.join(nodeGypCache, header.target, 'include', 'node');
+			if (fs.existsSync(headerPath)) {
+				console.log('Applying v8-source-location.patch to', headerPath);
+				try {
+					child_process.execFileSync('patch', ['-p0', '-i', patchFile], {
+						cwd: headerPath
+					});
+				} catch (error) {
+					throw new Error(`Error applying v8-source-location.patch: ${(error as Error).message}`);
+				}
 			}
 		}
 	}
