@@ -24,6 +24,10 @@
 > xattr -dr com.apple.quarantine "/Applications/VS Codeee.app"
 > ```
 
+> [!NOTE]
+> This project is developed and tested primarily on **macOS**. Windows and Linux builds are provided but have not been verified on those platforms.
+> If you encounter any issues, please [open an issue](https://github.com/j4rviscmd/vscodeee/issues/new).
+
 ## Purpose
 
 Maintain the current functionality of VSCode while achieving the following:

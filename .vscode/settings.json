@@ -219,5 +219,8 @@
 		"msal",
 		"titlebarpart",
 		"vscodeee"
-	]
+	],
+	"markdownlint.config": {
+		"MD028": false
+	}
 }
