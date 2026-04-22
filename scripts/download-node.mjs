@@ -227,7 +227,7 @@ async function main() {
 			return;
 		}
 
-		// File exists but is too small – remove and re-download
+		// File exists but is too small - remove and re-download
 		console.log(`[download-node] Existing binary is too small (${sizeMB.toFixed(1)} MB), re-downloading...`);
 		fs.unlinkSync(destPath);
 	}
