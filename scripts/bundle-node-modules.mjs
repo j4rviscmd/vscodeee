@@ -157,7 +157,9 @@ function main() {
 	// Compute total size
 	let totalSize = 0;
 	function sumSize(dir) {
-		if (!fs.existsSync(dir)) return;
+		if (!fs.existsSync(dir)) {
+			return;
+		}
 		for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
 			const fullPath = path.join(dir, entry.name);
 			if (entry.isDirectory()) {
