@@ -26,7 +26,7 @@
 
 > [!NOTE]
 > This project is developed and tested primarily on **macOS**. Windows and Linux builds are provided but have not been verified on those platforms.
-> If you encounter any issues, please [open an issue](https://github.com/j4rviscmd/vscodeee/issues/new).
+> If you encounter any issues, please [open an issue](https://github.com/j4rviscmd/vscodeee/issues/new?template=bug_report.md).
 
 ## Purpose
 
