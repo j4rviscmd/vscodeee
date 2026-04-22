@@ -251,6 +251,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libxkbfile-dev pkg-config libkrb5-dev libsecret-1-dev
 
+      # The gulp compilation step requires ~8GB memory (--max-old-space-size=8192)
+      # but GitHub-hosted ubuntu runners only have 7GB RAM. Add swap to prevent OOM kills.
+      - name: Setup swap space (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo swapoff -a
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          echo "Swap enabled: $(swapon --show)"
+
       - name: Set up QEMU (Linux ARM cross-compilation)
         if: matrix.os == 'linux' && matrix.arch != 'x64'
         uses: docker/setup-qemu-action@v4
