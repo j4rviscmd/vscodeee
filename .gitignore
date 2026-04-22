@@ -49,6 +49,7 @@ CLAUDE.md
 /src-tauri/target/
 /src-tauri/gen/
 /src-tauri/css-modules.json
+/src-tauri/binaries/
 
 # Worktrees
 .worktrees/

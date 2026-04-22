@@ -25,6 +25,56 @@ use tokio::process::{Child, Command};
 
 use super::ExtHostError;
 
+/// Resolve the Node.js binary path for the Extension Host process.
+///
+/// Resolution order:
+/// 1. `VSCODEEE_NODE_PATH` environment variable (explicit override)
+/// 2. Bundled sidecar binary next to the current executable (production builds)
+/// 3. System `node` from PATH (development)
+///
+/// In production, `tauri build` bundles Node.js via `externalBin` into the same
+/// directory as the main executable. Tauri strips the target-triple suffix during
+/// bundling, so the binary is named simply `node` (or `node.exe` on Windows).
+fn resolve_node_binary() -> String {
+    // 1. Explicit override via environment variable
+    if let Ok(path) = std::env::var("VSCODEEE_NODE_PATH") {
+        log::info!(
+            target: "vscodeee::exthost::sidecar",
+            "Using Node.js from VSCODEEE_NODE_PATH: {path}"
+        );
+        return path;
+    }
+
+    // 2. Bundled sidecar binary (production Tauri build)
+    // Tauri's externalBin strips the target-triple suffix when bundling,
+    // so `binaries/node-aarch64-apple-darwin` becomes `Contents/MacOS/node`.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            let sidecar_name = if cfg!(target_os = "windows") {
+                "node.exe"
+            } else {
+                "node"
+            };
+            let sidecar_path = exe_dir.join(sidecar_name);
+            if sidecar_path.exists() {
+                log::info!(
+                    target: "vscodeee::exthost::sidecar",
+                    "Using bundled Node.js sidecar: {}",
+                    sidecar_path.display()
+                );
+                return sidecar_path.to_string_lossy().to_string();
+            }
+        }
+    }
+
+    // 3. System node (development fallback)
+    log::info!(
+        target: "vscodeee::exthost::sidecar",
+        "Using system Node.js from PATH"
+    );
+    "node".to_string()
+}
+
 /// Build an enriched PATH for the Extension Host child process.
 ///
 /// macOS app bundles inherit a minimal PATH (`/usr/bin:/bin:/usr/sbin:/sbin`)
@@ -305,13 +355,9 @@ async fn spawn_and_connect(
     listener: &UnixListener,
     augmented: Option<(std::path::PathBuf, String)>,
 ) -> Result<(ExtHostSidecar, tokio::net::UnixStream), ExtHostError> {
-    // Mirrors extensionHostConnection.ts:272-288
-    // Allow overriding the Node.js binary via VSCODEEE_NODE_PATH env var.
-    // This is useful when the system default `node` version has issues
-    // (e.g., Node.js v22 has a TCP routing bug on macOS causing EHOSTUNREACH
-    // for LAN connections) and a different version needs to be used for the
-    // Extension Host process.
-    let node_bin = std::env::var("VSCODEEE_NODE_PATH").unwrap_or_else(|_| "node".to_string());
+    // Resolve the Node.js binary: bundled sidecar in production, system node in dev.
+    // See resolve_node_binary() for the full resolution order.
+    let node_bin = resolve_node_binary();
 
     // Enrich PATH so child processes (e.g., `git` extension calling `which git`)
     // can find tools installed in non-default locations. This is critical on
