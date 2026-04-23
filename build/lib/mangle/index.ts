@@ -426,9 +426,15 @@ export class Mangler {
 		this.log = log;
 		this.config = config;
 
+		// Allow CI to reduce worker count to fit memory-constrained runners.
+		// GitHub-hosted ubuntu-22.04 has 15GB RAM + 8GB swap = 23GB total.
+		// Each worker thread inherits the main process's V8 heap limit (~6GB),
+		// so 4 workers + main = 5×6GB = 30GB which exceeds 23GB.
+		// Setting MANGLER_MAX_WORKERS=1 → 1×6GB + 6GB main = 12GB, fits easily.
+		const maxWorkers = parseInt(process.env['MANGLER_MAX_WORKERS'] || '4', 10);
 		this.renameWorkerPool = workerpool.pool(path.join(import.meta.dirname, 'renameWorker.ts'), {
-			maxWorkers: 4,
-			minWorkers: 'max'
+			maxWorkers,
+			minWorkers: maxWorkers
 		});
 	}
 
