@@ -306,11 +306,15 @@ jobs:
           touch .github/copilot-instructions.md
           npm ci
 
-      # Use 4GB heap instead of the default 8GB (from package.json "gulp" script)
-      # to fit within GitHub-hosted runner memory limits (15GB RAM + 8GB swap).
-      # The 8GB heap + native memory overhead exceeds 23GB on Linux runners.
+      # The gulp build spawns 4 worker threads (mangler) each with their own V8 heap.
+      # With --max-old-space-size=8192 (package.json default), that's 5×8GB = 40GB total,
+      # far exceeding the 23GB available (15GB RAM + 8GB swap).
+      # NODE_OPTIONS applies to ALL processes including workers, limiting each to 4GB.
+      # Total: 5×4GB = 20GB < 23GB available.
       - name: Build REH server
-        run: node --max-old-space-size=4096 ./node_modules/gulp/bin/gulp.js vscode-reh-${{ matrix.os }}-${{ matrix.arch }}-min
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: node ./node_modules/gulp/bin/gulp.js vscode-reh-${{ matrix.os }}-${{ matrix.arch }}-min
 
       # For Linux ARM, replace host-compiled native modules with target-arch ones
       - name: Cross-compile remote dependencies (Linux ARM)
