@@ -245,6 +245,33 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
+      # Free memory by removing large pre-installed software.
+      # GitHub-hosted runners have ~7GB RAM but the gulp build needs ~8GB.
+      # Removing unused toolchains reclaims ~3-4GB of disk cache pressure,
+      # and combined with swap below, prevents OOM kills.
+      - name: Free disk space and memory (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          echo "=== Before cleanup ==="
+          free -h
+          df -h /
+          # Remove large pre-installed tools that consume memory/cache
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          sudo rm -rf /opt/hostedtoolcache/go || true
+          sudo rm -rf /opt/hostedtoolcache/Ruby || true
+          sudo rm -rf /usr/local/share/powershell || true
+          sudo rm -rf /usr/local/share/chromium || true
+          # Prune Docker images to free memory-mapped files
+          sudo docker image prune --all --force || true
+          # Drop filesystem caches to reclaim memory
+          sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches' || true
+          echo "=== After cleanup ==="
+          free -h
+          df -h /
+
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -253,6 +280,7 @@ jobs:
 
       # The gulp compilation step requires ~8GB memory (--max-old-space-size=8192)
       # but GitHub-hosted ubuntu runners only have 7GB RAM. Add swap to prevent OOM kills.
+      # Combined with the cleanup step above, this gives ~7GB RAM + 8GB swap = ~15GB virtual memory.
       - name: Setup swap space (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -262,6 +290,7 @@ jobs:
           sudo mkswap /swapfile
           sudo swapon /swapfile
           echo "Swap enabled: $(swapon --show)"
+          free -h
 
       - name: Set up QEMU (Linux ARM cross-compilation)
         if: matrix.os == 'linux' && matrix.arch != 'x64'
