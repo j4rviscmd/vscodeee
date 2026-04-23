@@ -3,6 +3,9 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+// @ts-nocheck — Standalone PoC bundled by esbuild; not part of the main VS Code compilation.
+// The @xterm/addon-fit types are resolved at bundle time, not by tsc.
+
 /**
  * Phase 0-4 PTY Host PoC — xterm.js ↔ Tauri PTY bridge.
  *
