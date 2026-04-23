@@ -232,7 +232,7 @@ jobs:
             runner: macos-latest
           - os: darwin
             arch: x64
-            runner: macos-13
+            runner: macos-latest
 
     runs-on: ${{ matrix.runner }}
     steps:
@@ -306,11 +306,22 @@ jobs:
           touch .github/copilot-instructions.md
           npm ci
 
-      # Use 4GB heap instead of the default 8GB (from package.json "gulp" script)
-      # to fit within GitHub-hosted runner memory limits (15GB RAM + 8GB swap).
-      # The 8GB heap + native memory overhead exceeds 23GB on Linux runners.
+      # The mangler spawns worker threads (default 4) each inheriting the main
+      # process's V8 heap limit. On GitHub-hosted ubuntu-22.04 (15GB RAM + 8GB swap),
+      # 4 workers × 6GB + main 6GB = 30GB total, far exceeding the 23GB available.
+      #
+      # NODE_OPTIONS does NOT limit worker_threads heap — they inherit the parent's
+      # V8 isolate settings. Only resourceLimits or reducing worker count helps.
+      #
+      # Solution: MANGLER_MAX_WORKERS=1 reduces to 1 worker thread.
+      # - Main process: 6GB (CLI flag --max-old-space-size=6144)
+      # - Worker thread: 1 × ~6GB (inherits main's limit)
+      # - Peak total: ~12GB << 23GB available
+      # On 2-vCPU runners, 1 worker is optimal anyway (no context switching overhead).
       - name: Build REH server
-        run: node --max-old-space-size=4096 ./node_modules/gulp/bin/gulp.js vscode-reh-${{ matrix.os }}-${{ matrix.arch }}-min
+        env:
+          MANGLER_MAX_WORKERS: "1"
+        run: node --max-old-space-size=6144 ./node_modules/gulp/bin/gulp.js vscode-reh-${{ matrix.os }}-${{ matrix.arch }}-min
 
       # For Linux ARM, replace host-compiled native modules with target-arch ones
       - name: Cross-compile remote dependencies (Linux ARM)

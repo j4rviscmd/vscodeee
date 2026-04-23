@@ -21,12 +21,15 @@ type ShellCommandMethod = 'installShellCommand' | 'uninstallShellCommand';
 /**
  * Execute a shell command action with unified success/error notification handling.
  * Silently returns when the user cancels the OS-level privilege prompt.
+ *
+ * The `formatError` callback must use `localize()` with a string literal key
+ * so the NLS build system (which uses `eval()`) can resolve it at build time.
  */
 async function executeShellCommandAction(
   accessor: ServicesAccessor,
   method: ShellCommandMethod,
   successMessage: string,
-  errorMessageKey: string,
+  formatError: (errorDetail: string) => string,
 ): Promise<void> {
   const nativeHostService = accessor.get(INativeHostService);
   const notificationService = accessor.get(INotificationService);
@@ -39,7 +42,7 @@ async function executeShellCommandAction(
     if (message.includes('cancelled') || message.includes('canceled')) {
       return;
     }
-    notificationService.error(localize(errorMessageKey, "Unable to {0} 'codeee' command: {1}", method === 'installShellCommand' ? 'install' : 'uninstall', message));
+    notificationService.error(formatError(message));
   }
 }
 
@@ -74,7 +77,7 @@ class InstallShellCommandAction extends Action2 {
       accessor,
       'installShellCommand',
       localize('installShellCommandSuccess', "'codeee' command successfully installed in PATH. Restart your terminal for the change to take effect."),
-      'installShellCommandError',
+      (detail) => localize('installShellCommandError', "Unable to install 'codeee' command: {0}", detail),
     );
   }
 }
@@ -111,7 +114,7 @@ class UninstallShellCommandAction extends Action2 {
       accessor,
       'uninstallShellCommand',
       localize('uninstallShellCommandSuccess', "'codeee' command successfully removed from PATH."),
-      'uninstallShellCommandError',
+      (detail) => localize('uninstallShellCommandError', "Unable to uninstall 'codeee' command: {0}", detail),
     );
   }
 }

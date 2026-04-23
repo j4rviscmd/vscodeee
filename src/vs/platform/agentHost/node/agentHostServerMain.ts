@@ -175,9 +175,11 @@ async function main(): Promise<void> {
 	}
 
 	if (options.enableMockAgent) {
-		// Dynamic import to avoid bundling test code in production
-		import('../test/node/mockAgent.js').then(({ ScriptedMockAgent }) => {
-			const mockAgent = disposables.add(new ScriptedMockAgent());
+		// Dynamic import to avoid bundling test code in production.
+		// Use `any` cast because the mangler renames exported class names,
+		// making destructured imports from test modules fail at build time.
+		import('../test/node/mockAgent.js').then((mod: any) => {
+			const mockAgent = disposables.add(new mod.ScriptedMockAgent());
 			agentService.registerProvider(mockAgent);
 		}).catch(err => {
 			logService.error('[AgentHostServer] Failed to load mock agent', err);
