@@ -40,11 +40,47 @@ const TARGET_DIR = path.join(REPO_ROOT, 'src-tauri', 'node_modules');
 // Files are loaded at runtime via importAMDNodeModule() or
 // resolveAmdNodeModulePath() in src/vs/**/*.ts.
 
-const REQUIRED_MODULES = [
+// Packages that should NOT be bundled (native modules incompatible with
+// plain Node.js sidecar, or too large / unnecessary for production).
+const EXCLUDED_PACKAGES = new Set([
+	'mermaid',      // very large (~10MB) — skip for now
+]);
+
+// Core platform modules used by the Extension Host process and VS Code runtime.
+// Each entry is either a specific file or a directory (trailing slash).
+const CORE_MODULES = [
 	// TextMate syntax highlighting (critical)
 	'vscode-oniguruma/release/main.js',
 	'vscode-oniguruma/release/onig.wasm',
 	'vscode-textmate/release/main.js',
+
+	// Extension Host (critical — imported by extensionHostProcess.js)
+	'minimist/index.js',
+	'minimist/package.json',
+
+	// Extension Host — HTTP proxy support (imported by proxyResolver.js at startup)
+	'@vscode/proxy-agent/',
+	'@tootallnate/once/',
+	'agent-base/',
+	'debug/',
+	'http-proxy-agent/',
+	'https-proxy-agent/',
+	'socks-proxy-agent/',
+	'undici/',
+	'ms/',
+	'socks/',
+	'ip-address/',
+	'smart-buffer/',
+	'jsbn/',
+	'sprintf-js/',
+
+	// Extension Host — search (imported by ripgrepTextSearchEngine.js)
+	'vscode-regexpp/',
+	'@vscode/ripgrep/',
+	'yauzl/',
+	'buffer-crc32/',
+	'pend/',
+	'proxy-from-env/',
 
 	// Text encoding
 	'@vscode/iconv-lite-umd/lib/iconv-lite-umd.js',
@@ -61,16 +97,15 @@ const REQUIRED_MODULES = [
 	'@xterm/addon-unicode11/lib/addon-unicode11.js',
 	'@xterm/addon-webgl/lib/addon-webgl.js',
 
-	// Math rendering (Markdown preview)
-	'katex/dist/katex.min.js',
-	'katex/dist/katex.min.css',
+	// Math rendering (Markdown preview) — full package needed for require('katex')
+	'katex/',
 
 	// Telemetry
 	'@microsoft/1ds-core-js/bundle/ms.core.min.js',
 	'@microsoft/1ds-post-js/bundle/ms.post.min.js',
 
-	// Experimentation service
-	'tas-client/dist/tas-client.min.js',
+	// Experimentation service — full package needed for require('tas-client')
+	'tas-client/',
 
 	// Tree-sitter (syntax parsing)
 	'@vscode/tree-sitter-wasm/wasm/',
@@ -78,10 +113,109 @@ const REQUIRED_MODULES = [
 	// Language detection
 	'@vscode/vscode-languagedetection/dist/',
 	'@vscode/vscode-languagedetection/model/',
+
+	// Core platform logging (imported by spdlogLog.js in Extension Host)
+	'@vscode/spdlog/',
 ];
+
+const EXTENSIONS_DIR = path.join(REPO_ROOT, 'extensions');
 
 const args = process.argv.slice(2);
 const clean = args.includes('--clean');
+
+/**
+ * Collect all directories that may contain node_modules packages:
+ * root node_modules/ + each extension's node_modules/.
+ * @returns {string[]}
+ */
+function collectNodeModulesDirs() {
+	const dirs = [SOURCE_DIR];
+	for (const extDir of fs.readdirSync(EXTENSIONS_DIR, { withFileTypes: true })) {
+		if (!extDir.isDirectory()) {
+			continue;
+		}
+		const nm = path.join(EXTENSIONS_DIR, extDir.name, 'node_modules');
+		if (fs.existsSync(nm)) {
+			dirs.push(nm);
+		}
+	}
+	return dirs;
+}
+
+/** @type {string[] | null} */
+let _nmDirs = null;
+
+/**
+ * Find the first node_modules directory that contains `pkgName`.
+ * @param {string} pkgName
+ * @returns {string|null}
+ */
+function findPackageDir(pkgName) {
+	if (!_nmDirs) {
+		_nmDirs = collectNodeModulesDirs();
+	}
+	for (const dir of _nmDirs) {
+		if (fs.existsSync(path.join(dir, pkgName, 'package.json'))) {
+			return dir;
+		}
+	}
+	return null;
+}
+
+/**
+ * Recursively collect all dependency package names from extension manifests,
+ * including transitive dependencies. Returns a set of top-level package names
+ * (e.g. "@vscode/extension-telemetry", "which") that exist in any node_modules.
+ * @returns {Set<string>}
+ */
+function collectExtensionDependencies() {
+	const seen = new Set();
+	const queue = [];
+
+	// Seed with direct dependencies from all extension package.json files
+	for (const extDir of fs.readdirSync(EXTENSIONS_DIR, { withFileTypes: true })) {
+		if (!extDir.isDirectory()) {
+			continue;
+		}
+		const pkgPath = path.join(EXTENSIONS_DIR, extDir.name, 'package.json');
+		if (!fs.existsSync(pkgPath)) {
+			continue;
+		}
+		const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+		for (const dep of Object.keys(pkg.dependencies || {})) {
+			if (!seen.has(dep)) {
+				seen.add(dep);
+				queue.push(dep);
+			}
+		}
+	}
+
+	// Resolve transitive dependencies (BFS)
+	while (queue.length > 0) {
+		const dep = queue.shift();
+		// Skip transitive resolution for excluded packages
+		if (EXCLUDED_PACKAGES.has(dep)) {
+			continue;
+		}
+		const srcDir = findPackageDir(dep);
+		if (!srcDir) {
+			continue;
+		}
+		const depPkgPath = path.join(srcDir, dep, 'package.json');
+		if (!fs.existsSync(depPkgPath)) {
+			continue;
+		}
+		const depPkg = JSON.parse(fs.readFileSync(depPkgPath, 'utf8'));
+		for (const sub of Object.keys(depPkg.dependencies || {})) {
+			if (!seen.has(sub) && !EXCLUDED_PACKAGES.has(sub)) {
+				seen.add(sub);
+				queue.push(sub);
+			}
+		}
+	}
+
+	return seen;
+}
 
 /**
  * Recursively copy a directory.
@@ -118,6 +252,35 @@ function copyFile(src, dest) {
 	fs.copyFileSync(src, dest);
 }
 
+/**
+ * Copy a package directory from any available node_modules to TARGET_DIR.
+ * Returns the number of files copied, or -1 if not found.
+ * @param {string} pkgName — e.g. "@vscode/extension-telemetry" or "which"
+ * @returns {number}
+ */
+function copyPackage(pkgName) {
+	const srcDir = findPackageDir(pkgName);
+	if (!srcDir) {
+		return -1;
+	}
+	const srcPath = path.join(srcDir, pkgName);
+	const destPath = path.join(TARGET_DIR, pkgName);
+	return copyDirRecursive(srcPath, destPath);
+}
+
+/**
+ * Main entry point for the node_modules bundling script.
+ *
+ * Executes two phases:
+ * 1. Copies core modules (specific files/directories) listed in `CORE_MODULES`
+ *    from `node_modules/` to `src-tauri/node_modules/`.
+ * 2. Auto-discovers all extension dependencies (including transitive ones) via
+ *    BFS traversal of `package.json` dependency trees, then copies any packages
+ *    not already bundled in Phase 1.
+ *
+ * Supports a `--clean` flag to remove the staging directory before bundling.
+ * Logs progress, skipped modules, and final statistics (file count, total size).
+ */
 function main() {
 	console.log('[bundle-node-modules] Bundling required node_modules for Tauri build...');
 
@@ -129,13 +292,18 @@ function main() {
 	let totalFiles = 0;
 	let skipped = 0;
 
-	for (const entry of REQUIRED_MODULES) {
+	// Phase 1: Copy core modules (specific files/directories).
+	// Track which top-level packages were successfully bundled so Phase 2
+	// can skip them. Packages not found here may still be resolved from
+	// extension node_modules/ by Phase 2.
+	const bundledPkgs = new Set();
+	console.log('[bundle-node-modules] Phase 1: Core modules...');
+	for (const entry of CORE_MODULES) {
 		const isDir = entry.endsWith('/');
 		const srcPath = path.join(SOURCE_DIR, entry);
 		const destPath = path.join(TARGET_DIR, entry);
 
 		if (!fs.existsSync(srcPath)) {
-			// Some packages may not be installed (e.g., vsda is Microsoft-internal)
 			console.warn(`[bundle-node-modules] WARN: ${entry} not found, skipping`);
 			skipped++;
 			continue;
@@ -150,24 +318,95 @@ function main() {
 			console.log(`[bundle-node-modules]   ${entry}`);
 			totalFiles++;
 		}
+
+		// Track top-level package name for Phase 2 dedup
+		const parts = entry.split('/');
+		if (parts[0].startsWith('@') && parts.length > 1) {
+			bundledPkgs.add(`${parts[0]}/${parts[1]}`);
+		} else {
+			bundledPkgs.add(parts[0]);
+		}
 	}
 
-	// Compute total size
-	let totalSize = 0;
-	function sumSize(dir) {
-		if (!fs.existsSync(dir)) {
-			return;
+	// Phase 1.5: Resolve transitive deps of CORE_MODULES (e.g. @vscode/spdlog → mkdirp)
+	console.log('[bundle-node-modules] Phase 1.5: Core module transitive deps...');
+	const coreTransitiveQueue = [...bundledPkgs];
+	const coreTransitiveSeen = new Set(bundledPkgs);
+	while (coreTransitiveQueue.length > 0) {
+		const pkg = coreTransitiveQueue.shift();
+		const srcDir = findPackageDir(pkg);
+		if (!srcDir) {
+			continue;
 		}
-		for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-			const fullPath = path.join(dir, entry.name);
-			if (entry.isDirectory()) {
-				sumSize(fullPath);
-			} else {
-				totalSize += fs.statSync(fullPath).size;
+		const pkgJsonPath = path.join(srcDir, pkg, 'package.json');
+		if (!fs.existsSync(pkgJsonPath)) {
+			continue;
+		}
+		const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
+		for (const sub of Object.keys(pkgJson.dependencies || {})) {
+			if (!coreTransitiveSeen.has(sub) && !EXCLUDED_PACKAGES.has(sub) && !bundledPkgs.has(sub)) {
+				coreTransitiveSeen.add(sub);
+				coreTransitiveQueue.push(sub);
+				const count = copyPackage(sub);
+				if (count < 0) {
+					console.warn(`[bundle-node-modules] WARN: ${sub} not found, skipping`);
+					skipped++;
+				} else {
+					console.log(`[bundle-node-modules]   ${sub}/ (${count} files) [transitive of ${pkg}]`);
+					totalFiles += count;
+					bundledPkgs.add(sub);
+				}
 			}
 		}
 	}
-	sumSize(TARGET_DIR);
+
+	// Phase 2: Auto-discover and copy extension dependencies
+	console.log('[bundle-node-modules] Phase 2: Extension dependencies...');
+	const extDeps = collectExtensionDependencies();
+
+	let extCopied = 0;
+	for (const dep of [...extDeps].sort()) {
+		if (EXCLUDED_PACKAGES.has(dep)) {
+			console.log(`[bundle-node-modules]   SKIP (excluded): ${dep}`);
+			continue;
+		}
+		if (bundledPkgs.has(dep)) {
+			continue;
+		}
+		const count = copyPackage(dep);
+		if (count < 0) {
+			console.warn(`[bundle-node-modules] WARN: ${dep} not found in node_modules, skipping`);
+			skipped++;
+		} else {
+			console.log(`[bundle-node-modules]   ${dep}/ (${count} files)`);
+			totalFiles += count;
+			extCopied++;
+		}
+	}
+	console.log(`[bundle-node-modules] Phase 2: ${extCopied} extension dependency packages copied`);
+
+	// Compute total size of the staged node_modules directory
+	/**
+	 * Recursively compute the total byte size of all files under `dir`.
+	 * @param {string} dir - Absolute path to the directory to measure.
+	 * @returns {number} Total size in bytes, or 0 if the directory does not exist.
+	 */
+	function computeDirSize(dir) {
+		if (!fs.existsSync(dir)) {
+			return 0;
+		}
+		let size = 0;
+		for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+			const fullPath = path.join(dir, entry.name);
+			if (entry.isDirectory()) {
+				size += computeDirSize(fullPath);
+			} else {
+				size += fs.statSync(fullPath).size;
+			}
+		}
+		return size;
+	}
+	const totalSize = computeDirSize(TARGET_DIR);
 
 	const sizeMB = (totalSize / (1024 * 1024)).toFixed(1);
 	console.log(`[bundle-node-modules] Done: ${totalFiles} files copied (${sizeMB} MB)`);
