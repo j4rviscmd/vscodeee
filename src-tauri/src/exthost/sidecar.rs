@@ -19,9 +19,11 @@
 //! - Integrates with Tauri managed state for WebView access
 
 use std::path::Path;
+use std::sync::Arc;
 
 use tokio::net::UnixListener;
 use tokio::process::{Child, Command};
+use tokio::sync::Mutex;
 
 use super::ExtHostError;
 
@@ -48,22 +50,25 @@ fn resolve_node_binary() -> String {
     // 2. Bundled sidecar binary (production Tauri build)
     // Tauri's externalBin strips the target-triple suffix when bundling,
     // so `binaries/node-aarch64-apple-darwin` becomes `Contents/MacOS/node`.
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(exe_dir) = exe.parent() {
-            let sidecar_name = if cfg!(target_os = "windows") {
+    if let Some(sidecar_path) = std::env::current_exe()
+        .ok()
+        .as_ref()
+        .and_then(|exe| exe.parent())
+        .map(|dir| {
+            dir.join(if cfg!(target_os = "windows") {
                 "node.exe"
             } else {
                 "node"
-            };
-            let sidecar_path = exe_dir.join(sidecar_name);
-            if sidecar_path.exists() {
-                log::info!(
-                    target: "vscodeee::exthost::sidecar",
-                    "Using bundled Node.js sidecar: {}",
-                    sidecar_path.display()
-                );
-                return sidecar_path.to_string_lossy().to_string();
-            }
+            })
+        })
+    {
+        if sidecar_path.exists() {
+            log::info!(
+                target: "vscodeee::exthost::sidecar",
+                "Using bundled Node.js sidecar: {}",
+                sidecar_path.display()
+            );
+            return sidecar_path.to_string_lossy().to_string();
         }
     }
 
@@ -305,11 +310,13 @@ fn augment_product_json(app_root: &Path) -> Option<(std::path::PathBuf, String)>
 ///
 /// # Arguments
 /// * `app_root` — Repository root containing `out/bootstrap-fork.js` and `product.json`
+/// * `resource_dir` — Tauri resource directory containing bundled `node_modules/`
 ///
 /// # Returns
 /// A tuple of the sidecar handle and the connected Unix stream.
 pub async fn spawn(
     app_root: &Path,
+    resource_dir: &Path,
 ) -> Result<(ExtHostSidecar, tokio::net::UnixStream), ExtHostError> {
     // Augment product.json with commit/version before spawning the ExtHost.
     // Extensions (e.g., open-remote-ssh) read this file directly from disk.
@@ -325,7 +332,7 @@ pub async fn spawn(
 
     // Step 2: Spawn the Node.js process
     // If spawn or accept fails, clean up the socket file before returning.
-    let result = spawn_and_connect(app_root, &pipe_path, &listener, augmented).await;
+    let result = spawn_and_connect(app_root, resource_dir, &pipe_path, &listener, augmented).await;
     if result.is_err() {
         let _ = std::fs::remove_file(&pipe_path);
     }
@@ -346,11 +353,13 @@ pub async fn spawn(
 ///
 /// # Arguments
 /// * `app_root` — Repository root containing `out/bootstrap-fork.js`
+/// * `resource_dir` — Tauri resource directory containing bundled `node_modules/`
 /// * `pipe_path` — Path to the Unix domain socket the ExtHost should connect to
 /// * `listener` — The bound Unix listener awaiting the ExtHost connection
 /// * `augmented` — Original product.json content if the file was augmented
 async fn spawn_and_connect(
     app_root: &Path,
+    resource_dir: &Path,
     pipe_path: &str,
     listener: &UnixListener,
     augmented: Option<(std::path::PathBuf, String)>,
@@ -379,12 +388,25 @@ async fn spawn_and_connect(
         .arg("--type=extensionHost")
         .current_dir(app_root)
         .env("PATH", &enriched_path)
+        // NODE_PATH tells Node.js where to find node_modules when cwd differs from
+        // the resource layout. In Tauri bundles, node_modules/ lives under
+        // {resource_dir}/node_modules/ but cwd is {resource_dir}/_up_/, so
+        // standard module resolution fails without this hint.
+        .env(
+            "NODE_PATH",
+            resource_dir
+                .join("node_modules")
+                .to_string_lossy()
+                .to_string(),
+        )
         .env("VSCODE_EXTHOST_IPC_HOOK", pipe_path)
         .env(
             "VSCODE_ESM_ENTRYPOINT",
             "vs/workbench/api/node/extensionHostProcess",
         )
-        .env("VSCODE_HANDLES_UNCAUGHT_ERRORS", "true")
+        // NOT setting VSCODE_HANDLES_UNCAUGHT_ERRORS — let Node.js use its
+        // default error handler which writes to stderr, so Rust can capture
+        // and relay the actual startup error instead of failing silently.
         .env("VSCODE_PARENT_PID", std::process::id().to_string())
         .env("VSCODE_DEV", "1")
         .env(
@@ -401,23 +423,59 @@ async fn spawn_and_connect(
         .map_err(ExtHostError::Spawn)?;
 
     let pid = child.id().unwrap_or(0);
-    log::info!(target: "vscodeee::exthost::sidecar", "Spawned Node.js ExtHost process (PID: {pid})");
+    let node_path = resource_dir
+        .join("node_modules")
+        .to_string_lossy()
+        .to_string();
+    log::info!(
+        target: "vscodeee::exthost::sidecar",
+        "Spawned Node.js ExtHost process (PID: {pid})"
+    );
+    log::info!(
+        target: "vscodeee::exthost::sidecar",
+        "  cwd: {}, NODE_PATH: {node_path}, IPC_HOOK: {pipe_path}",
+        app_root.display()
+    );
 
-    // Spawn a background task to read ExtHost stderr and log it.
-    // This prevents the pipe buffer from filling up (which would block the child)
-    // and surfaces any errors from the ExtHost process.
+    // Shared buffer for collecting stderr output, used for diagnostics when
+    // the child process exits prematurely.
+    let stderr_buf: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+
+    // Spawn a background task to read ExtHost stderr.
+    // Lines are logged to the Rust log framework AND written to
+    // /tmp/vscodeee-exthost-stderr-{pid}.log for production diagnostics.
+    // The shared buffer is also populated so early-exit errors can be
+    // included in the ExtHostError::ChildExited message.
     {
         use tokio::io::AsyncBufReadExt;
         let stderr = child.stderr.take();
         if let Some(stderr) = stderr {
             let reader = tokio::io::BufReader::new(stderr);
+            let stderr_buf_clone = Arc::clone(&stderr_buf);
+            let log_path =
+                std::path::PathBuf::from(format!("/tmp/vscodeee-exthost-stderr-{pid}.log"));
             tokio::spawn(async move {
                 let mut lines = reader.lines();
+                // Best-effort: open log file; if it fails, just log to Rust
+                let mut log_file = tokio::fs::File::create(&log_path).await.ok();
                 while let Ok(Some(line)) = lines.next_line().await {
                     log::warn!(
                         target: "vscodeee::exthost::stderr",
                         "[ExtHost PID={pid}] {line}"
                     );
+                    // Append to shared buffer (capped at 8KB)
+                    {
+                        let mut buf = stderr_buf_clone.lock().await;
+                        if buf.len() < 8192 {
+                            buf.push_str(&line);
+                            buf.push('\n');
+                        }
+                    }
+                    // Append to diagnostic log file
+                    if let Some(ref mut f) = log_file {
+                        use tokio::io::AsyncWriteExt;
+                        let _ = f.write_all(format!("{line}\n").as_bytes()).await;
+                    }
                 }
                 log::info!(
                     target: "vscodeee::exthost::stderr",
@@ -427,13 +485,30 @@ async fn spawn_and_connect(
         }
     }
 
-    // Step 3: Wait for the ExtHost to connect back (30s timeout)
-    // Mirrors extensionHostConnection.ts:313-316
-    let timeout = tokio::time::Duration::from_secs(30);
-    let (stream, _addr) = tokio::time::timeout(timeout, listener.accept())
-        .await
-        .map_err(|_| ExtHostError::Timeout)?
-        .map_err(ExtHostError::PipeCreation)?;
+    // Step 3: Wait for the ExtHost to connect back (30s timeout).
+    // Concurrently monitor the child process for early exit — if the Node.js
+    // process crashes before connecting, we can report the stderr output
+    // instead of waiting the full 30 seconds.
+    let accept_result = tokio::select! {
+        result = listener.accept() => {
+            result.map_err(ExtHostError::PipeCreation)
+        }
+        _ = tokio::time::sleep(tokio::time::Duration::from_secs(30)) => {
+            // Check if the child has exited before reporting a generic timeout
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    let stderr_output = stderr_buf.lock().await;
+                    Err(ExtHostError::ChildExited {
+                        status: format!("{status}"),
+                        stderr: stderr_output.clone(),
+                    })
+                }
+                _ => Err(ExtHostError::Timeout),
+            }
+        }
+    };
+
+    let (stream, _addr) = accept_result?;
 
     log::info!(target: "vscodeee::exthost::sidecar", "ExtHost connected to pipe");
 
