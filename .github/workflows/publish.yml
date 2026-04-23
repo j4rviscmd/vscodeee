@@ -306,15 +306,22 @@ jobs:
           touch .github/copilot-instructions.md
           npm ci
 
-      # The gulp build spawns 4 worker threads (mangler) each with their own V8 heap.
+      # The mangler spawns 4 worker threads (minWorkers: 'max', maxWorkers: 4).
       # With --max-old-space-size=8192 (package.json default), that's 5×8GB = 40GB total,
       # far exceeding the 23GB available (15GB RAM + 8GB swap).
-      # NODE_OPTIONS applies to ALL processes including workers, limiting each to 4GB.
-      # Total: 5×4GB = 20GB < 23GB available.
+      #
+      # NODE_OPTIONS limits ALL processes (main + workers) to 4GB each.
+      # However, the main process needs >4GB for TypeScript compilation after mangling
+      # (mangler alone uses ~3GB, then compilation pushes it over 4GB).
+      #
+      # Solution: CLI flag overrides NODE_OPTIONS for the main process only.
+      # - Main process: 6GB (CLI flag --max-old-space-size=6144)
+      # - Worker threads: 4GB each (NODE_OPTIONS)
+      # - Peak total: 6 + 4×4 = 22GB < 23GB available
       - name: Build REH server
         env:
           NODE_OPTIONS: --max-old-space-size=4096
-        run: node ./node_modules/gulp/bin/gulp.js vscode-reh-${{ matrix.os }}-${{ matrix.arch }}-min
+        run: node --max-old-space-size=6144 ./node_modules/gulp/bin/gulp.js vscode-reh-${{ matrix.os }}-${{ matrix.arch }}-min
 
       # For Linux ARM, replace host-compiled native modules with target-arch ones
       - name: Cross-compile remote dependencies (Linux ARM)
