@@ -232,7 +232,7 @@ jobs:
             runner: macos-latest
           - os: darwin
             arch: x64
-            runner: macos-13
+            runner: macos-latest
 
     runs-on: ${{ matrix.runner }}
     steps:
