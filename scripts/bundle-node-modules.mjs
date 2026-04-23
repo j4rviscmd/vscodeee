@@ -43,7 +43,6 @@ const TARGET_DIR = path.join(REPO_ROOT, 'src-tauri', 'node_modules');
 // Packages that should NOT be bundled (native modules incompatible with
 // plain Node.js sidecar, or too large / unnecessary for production).
 const EXCLUDED_PACKAGES = new Set([
-	'keytar',       // native module — replaced by keychain API in Tauri
 	'mermaid',      // very large (~10MB) — skip for now
 ]);
 
@@ -98,16 +97,15 @@ const CORE_MODULES = [
 	'@xterm/addon-unicode11/lib/addon-unicode11.js',
 	'@xterm/addon-webgl/lib/addon-webgl.js',
 
-	// Math rendering (Markdown preview)
-	'katex/dist/katex.min.js',
-	'katex/dist/katex.min.css',
+	// Math rendering (Markdown preview) — full package needed for require('katex')
+	'katex/',
 
 	// Telemetry
 	'@microsoft/1ds-core-js/bundle/ms.core.min.js',
 	'@microsoft/1ds-post-js/bundle/ms.post.min.js',
 
-	// Experimentation service
-	'tas-client/dist/tas-client.min.js',
+	// Experimentation service — full package needed for require('tas-client')
+	'tas-client/',
 
 	// Tree-sitter (syntax parsing)
 	'@vscode/tree-sitter-wasm/wasm/',
@@ -327,6 +325,38 @@ function main() {
 			bundledPkgs.add(`${parts[0]}/${parts[1]}`);
 		} else {
 			bundledPkgs.add(parts[0]);
+		}
+	}
+
+	// Phase 1.5: Resolve transitive deps of CORE_MODULES (e.g. @vscode/spdlog → mkdirp)
+	console.log('[bundle-node-modules] Phase 1.5: Core module transitive deps...');
+	const coreTransitiveQueue = [...bundledPkgs];
+	const coreTransitiveSeen = new Set(bundledPkgs);
+	while (coreTransitiveQueue.length > 0) {
+		const pkg = coreTransitiveQueue.shift();
+		const srcDir = findPackageDir(pkg);
+		if (!srcDir) {
+			continue;
+		}
+		const pkgJsonPath = path.join(srcDir, pkg, 'package.json');
+		if (!fs.existsSync(pkgJsonPath)) {
+			continue;
+		}
+		const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
+		for (const sub of Object.keys(pkgJson.dependencies || {})) {
+			if (!coreTransitiveSeen.has(sub) && !EXCLUDED_PACKAGES.has(sub) && !bundledPkgs.has(sub)) {
+				coreTransitiveSeen.add(sub);
+				coreTransitiveQueue.push(sub);
+				const count = copyPackage(sub);
+				if (count < 0) {
+					console.warn(`[bundle-node-modules] WARN: ${sub} not found, skipping`);
+					skipped++;
+				} else {
+					console.log(`[bundle-node-modules]   ${sub}/ (${count} files) [transitive of ${pkg}]`);
+					totalFiles += count;
+					bundledPkgs.add(sub);
+				}
+			}
 		}
 	}
 
