@@ -13,16 +13,41 @@ import { invoke, createChannel } from '../../../../platform/tauri/common/tauriAp
 
 // -- Types matching the Rust `commands/updater/commands.rs` structs ---------
 
+/**
+ * Update metadata returned by the Rust updater backend.
+ *
+ * Mirrors the `UpdateInfo` struct in `commands/updater/commands.rs`.
+ * Only `version` and `currentVersion` are guaranteed; `date` and `body`
+ * are populated from the release notes payload when available.
+ */
 interface UpdateInfo {
+  /** Semver string of the available update (e.g. `"1.95.0"`). */
   version: string;
+  /** Semver string of the currently running version. */
   currentVersion: string;
+  /** ISO-8601 release date of the update, if provided by the endpoint. */
   date?: string;
+  /** Markdown release notes body, if provided by the endpoint. */
   body?: string;
 }
 
+/**
+ * Byte-level download progress event emitted over a Tauri {@link Channel}
+ * during `download_and_install`.
+ *
+ * The `phase` field indicates the lifecycle stage:
+ * - `'started'` — the download has begun (`downloadedBytes` is `0`).
+ * - `'progress'` — intermediate progress (`totalBytes` may be `undefined` when
+ *   the server does not advertise a `Content-Length`).
+ * - `'finished'` — the download is complete; `downloadedBytes` equals the
+ *   final size.
+ */
 interface DownloadProgress {
+  /** Current lifecycle phase of the download operation. */
   phase: 'started' | 'progress' | 'finished';
+  /** Number of bytes received so far. */
   downloadedBytes: number;
+  /** Total expected size in bytes. `undefined` when the server omits `Content-Length`. */
   totalBytes?: number;
 }
 
@@ -48,18 +73,43 @@ export class TauriUpdateService extends Disposable implements IUpdateService {
 
   declare readonly _serviceBrand: undefined;
 
+  /** Emitter that fires whenever the update state machine transitions. */
   private _onStateChange = this._register(new Emitter<State>());
+  /** Event listeners can subscribe here to observe state transitions. */
   readonly onStateChange: Event<State> = this._onStateChange.event;
 
+  /** Backing field for the {@link state} property. Defaults to `Disabled(NotBuilt)`. */
   private _state: State = State.Disabled(DisablementReason.NotBuilt);
+  /**
+   * Current state of the update state machine.
+   *
+   * Setting this property fires the {@link onStateChange} event, allowing
+   * UI components and other services to react to transitions.
+   */
   get state(): State { return this._state; }
   set state(state: State) {
     this._state = state;
     this._onStateChange.fire(state);
   }
 
+  /**
+   * Cached update metadata from the most recent successful check.
+   *
+   * Populated by {@link checkForUpdates} when the Rust backend reports an
+   * available update. Consumed by {@link downloadUpdate}, {@link applyUpdate},
+   * and {@link quitAndInstall} to avoid redundant IPC calls.
+   */
   private cachedUpdateInfo: UpdateInfo | undefined;
+
+  /** Handle for the periodic background-check `setTimeout` timer. */
   private periodicCheckTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /**
+   * Disposable wrapper for the periodic check timer.
+   *
+   * Automatically cleaned up when this service is disposed, ensuring no
+   * orphaned timers survive after the service lifecycle ends.
+   */
   private readonly periodicCheckDisposable = this._register(new MutableDisposable());
 
   constructor(
@@ -213,6 +263,10 @@ export class TauriUpdateService extends Disposable implements IUpdateService {
         this.cachedUpdateInfo = update;
         this.logService.info(`Update available: ${update.version}`);
         this.state = State.AvailableForDownload(this.mapToUpdate(update));
+        // Auto-download for background checks (start and default modes).
+        if (!explicit) {
+          this.downloadUpdate(false);
+        }
       } else {
         this.state = State.Idle(UpdateType.Archive, undefined, explicit ? false : undefined);
       }
@@ -371,9 +425,12 @@ export class TauriUpdateService extends Disposable implements IUpdateService {
     const CHECK_INTERVAL = 6 * 60 * 60 * 1000; // 6 hours
 
     const check = async () => {
+      // Guard: only proceed if the user hasn't switched away from 'default'
+      // mode since the timer was scheduled.
       if (this.getUpdateMode() === 'default') {
         await this.checkForUpdates(false);
       }
+      // Re-schedule regardless — the next tick will re-evaluate the mode.
       this.periodicCheckTimer = setTimeout(check, CHECK_INTERVAL);
     };
 
@@ -388,4 +445,8 @@ export class TauriUpdateService extends Disposable implements IUpdateService {
   }
 }
 
+// Register as an eager singleton so the updater is initialized at startup
+// regardless of whether any consumer has injected IUpdateService yet.
+// This ensures the initial update check fires immediately when `update.mode`
+// is `start` or `default`.
 registerSingleton(IUpdateService, TauriUpdateService, InstantiationType.Eager);
