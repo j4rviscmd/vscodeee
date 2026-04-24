@@ -59,6 +59,9 @@ pub struct ExtHostSpawnResult {
 }
 
 /// A running Extension Host instance tracked by [`ExtHostState`].
+///
+/// Holds the sidecar process handle (for killing the child) and the
+/// WebSocket relay task handle (for aborting the relay on shutdown).
 #[cfg(unix)]
 struct ExtHostInstance {
     /// The sidecar owning the child process.
@@ -116,6 +119,7 @@ impl ExtHostState {
         );
     }
 
+    /// No-op on non-Unix platforms where Extension Host is not supported.
     #[cfg(not(unix))]
     pub async fn shutdown_all(&self) {}
 
@@ -158,6 +162,7 @@ impl ExtHostState {
         );
     }
 
+    /// No-op on non-Unix platforms where Extension Host is not supported.
     #[cfg(not(unix))]
     pub fn sync_kill_all(&self) {}
 }
@@ -200,7 +205,7 @@ async fn spawn_exthost_with_relay_unix(
 ) -> Result<ExtHostSpawnResult, String> {
     use crate::exthost;
 
-    let app_root = resolve_app_root(&app_handle)?;
+    let (app_root, resource_dir) = resolve_app_root_and_resource_dir(&app_handle)?;
     log::info!(target: "vscodeee::commands::spawn_exthost", "Spawning ExtHost with WS relay, app root: {}", app_root.display());
 
     // Verify prerequisites
@@ -216,7 +221,7 @@ async fn spawn_exthost_with_relay_unix(
     let instance_id = exthost_state.next_id.fetch_add(1, Ordering::Relaxed);
 
     // Step 1+2: Create pipe + spawn Node.js
-    let (sidecar, unix_stream) = exthost::sidecar::spawn(&app_root)
+    let (sidecar, unix_stream) = exthost::sidecar::spawn(&app_root, &resource_dir)
         .await
         .map_err(|e| format!("ExtHost spawn failed: {e}"))?;
 
@@ -260,15 +265,12 @@ async fn spawn_exthost_with_relay_unix(
                             target: "vscodeee::commands::spawn_exthost",
                             "ExtHost instance {instance_id} (PID={pid}) EXITED with status: {status}"
                         );
-                        // Clean up the dead instance
                         if let Some(dead) = instances.remove(&instance_id) {
                             dead.relay_task.abort();
                         }
                         break;
                     }
-                    Ok(None) => {
-                        // Still running — continue monitoring
-                    }
+                    Ok(None) => {}
                     Err(e) => {
                         log::error!(
                             target: "vscodeee::commands::spawn_exthost",
@@ -278,7 +280,6 @@ async fn spawn_exthost_with_relay_unix(
                     }
                 }
             } else {
-                // Instance was cleaned up (e.g., via kill_exthost)
                 break;
             }
         }
@@ -410,7 +411,7 @@ pub async fn spawn_extension_host(
 async fn spawn_extension_host_unix(
     app_handle: tauri::AppHandle,
 ) -> Result<ExtHostHandshakeResult, String> {
-    let app_root = resolve_app_root(&app_handle)?;
+    let (app_root, resource_dir) = resolve_app_root_and_resource_dir(&app_handle)?;
     log::info!(target: "vscodeee::commands::spawn_exthost", "App root: {}", app_root.display());
 
     // Verify prerequisites
@@ -422,7 +423,7 @@ async fn spawn_extension_host_unix(
         ));
     }
 
-    match spawn_and_handshake(&app_root).await {
+    match spawn_and_handshake(&app_root, &resource_dir).await {
         Ok(result) => Ok(result),
         Err(e) => Ok(ExtHostHandshakeResult {
             success: false,
@@ -442,10 +443,11 @@ async fn spawn_extension_host_unix(
 #[cfg(unix)]
 async fn spawn_and_handshake(
     app_root: &std::path::Path,
+    resource_dir: &std::path::Path,
 ) -> Result<ExtHostHandshakeResult, crate::exthost::ExtHostError> {
     use crate::exthost;
     // Step 1+2: Create pipe + spawn Node.js
-    let (mut sidecar, mut stream) = exthost::sidecar::spawn(app_root).await?;
+    let (mut sidecar, mut stream) = exthost::sidecar::spawn(app_root, resource_dir).await?;
 
     let pid = sidecar.child.id().unwrap_or(0);
     let pipe_path = sidecar.pipe_path.clone();
@@ -469,13 +471,16 @@ async fn spawn_and_handshake(
     })
 }
 
-/// Resolve the VS Code repository root (where `out/` and `product.json` live).
+/// Resolve the VS Code repository root (where `out/` and `product.json` live)
+/// and the Tauri resource directory (where bundled `node_modules/` lives).
 ///
 /// Searches up to 5 parent directories from the Tauri resource directory,
 /// then falls back to the current working directory, and finally checks
 /// Tauri's `_up_` resource mapping for production builds.
 /// Returns the first directory that contains `out/bootstrap-fork.js`.
-fn resolve_app_root(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
+fn resolve_app_root_and_resource_dir(
+    app_handle: &tauri::AppHandle,
+) -> Result<(PathBuf, PathBuf), String> {
     use tauri::Manager;
 
     let resource_dir = app_handle
@@ -487,7 +492,7 @@ fn resolve_app_root(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     let mut candidate = resource_dir.as_path();
     for _ in 0..5 {
         if candidate.join("out/bootstrap-fork.js").exists() {
-            return Ok(candidate.to_path_buf());
+            return Ok((candidate.to_path_buf(), resource_dir.clone()));
         }
         if let Some(parent) = candidate.parent() {
             candidate = parent;
@@ -499,7 +504,7 @@ fn resolve_app_root(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     // Fallback: try current working directory
     if let Ok(cwd) = std::env::current_dir() {
         if cwd.join("out/bootstrap-fork.js").exists() {
-            return Ok(cwd);
+            return Ok((cwd, resource_dir));
         }
     }
 
@@ -508,7 +513,7 @@ fn resolve_app_root(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     // `{resource_dir}/_up_/` since `out/bootstrap-fork.js` lives under it.
     let up_dir = resource_dir.join("_up_");
     if up_dir.join("out/bootstrap-fork.js").exists() {
-        return Ok(up_dir);
+        return Ok((up_dir, resource_dir));
     }
 
     Err(format!(
