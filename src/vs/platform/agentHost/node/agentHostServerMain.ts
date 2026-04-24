@@ -178,7 +178,7 @@ async function main(): Promise<void> {
 		// Dynamic import to avoid bundling test code in production.
 		// Use `any` cast because the mangler renames exported class names,
 		// making destructured imports from test modules fail at build time.
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		import('../test/node/mockAgent.js').then((mod: any) => {
 			const mockAgent = disposables.add(new mod.ScriptedMockAgent());
 			agentService.registerProvider(mockAgent);
