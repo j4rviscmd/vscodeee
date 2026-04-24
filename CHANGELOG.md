@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - 2026-04-24
 
+### Added
+
+- Auto-download updates for background checks — when `update.mode` is `default` or `start`, detected updates are downloaded immediately without waiting for manual action, matching original VS Code Electron behavior ([#280](https://github.com/j4rviscmd/vscodeee/pull/280), closes [#277](https://github.com/j4rviscmd/vscodeee/issues/277))
+
 ### Fixed
 
 - Bundle all extension `node_modules` for production builds — extensions and Extension Host now activate correctly without `ERR_MODULE_NOT_FOUND` errors ([#278](https://github.com/j4rviscmd/vscodeee/pull/278))
