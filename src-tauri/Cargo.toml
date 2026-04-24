@@ -1,6 +1,6 @@
 [package]
 name = "vscodeee"
-version = "0.1.0"
+version = "0.2.0"
 description = "VS Code fork powered by Tauri 2.0"
 authors = ["j4rviscmd"]
 edition = "2021"
