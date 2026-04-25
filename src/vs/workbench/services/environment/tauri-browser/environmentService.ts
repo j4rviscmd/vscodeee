@@ -151,7 +151,7 @@ export class TauriWorkbenchEnvironmentService extends BrowserWorkbenchEnvironmen
 	 *
 	 * In desktop VS Code this comes from `AbstractNativeEnvironmentService`.
 	 * For Tauri we derive it from `homeDir` using the product's data folder
-	 * name (e.g., `~/.vscode-oss/extensions/`).
+	 * name (e.g., `~/.vscodeee/extensions/`).
 	 */
   @memoize
   get extensionsPath(): string {

@@ -1,5 +1,5 @@
 {
-	"name": "code-oss-dev",
+	"name": "vscodeee",
 	"version": "0.0.0",
 	"distro": "7b60af3ce53ae18d76f52e3d0e94f25dd02a13a4",
 	"author": {
@@ -85,7 +85,7 @@
 		"symlink-local-component-explorer": "npm install ../vscode-packages/js-component-explorer/packages/explorer ../vscode-packages/js-component-explorer/packages/cli --no-save && cd build/rspack && npm install ../../../vscode-packages/js-component-explorer/packages/webpack-plugin ../../../vscode-packages/js-component-explorer/packages/explorer --no-save && cd ../vite && npm install ../../../vscode-packages/js-component-explorer/packages/vite-plugin ../../../vscode-packages/js-component-explorer/packages/explorer --no-save",
 		"install-latest-component-explorer": "npm install @vscode/component-explorer@next @vscode/component-explorer-cli@next && cd build/rspack && npm install @vscode/component-explorer-webpack-plugin@next @vscode/component-explorer@next && cd ../vite && npm install @vscode/component-explorer-vite-plugin@next @vscode/component-explorer@next",
 		"tauri": "tauri",
-		"tauri:dev": "npm install && bash scripts/check-csp-hash.sh && node scripts/download-node.mjs && node build/next/index.ts transpile && node build/next/index.ts transpile-extensions && node build/next/index.ts package-extensions && node scripts/generate-css-modules.mjs && tauri dev",
+		"tauri:dev": "npm install && bash scripts/check-csp-hash.sh && node scripts/download-node.mjs && node scripts/bundle-node-modules.mjs && node build/next/index.ts transpile && node build/next/index.ts transpile-extensions && node build/next/index.ts package-extensions && node scripts/generate-css-modules.mjs && tauri dev",
 		"tauri:build": "npm install && bash scripts/check-csp-hash.sh && node scripts/download-node.mjs && node scripts/bundle-node-modules.mjs && node build/next/index.ts transpile && node build/next/index.ts transpile-extensions && node build/next/index.ts package-extensions && tauri build"
 	},
 	"dependencies": {

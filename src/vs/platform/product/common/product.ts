@@ -61,12 +61,12 @@ else {
 	// Running out of sources
 	if (Object.keys(product).length === 0) {
 		Object.assign(product, {
-			version: '1.104.0-dev',
-			nameShort: 'Code - OSS Dev',
-			nameLong: 'Code - OSS Dev',
-			applicationName: 'code-oss',
-			dataFolderName: '.vscode-oss',
-			urlProtocol: 'code-oss',
+			version: '0.1.0-dev',
+			nameShort: 'VS Codeee Dev',
+			nameLong: 'VS Codeee Dev',
+			applicationName: 'vscodeee',
+			dataFolderName: '.vscodeee',
+			urlProtocol: 'vscodeee',
 			reportIssueUrl: 'https://github.com/microsoft/vscode/issues/new',
 			licenseName: 'MIT',
 			licenseUrl: 'https://github.com/microsoft/vscode/blob/main/LICENSE.txt',

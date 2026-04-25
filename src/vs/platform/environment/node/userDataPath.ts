@@ -45,11 +45,12 @@ export function getUserDataPath(cliArgs: NativeParsedArgs, productName: string):
 function doGetUserDataPath(cliArgs: NativeParsedArgs, productName: string): string {
 
 	// 0. Running out of sources has a fixed productName
+	// Use `-dev` suffix to isolate dev user data from production (avoids data pollution)
 	if (process.env['VSCODE_DEV']) {
 		if ((process as INodeProcess).isEmbeddedApp) {
-			productName = 'agents-oss-dev';
+			productName = 'vscodeee-agents-dev';
 		} else {
-			productName = 'code-oss-dev';
+			productName = 'vscodeee-dev';
 		}
 	}
 
