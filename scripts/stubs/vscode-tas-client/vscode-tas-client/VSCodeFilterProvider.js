@@ -7,7 +7,7 @@
 
 "use strict";
 
-var TargetPopulation;
+let TargetPopulation;
 (function (TargetPopulation) {
 	TargetPopulation['Team'] = 'team';
 	TargetPopulation['Internal'] = 'internal';
