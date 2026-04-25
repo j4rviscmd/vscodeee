@@ -1,0 +1,10 @@
+{
+  "name": "@vscode/extension-telemetry",
+  "description": "No-op stub — telemetry disabled for VS Codeee (Tauri fork).",
+  "version": "0.0.0-stub",
+  "main": "./dist/node/node/telemetryReporter.js",
+  "browser": "./dist/browser/browser/telemetryReporter.js",
+  "types": "./dist/telemetryReporter.d.ts",
+  "sideEffects": false,
+  "license": "MIT"
+}

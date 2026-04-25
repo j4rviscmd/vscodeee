@@ -1,0 +1,7 @@
+{
+  "name": "@microsoft/1ds-post-js",
+  "description": "No-op stub — telemetry disabled for VS Codeee (Tauri fork).",
+  "version": "0.0.0-stub",
+  "main": "./bundle/ms.post.min.js",
+  "license": "MIT"
+}

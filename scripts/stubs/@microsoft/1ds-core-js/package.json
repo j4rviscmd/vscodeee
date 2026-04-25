@@ -1,0 +1,7 @@
+{
+  "name": "@microsoft/1ds-core-js",
+  "description": "No-op stub — telemetry disabled for VS Codeee (Tauri fork).",
+  "version": "0.0.0-stub",
+  "main": "./bundle/ms.core.min.js",
+  "license": "MIT"
+}

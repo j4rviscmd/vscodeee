@@ -44,6 +44,33 @@ const TARGET_DIR = path.join(REPO_ROOT, 'src-tauri', 'node_modules');
 // plain Node.js sidecar, or too large / unnecessary for production).
 const EXCLUDED_PACKAGES = new Set([
 	'mermaid',      // very large (~10MB) — skip for now
+
+	// Telemetry transitive dependencies — excluded because we replace the top-level
+	// telemetry packages with no-op stubs (see STUBBED_PACKAGES below).
+	// This eliminates ~80MB of unnecessary packages from the bundle.
+	// See: https://github.com/j4rviscmd/vscodeee/issues/274
+	'@microsoft/applicationinsights-channel-js',
+	'@microsoft/applicationinsights-common',
+	'@microsoft/applicationinsights-core-js',
+	'@microsoft/applicationinsights-shims',
+	'@microsoft/applicationinsights-web-basic',
+	'@microsoft/dynamicproto-js',
+	'@nevware21/ts-async',
+	'@nevware21/ts-utils',
+]);
+
+// Directory containing no-op stub packages that replace real implementations.
+// Stubs maintain the same API surface but have zero dependencies and minimal size.
+const STUBS_DIR = path.join(REPO_ROOT, 'scripts', 'stubs');
+
+// Packages that should be replaced with no-op stubs in the bundle.
+// Key: package name, Value: relative path within STUBS_DIR.
+// The stub is copied instead of the real package from node_modules.
+// See: https://github.com/j4rviscmd/vscodeee/issues/274
+const STUBBED_PACKAGES = new Map([
+	['@vscode/extension-telemetry', '@vscode/extension-telemetry'],
+	['@microsoft/1ds-core-js', '@microsoft/1ds-core-js'],
+	['@microsoft/1ds-post-js', '@microsoft/1ds-post-js'],
 ]);
 
 // Core platform modules used by the Extension Host process and VS Code runtime.
@@ -100,9 +127,8 @@ const CORE_MODULES = [
 	// Math rendering (Markdown preview) — full package needed for require('katex')
 	'katex/',
 
-	// Telemetry
-	'@microsoft/1ds-core-js/bundle/ms.core.min.js',
-	'@microsoft/1ds-post-js/bundle/ms.post.min.js',
+	// Telemetry — replaced with no-op stubs via STUBBED_PACKAGES (see #274).
+	// The stubs are copied in the "Stub packages" phase instead of from node_modules.
 
 	// Experimentation service — full package needed for require('tas-client')
 	'tas-client/',
@@ -328,8 +354,24 @@ function main() {
 		}
 	}
 
-	// Phase 1.5: Resolve transitive deps of CORE_MODULES (e.g. @vscode/spdlog → mkdirp)
-	console.log('[bundle-node-modules] Phase 1.5: Core module transitive deps...');
+	// Phase 1.5: Copy no-op stub packages (replaces real telemetry packages)
+	console.log('[bundle-node-modules] Phase 1.5: Stub packages...');
+	for (const [pkgName, stubRelPath] of STUBBED_PACKAGES) {
+		const stubSrc = path.join(STUBS_DIR, stubRelPath);
+		const destPath = path.join(TARGET_DIR, pkgName);
+		if (!fs.existsSync(stubSrc)) {
+			console.warn(`[bundle-node-modules] WARN: stub for ${pkgName} not found at ${stubSrc}, skipping`);
+			skipped++;
+			continue;
+		}
+		const count = copyDirRecursive(stubSrc, destPath);
+		console.log(`[bundle-node-modules]   ${pkgName}/ (${count} files) [stub]`);
+		totalFiles += count;
+		bundledPkgs.add(pkgName);
+	}
+
+	// Phase 1.6: Resolve transitive deps of CORE_MODULES (e.g. @vscode/spdlog → mkdirp)
+	console.log('[bundle-node-modules] Phase 1.6: Core module transitive deps...');
 	const coreTransitiveQueue = [...bundledPkgs];
 	const coreTransitiveSeen = new Set(bundledPkgs);
 	while (coreTransitiveQueue.length > 0) {
