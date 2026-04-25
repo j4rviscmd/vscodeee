@@ -72,7 +72,7 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
     // are shown automatically if the TypeScript bootstrap crashes.
     let pending_shows = Arc::new(window::events::PendingShows::new());
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         // IMPORTANT: single-instance plugin must be registered first so the
         // second-process detection happens before any other plugin setup.
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
@@ -110,7 +110,13 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
         )
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(logging::build_plugin().build())
+        .plugin(logging::build_plugin().build());
+
+    // MCP Bridge — WebSocket server for AI agent automation (debug builds only).
+    #[cfg(debug_assertions)]
+    let builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+
+    builder
         .manage(pty::manager::PtyManager::new())
         .manage(commands::file_watcher::FileWatcherState::new())
         .manage(commands::spawn_exthost::ExtHostState::new())
