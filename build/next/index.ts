@@ -928,17 +928,19 @@ function runExtensionEsbuild(extDir: string, extName: string): Promise<{ name: s
  * Given the current `main` field (e.g., `"./out/extension"`) and the
  * extension's source directory, determines the corresponding `dist/` path.
  *
- * Returns `null` if no matching dist/ file is found.
+ * Returns `null` if no matching dist/ file is found. Paths include the
+ * `.js` extension because the extension host uses ESM `import()` which
+ * requires explicit file extensions.
  *
  * @example
- *   // Standard: ./out/extension → ./dist/extension
- *   computeDistMain('./out/extension', '/path/to/ext') → './dist/extension'
+ *   // Standard: ./out/extension → ./dist/extension.js
+ *   computeDistMain('./out/extension', '/path/to/ext') → './dist/extension.js'
  *
- *   // Client-server: ./client/out/node/cssClientMain → ./client/dist/node/cssClientMain
- *   computeDistMain('./client/out/node/cssClientMain', '/path/to/ext') → './client/dist/node/cssClientMain'
+ *   // Client-server: ./client/out/node/cssClientMain → ./client/dist/node/cssClientMain.js
+ *   computeDistMain('./client/out/node/cssClientMain', '/path/to/ext') → './client/dist/node/cssClientMain.js'
  *
- *   // Flattened: ./out/node/emmetNodeMain → ./dist/emmetNodeMain
- *   computeDistMain('./out/node/emmetNodeMain', '/path/to/ext') → './dist/emmetNodeMain'
+ *   // Flattened: ./out/node/emmetNodeMain → ./dist/emmetNodeMain.js
+ *   computeDistMain('./out/node/emmetNodeMain', '/path/to/ext') → './dist/emmetNodeMain.js'
  */
 function computeDistMain(mainField: string, extDir: string): string | null {
 	// Strip leading './' and trailing '.js' for normalization
@@ -949,13 +951,13 @@ function computeDistMain(mainField: string, extDir: string): string | null {
 	// e.g., "client/out/node/cssClientMain" → "client/dist/node/cssClientMain"
 	const distPath = normalized.replace(/\bout\b/, 'dist');
 	if (fs.existsSync(path.join(extDir, `${distPath}.js`))) {
-		return `./${distPath}`;
+		return `./${distPath}.js`;
 	}
 
 	// Strategy 2: Flat dist/ directory (esbuild often flattens subdirectories)
 	// e.g., "out/node/emmetNodeMain" → "dist/emmetNodeMain"
 	if (fs.existsSync(path.join(extDir, 'dist', `${basename}.js`))) {
-		return `./dist/${basename}`;
+		return `./dist/${basename}.js`;
 	}
 
 	return null;
