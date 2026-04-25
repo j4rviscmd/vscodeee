@@ -882,10 +882,10 @@ async function compileExtensionsEsbuild(): Promise<void> {
 
 			if (result.success) {
 				succeeded++;
-				console.log(`[compile-extensions-esbuild]   ${extName} ✓`);
+				console.log(`[compile-extensions-esbuild]   ${extName} OK`);
 			} else {
 				failed++;
-				console.warn(`[compile-extensions-esbuild]   ${extName} ✗ — ${result.error}`);
+				console.warn(`[compile-extensions-esbuild]   ${extName} FAIL - ${result.error}`);
 			}
 		}
 	}
