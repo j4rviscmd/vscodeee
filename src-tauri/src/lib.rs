@@ -275,6 +275,7 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
             commands::window::get_all_windows,
             commands::window::get_window_count,
             commands::window::set_workspace_uri,
+            commands::window::set_webview_zoom,
             // ── File watcher commands ──
             commands::file_watcher::fs_watch_start,
             commands::file_watcher::fs_watch_stop,
