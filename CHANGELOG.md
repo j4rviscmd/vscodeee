@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-04-26
+
+### Added
+
+- Add `workbench.editor.autoMaximizeOnFocus` setting to control whether maximized editor groups auto-restore when a different group receives focus — defaults to `true` (existing behavior), set to `false` to keep groups maximized ([#303](https://github.com/j4rviscmd/vscodeee/pull/303))
+
+### Fixed
+
+- Add `node scripts/bundle-node-modules.mjs` to `tauri:dev` script to fix `resource path 'node_modules' doesn't exist` error during `cargo build` in dev mode ([#302](https://github.com/j4rviscmd/vscodeee/pull/302))
+
+### Changed
+
+- Rename package from `code-oss-dev` to `vscodeee` across the entire codebase — package names, user data folder (`~/.vscode-oss` → `~/.vscodeee`), product display names (`Code - OSS Dev` → `VS Codeee Dev`), URL protocol (`code-oss://` → `vscodeee://`), and all related test fixtures ([#302](https://github.com/j4rviscmd/vscodeee/pull/302))
+- Update all `package-lock.json` files to reflect renamed package names
+
 ## [0.2.0] - 2026-04-25
 
 ### Added
