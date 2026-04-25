@@ -204,6 +204,7 @@ suite('Workbench - TerminalInstance', () => {
 
 		test('custom key event handler should handle commands in DEFAULT_COMMANDS_TO_SKIP_SHELL in VS Code and not xterm when sendKeybindingsToShell is disabled', async () => {
 			const instance = await createTerminalInstance();
+			// eslint-disable-next-line local/code-no-any-casts
 			const keybindingService = (instance as any)['_keybindingService'];
 			const originalSoftDispatch = keybindingService.softDispatch;
 			keybindingService.softDispatch = () => ({ kind: ResultKind.KbFound, commandId: 'workbench.action.zoomIn', commandArgs: undefined, isBubble: false });
@@ -229,6 +230,7 @@ suite('Workbench - TerminalInstance', () => {
 
 		test('custom key event handler should intercept Meta-modified keys that resolve to a command when sendKeybindingsToShell is disabled', async () => {
 			const instance = await createTerminalInstance();
+			// eslint-disable-next-line local/code-no-any-casts
 			const keybindingService = (instance as any)['_keybindingService'];
 			const originalSoftDispatch = keybindingService.softDispatch;
 			strictEqual(DEFAULT_COMMANDS_TO_SKIP_SHELL.includes('test.metaKeyInterceptCommand'), false);
