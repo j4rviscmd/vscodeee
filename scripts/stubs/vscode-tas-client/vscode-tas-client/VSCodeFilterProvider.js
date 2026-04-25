@@ -9,10 +9,10 @@
 
 var TargetPopulation;
 (function (TargetPopulation) {
-	TargetPopulation["Team"] = "team";
-	TargetPopulation["Internal"] = "internal";
-	TargetPopulation["Insiders"] = "insider";
-	TargetPopulation["Public"] = "public";
+	TargetPopulation['Team'] = 'team';
+	TargetPopulation['Internal'] = 'internal';
+	TargetPopulation['Insiders'] = 'insider';
+	TargetPopulation['Public'] = 'public';
 })(TargetPopulation || (TargetPopulation = {}));
 
 module.exports.TargetPopulation = TargetPopulation;
