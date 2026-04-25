@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import * as childProcess from 'child_process';
 import * as esbuild from 'esbuild';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -835,6 +836,132 @@ async function transpileExtensions(): Promise<void> {
 }
 
 // ============================================================================
+// Compile Extensions with esbuild (for production bundles)
+// ============================================================================
+
+/**
+ * Run `esbuild.mts` for each extension that has one, producing bundled
+ * output in each extension's `dist/` directory.
+ *
+ * This is a prerequisite for `packageExtensions()` which will then use
+ * the `dist/` output instead of `out/` (tsc-compiled) output. The esbuild
+ * bundles inline all dependencies, eliminating the need for per-extension
+ * `node_modules/` in the production build.
+ *
+ * Extensions without `esbuild.mts` are skipped (they continue to use
+ * `out/` + `node_modules/`).
+ */
+async function compileExtensionsEsbuild(): Promise<void> {
+	const extensionsDir = path.join(REPO_ROOT, 'extensions');
+	const entries = await fs.promises.readdir(extensionsDir, { withFileTypes: true });
+	const extensionDirs = entries.filter(e => e.isDirectory() && !EXCLUDED_EXTENSIONS.has(e.name));
+
+	let succeeded = 0;
+	let failed = 0;
+	let skipped = 0;
+
+	// Run esbuild for all extensions in parallel (with concurrency limit)
+	const CONCURRENCY = 8;
+	const queue = [...extensionDirs];
+	const results: Array<{ name: string; success: boolean; error?: string }> = [];
+
+	async function processNext(): Promise<void> {
+		while (queue.length > 0) {
+			const entry = queue.shift()!;
+			const extName = entry.name;
+			const extDir = path.join(extensionsDir, extName);
+			const esbuildPath = path.join(extDir, 'esbuild.mts');
+
+			if (!await fileExists(esbuildPath)) {
+				skipped++;
+				continue;
+			}
+
+			const result = await runExtensionEsbuild(extDir, extName);
+			results.push(result);
+
+			if (result.success) {
+				succeeded++;
+				console.log(`[compile-extensions-esbuild]   ${extName} ✓`);
+			} else {
+				failed++;
+				console.warn(`[compile-extensions-esbuild]   ${extName} ✗ — ${result.error}`);
+			}
+		}
+	}
+
+	// Start workers
+	const workers = Array.from({ length: CONCURRENCY }, () => processNext());
+	await Promise.all(workers);
+
+	console.log(`[compile-extensions-esbuild] Results: ${succeeded} succeeded, ${failed} failed, ${skipped} skipped (no esbuild.mts)`);
+
+	if (failed > 0) {
+		const failedNames = results.filter(r => !r.success).map(r => r.name);
+		console.warn(`[compile-extensions-esbuild] Failed extensions (will fall back to out/ + node_modules): ${failedNames.join(', ')}`);
+	}
+}
+
+/**
+ * Run `node --experimental-strip-types esbuild.mts` for a single extension.
+ */
+function runExtensionEsbuild(extDir: string, extName: string): Promise<{ name: string; success: boolean; error?: string }> {
+	return new Promise((resolve) => {
+		childProcess.execFile(
+			'node',
+			['--experimental-strip-types', 'esbuild.mts'],
+			{ cwd: extDir, timeout: 60_000 },
+			(error, _stdout, stderr) => {
+				if (error) {
+					resolve({ name: extName, success: false, error: stderr || error.message });
+				} else {
+					resolve({ name: extName, success: true });
+				}
+			}
+		);
+	});
+}
+
+/**
+ * Compute the `dist/`-based `main` field for an extension.
+ *
+ * Given the current `main` field (e.g., `"./out/extension"`) and the
+ * extension's source directory, determines the corresponding `dist/` path.
+ *
+ * Returns `null` if no matching dist/ file is found.
+ *
+ * @example
+ *   // Standard: ./out/extension → ./dist/extension
+ *   computeDistMain('./out/extension', '/path/to/ext') → './dist/extension'
+ *
+ *   // Client-server: ./client/out/node/cssClientMain → ./client/dist/node/cssClientMain
+ *   computeDistMain('./client/out/node/cssClientMain', '/path/to/ext') → './client/dist/node/cssClientMain'
+ *
+ *   // Flattened: ./out/node/emmetNodeMain → ./dist/emmetNodeMain
+ *   computeDistMain('./out/node/emmetNodeMain', '/path/to/ext') → './dist/emmetNodeMain'
+ */
+function computeDistMain(mainField: string, extDir: string): string | null {
+	// Strip leading './' and trailing '.js' for normalization
+	const normalized = mainField.replace(/^\.\//, '').replace(/\.js$/, '');
+	const basename = path.basename(normalized);
+
+	// Strategy 1: Replace 'out' with 'dist' in the path
+	// e.g., "client/out/node/cssClientMain" → "client/dist/node/cssClientMain"
+	const distPath = normalized.replace(/\bout\b/, 'dist');
+	if (fs.existsSync(path.join(extDir, `${distPath}.js`))) {
+		return `./${distPath}`;
+	}
+
+	// Strategy 2: Flat dist/ directory (esbuild often flattens subdirectories)
+	// e.g., "out/node/emmetNodeMain" → "dist/emmetNodeMain"
+	if (fs.existsSync(path.join(extDir, 'dist', `${basename}.js`))) {
+		return `./dist/${basename}`;
+	}
+
+	return null;
+}
+
+// ============================================================================
 // Package Extensions (for Tauri bundle)
 // ============================================================================
 
@@ -895,21 +1022,26 @@ const PACKAGE_EXCLUDE_EXTS = new Set([
  * It copies only the runtime-necessary files from each extension, excluding:
  * - Test extensions (vscode-api-tests, etc.)
  * - Source files (.ts, but not .d.ts)
- * - node_modules (esbuild-bundled extensions don't need them)
  * - Test directories, build scripts, config files
  *
- * The result is a dramatically smaller extensions directory (~50-70 MB vs 1.5 GB).
+ * For extensions with esbuild `dist/` output:
+ * - Uses `dist/` instead of `out/` (bundled, all deps inlined)
+ * - Excludes `node_modules/` and `out/` (not needed with bundled output)
+ * - Rewrites `main` in package.json to point to `dist/` path
  *
- * For extensions with `esbuild.mts` (bundled extensions), node_modules are
- * excluded entirely since dependencies are bundled into dist/.
- * For non-bundled extensions that have runtime dependencies, the required
- * production node_modules are preserved.
+ * For extensions without `dist/` output (fallback):
+ * - Uses `out/` with `node_modules/` preserved for runtime dependencies
  */
 async function packageExtensions(): Promise<void> {
 	const extensionsDir = path.join(REPO_ROOT, 'extensions');
 	const outputDir = path.join(REPO_ROOT, '.build', 'extensions');
 
-	// Clean output directory
+	// Step 1: Compile extensions with esbuild to produce dist/ output
+	console.log('[package-extensions] Step 1: Compiling extensions with esbuild...');
+	await compileExtensionsEsbuild();
+
+	// Step 2: Clean output directory and package
+	console.log('[package-extensions] Step 2: Packaging extensions...');
 	await fs.promises.rm(outputDir, { recursive: true, force: true });
 	await fs.promises.mkdir(outputDir, { recursive: true });
 
@@ -920,6 +1052,8 @@ async function packageExtensions(): Promise<void> {
 
 	let totalFiles = 0;
 	let totalSize = 0;
+	let distCount = 0;
+	let fallbackCount = 0;
 
 	await Promise.all(extensionDirs.map(async (entry) => {
 		const extName = entry.name;
@@ -934,20 +1068,37 @@ async function packageExtensions(): Promise<void> {
 			return; // Skip directories without package.json (e.g., node_modules)
 		}
 
-		// Determine if this is an esbuild-bundled extension
-		const hasEsbuild = await fileExists(path.join(srcDir, 'esbuild.mts'));
+		// Read package.json to get the main field
+		const pkgJson = JSON.parse(await fs.promises.readFile(pkgJsonPath, 'utf8'));
+		const mainField: string | undefined = pkgJson.main;
+
+		// Determine if this extension has a usable dist/ output
+		const distMain = mainField ? computeDistMain(mainField, srcDir) : null;
+		const useDistBundle = distMain !== null;
+
+		if (useDistBundle) {
+			distCount++;
+		} else {
+			fallbackCount++;
+		}
 
 		// Copy the extension, filtering out unnecessary files
-		const { files, size } = await copyExtension(srcDir, destDir, extName, hasEsbuild);
+		const { files, size } = await copyExtension(srcDir, destDir, extName, useDistBundle);
 		totalFiles += files;
 		totalSize += size;
+
+		// Rewrite package.json main field to use dist/ path
+		if (useDistBundle && distMain) {
+			const destPkgJsonPath = path.join(destDir, 'package.json');
+			const destPkgJson = JSON.parse(await fs.promises.readFile(destPkgJsonPath, 'utf8'));
+			destPkgJson.main = distMain;
+			await fs.promises.writeFile(destPkgJsonPath, JSON.stringify(destPkgJson, null, '  ') + '\n', 'utf8');
+			console.log(`[package-extensions]   ${extName}: main rewritten ${mainField} → ${distMain}`);
+		}
 	}));
 
-	// NOTE: extensions/node_modules/ contains shared build tools (tsc, esbuild, etc.)
-	// and is NOT needed at runtime. Individual extension runtime deps are in each
-	// extension's own node_modules/ (only for non-esbuild extensions).
-
 	console.log(`[package-extensions] Packaged ${totalFiles} files (${(totalSize / 1024 / 1024).toFixed(1)} MB) into .build/extensions/`);
+	console.log(`[package-extensions]   dist-bundled: ${distCount}, fallback (out+node_modules): ${fallbackCount}`);
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -962,14 +1113,19 @@ async function fileExists(filePath: string): Promise<boolean> {
 /**
  * Copy an extension directory, filtering out development-only files.
  *
- * For esbuild-bundled extensions: excludes node_modules entirely (deps are in dist/).
- * For non-bundled extensions with runtime deps: preserves production node_modules.
+ * When `useDistBundle` is true (extension has esbuild dist/ output):
+ * - Excludes `out/` and `node_modules/` entirely (deps are bundled in dist/)
+ * - Includes `dist/` directory with the bundled output
+ *
+ * When `useDistBundle` is false (fallback mode):
+ * - Includes `out/` and `node_modules/` for runtime dependency resolution
+ * - Excludes `dist/` to avoid shipping both bundled and unbundled code
  */
 async function copyExtension(
 	srcDir: string,
 	destDir: string,
 	_extName: string,
-	hasEsbuild: boolean,
+	useDistBundle: boolean,
 ): Promise<{ files: number; size: number }> {
 	return copyDirectory(srcDir, destDir, (relPath) => {
 		const parts = relPath.split(path.sep);
@@ -986,9 +1142,18 @@ async function copyExtension(
 			return false;
 		}
 
+		if (useDistBundle) {
+			// dist-bundle mode: exclude out/ and node_modules/ at any level
+			// This handles both top-level out/ and nested out/ (e.g., client/out/, server/out/)
+			// and nested node_modules/ (e.g., server/node_modules/)
+			if (parts.includes('out') || parts.includes('node_modules')) {
+				return false;
+			}
+		}
+
 		if (PACKAGE_EXCLUDE_PATTERNS.has(firstDir)) {
-			// For non-esbuild extensions, allow node_modules (they need runtime deps)
-			if (firstDir === 'node_modules' && !hasEsbuild) {
+			// In fallback mode, allow node_modules (they need runtime deps)
+			if (firstDir === 'node_modules' && !useDistBundle) {
 				// But still exclude test directories within node_modules
 				if (parts.some(p => p === 'test' || p === 'tests' || p === '.github')) {
 					return false;
@@ -1472,6 +1637,7 @@ function printUsage(): void {
 Commands:
 	transpile          Transpile TypeScript to JavaScript (single-file, fast)
 	transpile-extensions  Transpile built-in extensions under extensions/
+	compile-extensions-esbuild  Compile extensions with esbuild (produces dist/ bundles)
 	package-extensions    Package built-in extensions for Tauri bundling
 	bundle             Bundle entry points into optimized bundles
 
@@ -1532,6 +1698,14 @@ async function main(): Promise<void> {
 				const t1 = Date.now();
 				await transpileExtensions();
 				console.log(`[transpile-extensions] Done in ${Date.now() - t1}ms`);
+				break;
+			}
+
+			case 'compile-extensions-esbuild': {
+				console.log(`[compile-extensions-esbuild] Compiling extensions with esbuild...`);
+				const t1 = Date.now();
+				await compileExtensionsEsbuild();
+				console.log(`[compile-extensions-esbuild] Done in ${Date.now() - t1}ms`);
 				break;
 			}
 
