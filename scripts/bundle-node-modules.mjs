@@ -71,6 +71,14 @@ const STUBBED_PACKAGES = new Map([
 	['@vscode/extension-telemetry', '@vscode/extension-telemetry'],
 	['@microsoft/1ds-core-js', '@microsoft/1ds-core-js'],
 	['@microsoft/1ds-post-js', '@microsoft/1ds-post-js'],
+	// Experimentation service (Treatment Assignment Service) — this fork does not
+	// use Microsoft's A/B testing. All experiment flags return default values.
+	// The root node_modules has tas-client@0.3.1 (ESM, "type": "module") which
+	// is incompatible with require() used by extensions. Stubbing eliminates both
+	// the ESM/CJS mismatch and unnecessary HTTP calls to Microsoft's servers.
+	// See: https://github.com/j4rviscmd/vscodeee/issues/296
+	['tas-client', 'tas-client'],
+	['vscode-tas-client', 'vscode-tas-client'],
 ]);
 
 // Core platform modules used by the Extension Host process and VS Code runtime.
@@ -127,11 +135,9 @@ const CORE_MODULES = [
 	// Math rendering (Markdown preview) — full package needed for require('katex')
 	'katex/',
 
-	// Telemetry — replaced with no-op stubs via STUBBED_PACKAGES (see #274).
+	// Telemetry & experimentation — replaced with no-op stubs via STUBBED_PACKAGES.
 	// The stubs are copied in the "Stub packages" phase instead of from node_modules.
-
-	// Experimentation service — full package needed for require('tas-client')
-	'tas-client/',
+	// See: #274 (telemetry), #296 (experimentation/TAS)
 
 	// Tree-sitter (syntax parsing)
 	'@vscode/tree-sitter-wasm/wasm/',
