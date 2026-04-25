@@ -18,7 +18,19 @@ import { defaultWindowTitle, defaultWindowTitleSeparator } from './parts/titleba
 
 const registry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration);
 
-// Configuration
+/**
+ * Registers all workbench and window configuration properties with the
+ * configuration registry. This IIFE runs at module-load time and covers:
+ *
+ * - **Workbench settings** (editor tabs, layout, panels, notifications, etc.)
+ * - **Window settings** (title, menu bar, zoom level, etc.)
+ * - **Zen Mode settings**
+ *
+ * Each setting follows the schema defined by {@link IConfigurationRegistry.registerConfiguration}.
+ * Dynamic configuration contributions are registered separately via
+ * `registerWorkbenchContribution2` for `DynamicWindowConfiguration` and
+ * `DynamicWorkbenchSecurityConfiguration`.
+ */
 (function registerConfiguration(): void {
 
 	// Migration support
@@ -918,6 +930,14 @@ const registry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Con
 					localize('confirmBeforeCloseWeb', "Controls whether to show a confirmation dialog before closing the browser tab or window. Note that even if enabled, browsers may still decide to close a tab or window without confirmation and that this setting is only a hint that may not work in all cases.") :
 					localize('confirmBeforeClose', "Controls whether to show a confirmation dialog before closing a window or quitting the application."),
 				'scope': ConfigurationScope.APPLICATION
+			},
+			'window.zoomLevel': {
+				'type': 'number',
+				'default': 0,
+				'minimum': -8,
+				'maximum': 24,
+				'markdownDescription': localize('zoomLevel', "Adjust the zoom level of the window. The original size is 0 and each increment above (e.g. 1) or below (e.g. -1) represents zooming 20% larger or smaller respectively. You can also enter decimals for a finer zoom level."),
+				'scope': ConfigurationScope.APPLICATION
 			}
 		}
 	});
@@ -994,6 +1014,7 @@ const registry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Con
 	});
 })();
 
+/** Migrate the removed `workbench.activityBar.visible` boolean setting to `workbench.activityBar.location`. */
 Registry.as<IConfigurationMigrationRegistry>(Extensions.ConfigurationMigration)
 	.registerConfigurationMigrations([{
 		key: 'workbench.activityBar.visible', migrateFn: (value: unknown) => {
@@ -1008,6 +1029,7 @@ Registry.as<IConfigurationMigrationRegistry>(Extensions.ConfigurationMigration)
 		}
 	}]);
 
+/** Migrate the legacy `side` value of `workbench.activityBar.location` to `default`. */
 Registry.as<IConfigurationMigrationRegistry>(Extensions.ConfigurationMigration)
 	.registerConfigurationMigrations([{
 		key: LayoutSettings.ACTIVITY_BAR_LOCATION, migrateFn: (value: unknown) => {
@@ -1019,6 +1041,14 @@ Registry.as<IConfigurationMigrationRegistry>(Extensions.ConfigurationMigration)
 		}
 	}]);
 
+/**
+ * Batch migration for deprecated editor and zen-mode settings:
+ *
+ * - `workbench.editor.doubleClickTabToToggleEditorGroupSizes` — boolean to enum string
+ * - `workbench.editor.showTabs` — boolean to `EditorTabsMode` enum string
+ * - `workbench.editor.tabCloseButton` — split into `tabActionLocation` and `tabActionCloseVisibility`
+ * - `zenMode.hideTabs` — replaced by `zenMode.showTabs`
+ */
 Registry.as<IConfigurationMigrationRegistry>(Extensions.ConfigurationMigration)
 	.registerConfigurationMigrations([{
 		key: 'workbench.editor.doubleClickTabToToggleEditorGroupSizes', migrateFn: (value: unknown) => {

@@ -9,7 +9,7 @@
 //! beyond the basic `get_window_configuration` in `mod.rs`.
 
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
+use tauri::{Manager, Webview};
 
 /// Extended window state for the workbench.
 ///
@@ -212,4 +212,22 @@ pub async fn set_workspace_uri(
     let label = window.label().to_string();
     window_manager.set_workspace_uri(&label, uri).await;
     Ok(())
+}
+
+/// Set the WebView zoom level using the native zoom API.
+///
+/// Takes a zoom scale factor where 1.0 = 100%. Maps `window.zoomLevel`
+/// (an integer index) to the scale factor `1.2^level` on the TypeScript side.
+/// Uses Tauri's `Webview::set_zoom()` which calls WKWebView's native page zoom
+/// on macOS — this updates `window.innerWidth` correctly, unlike CSS zoom.
+#[tauri::command]
+pub async fn set_webview_zoom(webview: Webview, scale_factor: f64) -> Result<(), String> {
+    if !(0.1..=100.0).contains(&scale_factor) {
+        return Err(format!(
+            "scale_factor must be between 0.1 and 100.0, got {scale_factor}"
+        ));
+    }
+    webview
+        .set_zoom(scale_factor)
+        .map_err(|e| format!("Failed to set zoom: {e}"))
 }

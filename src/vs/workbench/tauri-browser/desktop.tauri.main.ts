@@ -13,6 +13,7 @@
 import product from '../../platform/product/common/product.js';
 import { Workbench } from '../browser/workbench.js';
 import { domContentLoaded, addDisposableListener, EventHelper, EventType } from '../../base/browser/dom.js';
+import { setZoomLevel, getZoomLevel } from '../../base/browser/browser.js';
 import { ServiceCollection } from '../../platform/instantiation/common/serviceCollection.js';
 import { ILogService, ILoggerService, getLogLevel, ConsoleLogger } from '../../platform/log/common/log.js';
 import { FileLoggerService } from '../../platform/log/common/fileLog.js';
@@ -66,15 +67,29 @@ import { TauriNativeHostService } from '../../platform/native/tauri-browser/nati
 import { TauriWorkbenchEnvironmentService, ITauriWindowConfiguration } from '../services/environment/tauri-browser/environmentService.js';
 import { IBrowserWorkbenchEnvironmentService } from '../services/environment/browser/environmentService.js';
 import { IWorkbenchConstructionOptions, IWorkspace, IWorkspaceProvider } from '../browser/web.api.js';
-import { isFolderToOpen, isWorkspaceToOpen } from '../../platform/window/common/window.js';
+import { isFolderToOpen, isWorkspaceToOpen, zoomLevelToZoomFactor } from '../../platform/window/common/window.js';
 import { invoke, listen } from '../../platform/tauri/common/tauriApi.js';
 import { ITauriWindowService, TauriWindowService } from '../../platform/window/tauri-browser/windowService.js';
 import { TauriURLCallbackProvider } from './urlCallbackProvider.js';
 
+/**
+ * Tauri equivalent of Electron's `DesktopMain`.
+ *
+ * Owns the full workbench lifecycle for a single Tauri window:
+ * service initialization, Workbench creation, event wiring, and
+ * shutdown coordination.
+ */
 export class TauriDesktopMain extends Disposable {
 
   private readonly workspace: IWorkspace;
 
+  /**
+   * @param tauriConfig - Window configuration resolved from the Rust backend
+   *     via `get_extended_window_configuration`.
+   * @param folderUri - Optional folder URI to open on startup (from URL query param).
+   * @param workspaceUri - Optional `.code-workspace` URI to open on startup (from URL query param).
+   * @param remoteAuthority - Optional remote authority for remote development (e.g. `"ssh-remote+host"`).
+   */
   constructor(
     private readonly tauriConfig: ITauriWindowConfiguration,
     folderUri?: string,
@@ -93,6 +108,13 @@ export class TauriDesktopMain extends Disposable {
     }
   }
 
+  /**
+   * Bootstrap the workbench: initialize services, create the Workbench instance,
+   * wire up event listeners (resize, maximize, zoom, external opener), and start
+   * the workbench.
+   *
+   * Services and DOM readiness are initialized in parallel for faster startup.
+   */
   async open(): Promise<void> {
 
     // Init services and wait for DOM to be ready in parallel
@@ -117,6 +139,7 @@ export class TauriDesktopMain extends Disposable {
       const layoutService = accessor.get(IWorkbenchLayoutService);
       const nativeHostService = accessor.get(INativeHostService);
       const openerService = accessor.get(IOpenerService);
+      const configurationService = accessor.get(IWorkbenchConfigurationService);
 
       listen('tauri://resize', () => layoutService.layout())
         .then(unlisten => this._register({ dispose: unlisten }));
@@ -145,9 +168,41 @@ export class TauriDesktopMain extends Disposable {
           return true;
         },
       });
+
+      // Apply window zoom level via Tauri's native WebView zoom.
+      // In Electron, webFrame.setZoomLevel() changes the Chromium page zoom factor,
+      // which correctly updates window.innerWidth/innerHeight and reflows the layout.
+      // Tauri's Webview::set_zoom() provides the same native behavior via WKWebView
+      // on macOS, unlike CSS zoom which doesn't update viewport dimensions.
+      const applyWindowZoom = async (): Promise<void> => {
+        let zoomLevel = configurationService.getValue<number>('window.zoomLevel') ?? 0;
+        zoomLevel = Math.max(-8, Math.min(24, zoomLevel));
+        if (getZoomLevel(mainWindow) === zoomLevel) {
+          return;
+        }
+        setZoomLevel(zoomLevel, mainWindow);
+        await invoke('set_webview_zoom', { scaleFactor: zoomLevelToZoomFactor(zoomLevel) });
+        layoutService.layout();
+      };
+      applyWindowZoom();
+      this._register(configurationService.onDidChangeConfiguration(e => {
+        if (e.affectsConfiguration('window.zoomLevel')) {
+          applyWindowZoom();
+        }
+      }));
     });
   }
 
+  /**
+   * Register lifecycle listeners on the Workbench instance.
+   *
+   * Storage is closed on `onDidShutdown` (which fires *after* the lifecycle
+   * service flush) rather than `onWillShutdown` (which fires *before* flush)
+   * to avoid data loss.
+   *
+   * @param workbench - The Workbench instance to listen on.
+   * @param storageService - The Tauri storage service to close on shutdown.
+   */
   private registerListeners(workbench: Workbench, storageService: TauriStorageService): void {
     // Close storage AFTER flush — onWillShutdown fires BEFORE the lifecycle
     // service's flush(SHUTDOWN), so closing there would dispose the Storage
@@ -157,6 +212,27 @@ export class TauriDesktopMain extends Disposable {
     this._register(workbench.onDidShutdown(() => this.dispose()));
   }
 
+  /**
+   * Initialize the full service collection required by the Workbench.
+   *
+   * Registration order matters because later services may depend on earlier ones.
+   * The general order is:
+   *
+   * 1. Product & Main Process (IPC)
+   * 2. Environment & Workspace Provider
+   * 3. Logging
+   * 4. Native Host & Window Service
+   * 5. File System (disk I/O via Tauri commands)
+   * 6. User Data Profiles
+   * 7. Remote Agent (extension host over WebSocket)
+   * 8. Configuration
+   * 9. Request Service
+   * 10. Storage
+   * 11. Workspace Trust
+   *
+   * @returns The populated service collection, log service, and storage service.
+   * @throws {Error} If `appDataDir` or `tmpDir` is not provided in the Tauri configuration.
+   */
   private async initServices(): Promise<{ serviceCollection: ServiceCollection; logService: ILogService; storageService: TauriStorageService }> {
     const serviceCollection = new ServiceCollection();
 
@@ -312,6 +388,12 @@ export class TauriDesktopMain extends Disposable {
     return { serviceCollection, logService, storageService };
   }
 
+  /**
+   * Resolve the workspace identifier from the initial workspace configuration.
+   *
+   * Returns a single-folder identifier, a workspace-file identifier, or
+   * `UNKNOWN_EMPTY_WINDOW_WORKSPACE` when no workspace is open.
+   */
   private resolveWorkspaceIdentifier() {
     if (this.workspace && isFolderToOpen(this.workspace)) {
       return getSingleFolderWorkspaceIdentifier(this.workspace.folderUri);
@@ -325,13 +407,19 @@ export class TauriDesktopMain extends Disposable {
 
 /**
  * Workspace provider for Tauri — handles Open Folder / Open Workspace
- * by reloading the page with ?folder= or ?workspace= query params.
+ * by reloading the page with `?folder=` or `?workspace=` query params.
  * Same pattern as VS Code web's `WorkspaceProvider`.
+ *
+ * When opening in a new window (not reusing), delegates to the Rust
+ * `open_new_window` command via `WindowManager`.
  */
 class TauriWorkspaceProvider implements IWorkspaceProvider {
 
+  /** Query parameter key for a folder URI. */
   private static readonly QUERY_PARAM_FOLDER = 'folder';
+  /** Query parameter key for a workspace file URI. */
   private static readonly QUERY_PARAM_WORKSPACE = 'workspace';
+  /** Query parameter key indicating an empty window. */
   private static readonly QUERY_PARAM_EMPTY_WINDOW = 'ew';
 
   readonly trusted = true;
@@ -339,6 +427,18 @@ class TauriWorkspaceProvider implements IWorkspaceProvider {
 
   constructor(readonly workspace: IWorkspace) { }
 
+  /**
+   * Open a workspace in the current or a new window.
+   *
+   * - If `options.reuse` is true and the workspace matches the current one, this is a no-op.
+   * - If `options.reuse` is true but the workspace differs, navigates the current window.
+   * - Otherwise, opens a new Tauri window via the `open_new_window` Rust command,
+   *   extracting `remoteAuthority` from `vscode-remote://` URIs when present.
+   *
+   * @param workspace - The workspace to open (folder, workspace file, or empty).
+   * @param options - Optional reuse and payload options.
+   * @returns `true` if the workspace was opened successfully, `false` otherwise.
+   */
   async open(workspace: IWorkspace, options?: { reuse?: boolean; payload?: object }): Promise<boolean> {
     if (options?.reuse && this.isSame(this.workspace, workspace)) {
       return true;
@@ -385,6 +485,12 @@ class TauriWorkspaceProvider implements IWorkspaceProvider {
     }
   }
 
+  /**
+   * Build a URL with the appropriate query parameter for the given workspace.
+   *
+   * @param workspace - The workspace to encode in the URL.
+   * @returns The full URL string, or `undefined` if the workspace type is unrecognized.
+   */
   private createTargetUrl(workspace: IWorkspace): string | undefined {
     const base = `${document.location.origin}${document.location.pathname}`;
 
@@ -403,6 +509,12 @@ class TauriWorkspaceProvider implements IWorkspaceProvider {
     return undefined;
   }
 
+  /**
+   * Determine whether two workspace references point to the same location.
+   *
+   * Compares folder URIs or workspace file URIs depending on the workspace type.
+   * Two `undefined` (empty) workspaces are considered the same.
+   */
   private isSame(a: IWorkspace, b: IWorkspace): boolean {
     if (!a || !b) {
       return a === b;
