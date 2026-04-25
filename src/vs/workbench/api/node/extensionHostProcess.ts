@@ -62,6 +62,26 @@ if (process.env.VSCODE_DEV) {
 	}
 })();
 
+// Tauri: Inject extension node_modules paths into Module.globalPaths.
+// VS Code's removeGlobalNodeJsModuleLookupPaths() (called in bootstrap-fork.ts)
+// is skipped when VSCODEEE_EXT_NODE_MODULES_PATHS is set, so the original
+// _resolveLookupPaths (which reads Module.globalPaths dynamically) is preserved.
+// Additionally, NODE_PATH is set by the Rust sidecar, which adds these paths
+// to Module.globalPaths at Node.js startup before any JS code runs.
+(function injectExtensionNodeModulesPaths() {
+	const extPaths = process.env['VSCODEEE_EXT_NODE_MODULES_PATHS'];
+	if (typeof extPaths === 'string' && extPaths.length > 0) {
+		const Module = require('module');
+		const separator = process.platform === 'win32' ? ';' : ':';
+		const paths = extPaths.split(separator).filter(p => p.length > 0);
+		for (const p of paths) {
+			if (!(Module.globalPaths as string[]).includes(p)) {
+				(Module.globalPaths as string[]).push(p);
+			}
+		}
+	}
+})();
+
 const args = minimist(process.argv.slice(2), {
 	boolean: [
 		'transformURIs',

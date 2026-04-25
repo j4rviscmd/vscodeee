@@ -73,6 +73,16 @@ pub fn init_protocol_state(app: &tauri::App) -> Arc<ProtocolState> {
         // relative to src-tauri/. Add the project root so all source files are accessible.
         if let Ok(project_root) = cwd.join("..").canonicalize() {
             roots.add_root(&project_root);
+
+            // Worktrees symlink .build/ to the main repo's .build/ directory.
+            // The extension service resolves through this symlink and creates
+            // vscode-file:// URIs using the main repo path, which would be
+            // rejected by the root validation. Resolve the symlink and register
+            // the target as an additional root.
+            let build_dir = project_root.join(".build");
+            if let Ok(resolved) = build_dir.canonicalize() {
+                roots.add_root(&resolved);
+            }
         }
     }
 

@@ -78,6 +78,16 @@ export function removeGlobalNodeJsModuleLookupPaths(): void {
 		return; // Electron disables global search paths in https://github.com/electron/electron/blob/3186c2f0efa92d275dc3d57b5a14a60ed3846b0e/shell/common/node_bindings.cc#L653
 	}
 
+	// Tauri: skip stripping when extension node_modules paths are provided.
+	// Extensions need global paths (Module.globalPaths) for module resolution,
+	// and the snapshot-based suffix stripping in this function prevents paths
+	// injected after startup from being used by _resolveLookupPaths.
+	// Safe for Electron: VSCODEEE_EXT_NODE_MODULES_PATHS is never set in Electron
+	// (only set by the Tauri sidecar), so this early return is never reached there.
+	if (process.env['VSCODEEE_EXT_NODE_MODULES_PATHS']) {
+		return;
+	}
+
 	const Module = require('module');
 	const globalPaths = Module.globalPaths;
 

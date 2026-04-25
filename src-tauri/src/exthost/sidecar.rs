@@ -80,6 +80,74 @@ fn resolve_node_binary() -> String {
     "node".to_string()
 }
 
+/// Build extension node_modules paths for the Extension Host child process.
+///
+/// In production, Node.js modules are bundled under `{resource_dir}/node_modules/`.
+/// In development, extensions live at `{app_root}/extensions/*/` with their own
+/// `node_modules/` directories, but the Extension Host loads compiled code from
+/// `.build/extensions/*/out/` where no `node_modules` exist. Node.js walks up
+/// from the extension's location and never finds the source tree's packages.
+///
+/// This function constructs a colon/semicolon-separated list of paths that includes
+/// both the production resource path and, when an `extensions/` directory is detected
+/// in `app_root`, all extension `node_modules/` directories so `require('byline')` etc.
+/// resolve.
+///
+/// The paths are set as both `NODE_PATH` and `VSCODEEE_EXT_NODE_MODULES_PATHS`:
+/// - `NODE_PATH`: Node.js adds these to `Module.globalPaths` at process startup.
+///   Since `removeGlobalNodeJsModuleLookupPaths()` in `bootstrap-node.ts` is skipped
+///   when `VSCODEEE_EXT_NODE_MODULES_PATHS` is set, the paths survive module resolution.
+/// - `VSCODEEE_EXT_NODE_MODULES_PATHS`: Triggers the skip in
+///   `removeGlobalNodeJsModuleLookupPaths()` so `NODE_PATH` entries are not stripped.
+fn build_ext_node_modules_paths(app_root: &Path, resource_dir: &Path) -> String {
+    let separator = if cfg!(windows) { ";" } else { ":" };
+    let mut paths: Vec<String> = Vec::new();
+
+    // Always include the resource dir node_modules (production layout)
+    paths.push(
+        resource_dir
+            .join("node_modules")
+            .to_string_lossy()
+            .into_owned(),
+    );
+
+    // In development, add app_root's node_modules and each extension's node_modules
+    let extensions_dir = app_root.join("extensions");
+    if extensions_dir.is_dir() {
+        // Root node_modules (contains hoisted deps used by some extensions)
+        let root_nm = app_root.join("node_modules");
+        if root_nm.is_dir() {
+            paths.push(root_nm.to_string_lossy().into_owned());
+        }
+
+        // Each extension's own node_modules
+        if let Ok(entries) = std::fs::read_dir(&extensions_dir) {
+            let mut ext_paths: Vec<String> = entries
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().is_dir())
+                .filter_map(|e| {
+                    let nm = e.path().join("node_modules");
+                    if nm.is_dir() {
+                        Some(nm.to_string_lossy().into_owned())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            ext_paths.sort();
+            paths.append(&mut ext_paths);
+        }
+    }
+
+    let paths_str = paths.join(separator);
+    log::debug!(
+        target: "vscodeee::exthost::sidecar",
+        "ExtHost node_modules paths: {} entries",
+        paths.len()
+    );
+    paths_str
+}
+
 /// Build an enriched PATH for the Extension Host child process.
 ///
 /// macOS app bundles inherit a minimal PATH (`/usr/bin:/bin:/usr/sbin:/sbin`)
@@ -377,6 +445,8 @@ async fn spawn_and_connect(
         "ExtHost PATH: {enriched_path}"
     );
 
+    let ext_nm_paths = build_ext_node_modules_paths(app_root, resource_dir);
+
     let mut child = Command::new(node_bin)
         .arg("--dns-result-order=ipv4first")
         // Node.js 22+ enables require(esm) by default, which uses Atomics.wait()
@@ -388,17 +458,13 @@ async fn spawn_and_connect(
         .arg("--type=extensionHost")
         .current_dir(app_root)
         .env("PATH", &enriched_path)
-        // NODE_PATH tells Node.js where to find node_modules when cwd differs from
-        // the resource layout. In Tauri bundles, node_modules/ lives under
-        // {resource_dir}/node_modules/ but cwd is {resource_dir}/_up_/, so
-        // standard module resolution fails without this hint.
-        .env(
-            "NODE_PATH",
-            resource_dir
-                .join("node_modules")
-                .to_string_lossy()
-                .to_string(),
-        )
+        // NODE_PATH for extension module resolution.
+        // Node.js adds NODE_PATH entries to Module.globalPaths at startup.
+        // Since removeGlobalNodeJsModuleLookupPaths() is skipped when
+        // VSCODEEE_EXT_NODE_MODULES_PATHS is set (see bootstrap-node.ts),
+        // the globalPaths are never stripped and resolution works natively.
+        .env("NODE_PATH", &ext_nm_paths)
+        .env("VSCODEEE_EXT_NODE_MODULES_PATHS", &ext_nm_paths)
         .env("VSCODE_EXTHOST_IPC_HOOK", pipe_path)
         .env(
             "VSCODE_ESM_ENTRYPOINT",
@@ -423,17 +489,13 @@ async fn spawn_and_connect(
         .map_err(ExtHostError::Spawn)?;
 
     let pid = child.id().unwrap_or(0);
-    let node_path = resource_dir
-        .join("node_modules")
-        .to_string_lossy()
-        .to_string();
     log::info!(
         target: "vscodeee::exthost::sidecar",
         "Spawned Node.js ExtHost process (PID: {pid})"
     );
     log::info!(
         target: "vscodeee::exthost::sidecar",
-        "  cwd: {}, NODE_PATH: {node_path}, IPC_HOOK: {pipe_path}",
+        "  cwd: {}, ext_nm_paths: {ext_nm_paths}, IPC_HOOK: {pipe_path}",
         app_root.display()
     );
 
