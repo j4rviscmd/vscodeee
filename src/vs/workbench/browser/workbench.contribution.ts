@@ -431,6 +431,11 @@ const registry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Con
 				'default': false,
 				'description': localize('centeredLayoutDynamicWidth', "Controls whether the centered layout tries to maintain constant width when the window is resized.")
 			},
+			'workbench.editor.autoMaximizeOnFocus': {
+				'type': 'boolean',
+				'default': true,
+				'description': localize('autoMaximizeOnFocus', "Controls whether editor groups are automatically expanded or unmaximized when receiving focus. When disabled, minimized editor groups stay minimized and other groups stay maximized when focus moves between them.")
+			},
 			'workbench.editor.doubleClickTabToToggleEditorGroupSizes': {
 				'type': 'string',
 				'enum': ['maximize', 'expand', 'off'],
@@ -1014,7 +1019,10 @@ const registry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Con
 	});
 })();
 
-/** Migrate the removed `workbench.activityBar.visible` boolean setting to `workbench.activityBar.location`. */
+/**
+ * Migrate the removed `workbench.activityBar.visible` boolean setting to `workbench.activityBar.location`.
+ * When the old setting was `false`, the activity bar is hidden by setting the location to `hidden`.
+ */
 Registry.as<IConfigurationMigrationRegistry>(Extensions.ConfigurationMigration)
 	.registerConfigurationMigrations([{
 		key: 'workbench.activityBar.visible', migrateFn: (value: unknown) => {
@@ -1029,7 +1037,10 @@ Registry.as<IConfigurationMigrationRegistry>(Extensions.ConfigurationMigration)
 		}
 	}]);
 
-/** Migrate the legacy `side` value of `workbench.activityBar.location` to `default`. */
+/**
+ * Migrate the legacy `side` value of `workbench.activityBar.location` to `default`.
+ * The `side` value was deprecated in favor of `default`, which provides the same behavior.
+ */
 Registry.as<IConfigurationMigrationRegistry>(Extensions.ConfigurationMigration)
 	.registerConfigurationMigrations([{
 		key: LayoutSettings.ACTIVITY_BAR_LOCATION, migrateFn: (value: unknown) => {

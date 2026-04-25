@@ -37,6 +37,10 @@ import { ServiceCollection } from '../../../../platform/instantiation/common/ser
 import { EditorPartMaximizedEditorGroupContext, EditorPartMultipleEditorGroupsContext, EditorTabsVisibleContext } from '../../../common/contextkeys.js';
 import { mainWindow } from '../../../../base/browser/window.js';
 
+/**
+ * Serialized UI state of the editor part, used for persisting
+ * and restoring the editor layout across sessions.
+ */
 export interface IEditorPartUIState {
 	readonly serializedGrid: ISerializedGrid;
 	readonly activeGroup: GroupIdentifier;
@@ -48,6 +52,12 @@ interface IEditorPartMemento {
 	'editorpart.centeredview'?: CenteredViewState;
 }
 
+/**
+ * A wrapper view that adapts a `Grid<T>` widget to the `IView` interface.
+ * Manages the lifecycle of the contained grid widget and relays size change events.
+ *
+ * @template T - The type of views contained in the grid.
+ */
 class GridWidgetView<T extends IView> implements IView {
 
 	readonly element: HTMLElement = $('.grid-view-container');
@@ -88,6 +98,14 @@ class GridWidgetView<T extends IView> implements IView {
 	}
 }
 
+/**
+ * The editor part is the main container for all editor groups in a workbench part.
+ * It manages the grid layout of editor groups, handles group lifecycle (add, remove,
+ * merge, split), and persists/restores editor state across sessions.
+ *
+ * Implements both `IEditorPart` and `IEditorGroupsView` to serve as the central
+ * access point for editor group operations within a single window or auxiliary window.
+ */
 export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart, IEditorGroupsView {
 
 	private static readonly EDITOR_PART_UI_STATE_STORAGE_KEY = 'editorpart.state';
@@ -186,6 +204,10 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		this.registerListeners();
 	}
 
+	/**
+	 * Registers listeners for configuration changes, theme changes,
+	 * and memento state changes that affect editor part options.
+	 */
 	private registerListeners(): void {
 		this._register(this.configurationService.onDidChangeConfiguration(e => this.onConfigurationUpdated(e)));
 		this._register(this.themeService.onDidFileIconThemeChange(() => this.handleChangedPartOptions()));
@@ -198,6 +220,11 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		}
 	}
 
+	/**
+	 * Recalculates editor part options from configuration and theme services,
+	 * applies any enforced option overrides, and fires the change event if
+	 * the resolved options differ from the current ones.
+	 */
 	private handleChangedPartOptions(): void {
 		const oldPartOptions = this._partOptions;
 		const newPartOptions = getEditorPartOptions(this.configurationService, this.themeService);
@@ -216,6 +243,14 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 	private _partOptions: IEditorPartOptions;
 	get partOptions(): IEditorPartOptions { return this._partOptions; }
 
+	/**
+	 * Temporarily enforces a set of partial editor part options on top of
+	 * the user configuration. Returns a disposable that, when disposed,
+	 * removes the enforced options and recalculates the effective options.
+	 *
+	 * @param options - The partial options to enforce.
+	 * @returns A disposable that removes the enforced options.
+	 */
 	enforcePartOptions(options: DeepPartial<IEditorPartOptions>): IDisposable {
 		this.enforcedPartOptions.push(options);
 		this.handleChangedPartOptions();
@@ -277,6 +312,14 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 	private _willRestoreState = false;
 	get willRestoreState(): boolean { return this._willRestoreState; }
 
+	/**
+	 * Returns all editor groups in the specified order.
+	 * Groups that have never been active are appended at the end
+	 * when using `MOST_RECENTLY_ACTIVE` order.
+	 *
+	 * @param order - The ordering criteria (default: creation time).
+	 * @returns An array of editor group views.
+	 */
 	getGroups(order = GroupsOrder.CREATION_TIME): IEditorGroupView[] {
 		switch (order) {
 			case GroupsOrder.CREATION_TIME:
@@ -316,6 +359,15 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		return this.groupViews.get(identifier);
 	}
 
+	/**
+	 * Finds an editor group based on a scope (direction or location) relative
+	 * to a source group. Optionally wraps around when reaching the edge.
+	 *
+	 * @param scope - The search criteria (direction or location).
+	 * @param source - The source group to search from (defaults to active group).
+	 * @param wrap - Whether to wrap around at grid edges.
+	 * @returns The found group, or `undefined` if no matching group exists.
+	 */
 	findGroup(scope: IFindGroupScope, source: IEditorGroupView | GroupIdentifier = this.activeGroup, wrap?: boolean): IEditorGroupView | undefined {
 
 		// by direction
@@ -370,6 +422,16 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		}
 	}
 
+	/**
+	 * Activates the specified editor group, making it the active group.
+	 * Optionally prevents the window from being moved to the top of the
+	 * window stack.
+	 *
+	 * @param group - The group to activate.
+	 * @param preserveWindowOrder - If `true`, the window z-order is not changed.
+	 * @param reason - The reason for the activation, used for event context.
+	 * @returns The activated group view.
+	 */
 	activateGroup(group: IEditorGroupView | GroupIdentifier, preserveWindowOrder?: boolean, reason?: GroupActivationReason): IEditorGroupView {
 		const groupView = this.assertGroupView(group);
 		this.doSetGroupActive(groupView, reason);
@@ -401,6 +463,13 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		this.gridWidget.resizeView(groupView, size);
 	}
 
+	/**
+	 * Arranges all editor groups according to the specified arrangement strategy.
+	 * Requires at least 2 groups; does nothing otherwise.
+	 *
+	 * @param arrangement - The arrangement strategy (even, maximize, or expand).
+	 * @param target - The target group for maximize/expand operations.
+	 */
 	arrangeGroups(arrangement: GroupsArrangement, target: IEditorGroupView | GroupIdentifier = this.activeGroup): void {
 		if (this.count < 2) {
 			return; // require at least 2 groups to show
@@ -429,6 +498,12 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		}
 	}
 
+	/**
+	 * Toggles the maximized state of the target editor group.
+	 * If a group is already maximized, it is unmaximized; otherwise the target is maximized.
+	 *
+	 * @param target - The group to toggle (defaults to the active group).
+	 */
 	toggleMaximizeGroup(target: IEditorGroupView | GroupIdentifier = this.activeGroup): void {
 		if (this.hasMaximizedGroup()) {
 			this.unmaximizeGroup();
@@ -437,6 +512,13 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		}
 	}
 
+	/**
+	 * Toggles the expanded state of the active editor group.
+	 * If the active group is already expanded, groups are arranged evenly;
+	 * otherwise the target group is expanded to take as much space as possible.
+	 *
+	 * @param target - The group to toggle (defaults to the active group).
+	 */
 	toggleExpandGroup(target: IEditorGroupView | GroupIdentifier = this.activeGroup): void {
 		if (this.isGroupExpanded(this.activeGroup)) {
 			this.arrangeGroups(GroupsArrangement.EVEN);
@@ -473,6 +555,13 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		}
 	}
 
+	/**
+	 * Applies a new grid layout to the editor part. If the layout requires
+	 * fewer groups than currently exist, excess groups are merged into the
+	 * last group in the layout. The grid is then recreated from the descriptor.
+	 *
+	 * @param layout - The desired editor group layout.
+	 */
 	applyLayout(layout: EditorGroupLayout): void {
 		const restoreFocus = this.shouldRestoreFocus(this.container);
 
@@ -527,6 +616,11 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		}
 	}
 
+	/**
+	 * Returns the current editor group layout as a serializable descriptor.
+	 *
+	 * @returns The current `EditorGroupLayout` representing the grid structure.
+	 */
 	getLayout(): EditorGroupLayout {
 
 		// Example return value:
@@ -578,6 +672,16 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		return false;
 	}
 
+	/**
+	 * Adds a new editor group adjacent to the specified location in the given direction.
+	 * If the location belongs to a different editor part, delegates to that part's
+	 * `addGroup` method. Optionally copies the editors from an existing group.
+	 *
+	 * @param location - The group or group identifier to add next to.
+	 * @param direction - The direction in which to add the new group.
+	 * @param groupToCopy - Optional group whose editors should be copied to the new group.
+	 * @returns The newly created editor group view.
+	 */
 	addGroup(location: IEditorGroupView | GroupIdentifier, direction: GroupDirection, groupToCopy?: IEditorGroupView): IEditorGroupView {
 		const locationView = this.assertGroupView(location);
 
@@ -639,6 +743,16 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		}
 	}
 
+	/**
+	 * Creates a new editor group view. The group can be created fresh,
+	 * copied from an existing group view, or deserialized from a previously
+	 * saved state. Registers the group for focus tracking, model change
+	 * events, active editor changes, and disposal cleanup.
+	 *
+	 * @param from - Optional source to create the group from (another view, serialized state, or `null` for fresh).
+	 * @param options - Optional editor group view options (e.g., `preserveFocus`).
+	 * @returns The newly created editor group view.
+	 */
 	private doCreateGroupView(from?: IEditorGroupView | ISerializedEditorGroupModel | null, options?: IEditorGroupViewOptions): IEditorGroupView {
 
 		// Create group view
@@ -692,6 +806,14 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		return groupView;
 	}
 
+	/**
+	 * Internal method to set a group as active. Updates the most-recently-used
+	 * list, marks the previous group as inactive, restores the new group if
+	 * it was minimized, and fires the appropriate change and activation events.
+	 *
+	 * @param group - The group to set as active.
+	 * @param reason - The reason for activation, included in the activation event.
+	 */
 	private doSetGroupActive(group: IEditorGroupView, reason = GroupActivationReason.DEFAULT): void {
 		if (this._activeGroup !== group) {
 			const previousActiveGroup = this._activeGroup;
@@ -721,7 +843,18 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		this._onDidActivateGroup.fire({ group, reason });
 	}
 
+	/**
+	 * Restores a minimized group by unmaximizing any currently maximized group
+	 * and expanding the target group if it is at its minimum size.
+	 * This behavior is controlled by the `autoMaximizeOnFocus` editor part option.
+	 *
+	 * @param group - The group to restore.
+	 */
 	private doRestoreGroup(group: IEditorGroupView): void {
+		if (!this._partOptions.autoMaximizeOnFocus) {
+			return;
+		}
+
 		if (!this.gridWidget) {
 			return; // method is called as part of state restore very early
 		}
@@ -771,6 +904,14 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		return fallback;
 	}
 
+	/**
+	 * Removes an editor group. If the group is empty, it is removed directly;
+	 * if it contains editors, they are merged into the most recently active group
+	 * before removal. The last remaining group cannot be removed.
+	 *
+	 * @param group - The group or group identifier to remove.
+	 * @param preserveFocus - If `true`, focus is not moved to the next active group.
+	 */
 	removeGroup(group: IEditorGroupView | GroupIdentifier, preserveFocus?: boolean): void {
 		const groupView = this.assertGroupView(group);
 		if (this.count === 1) {
@@ -834,6 +975,16 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		this._onDidRemoveGroup.fire(groupView);
 	}
 
+	/**
+	 * Moves an editor group to a new location relative to a target group.
+	 * Supports cross-part moves (between different editor parts) by delegating
+	 * to the target part's `addGroup` and then removing the source.
+	 *
+	 * @param group - The group to move.
+	 * @param location - The target group or group identifier to move next to.
+	 * @param direction - The direction relative to the target for placement.
+	 * @returns The moved group view.
+	 */
 	moveGroup(group: IEditorGroupView | GroupIdentifier, location: IEditorGroupView | GroupIdentifier, direction: GroupDirection): IEditorGroupView {
 		const sourceView = this.assertGroupView(group);
 		const targetView = this.assertGroupView(location);
@@ -874,6 +1025,14 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		return movedView;
 	}
 
+	/**
+	 * Creates a copy of the specified editor group at the given location.
+	 *
+	 * @param group - The group to copy.
+	 * @param location - The target group or group identifier to place the copy next to.
+	 * @param direction - The direction relative to the target for placement.
+	 * @returns The newly created group view with copied editors.
+	 */
 	copyGroup(group: IEditorGroupView | GroupIdentifier, location: IEditorGroupView | GroupIdentifier, direction: GroupDirection): IEditorGroupView {
 		const groupView = this.assertGroupView(group);
 		const locationView = this.assertGroupView(location);
@@ -891,6 +1050,16 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		return copiedGroupView;
 	}
 
+	/**
+	 * Merges the editors from a source group into a target group.
+ * Editors are moved or copied based on the merge mode. If the source
+	 * group becomes empty after the merge, it is automatically removed.
+	 *
+	 * @param group - The source group to merge from.
+	 * @param target - The target group to merge into.
+	 * @param options - Options controlling the merge behavior (mode, index, etc.).
+	 * @returns `true` if all editors were successfully moved; `false` otherwise.
+	 */
 	mergeGroup(group: IEditorGroupView | GroupIdentifier, target: IEditorGroupView | GroupIdentifier, options?: IMergeGroupOptions): boolean {
 		const sourceView = this.assertGroupView(group);
 		const targetView = this.assertGroupView(target);
@@ -945,6 +1114,13 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		return result;
 	}
 
+	/**
+	 * Merges all editor groups into the specified target group.
+	 *
+	 * @param target - The target group to merge all groups into.
+	 * @param options - Options controlling the merge behavior.
+	 * @returns `true` if all merges were successful; `false` if any failed.
+	 */
 	mergeAllGroups(target: IEditorGroupView | GroupIdentifier, options?: IMergeGroupOptions): boolean {
 		const targetView = this.assertGroupView(target);
 
@@ -978,6 +1154,14 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		return groupView;
 	}
 
+	/**
+	 * Creates a drop target on the given container that supports dropping
+	 * editor resources and tree items into the editor area.
+	 *
+	 * @param container - The DOM element to attach the drop target to.
+	 * @param delegate - The delegate handling drop logic.
+	 * @returns A disposable that cleans up the drop target.
+	 */
 	createEditorDropTarget(container: unknown, delegate: IEditorDropTargetDelegate): IDisposable {
 		assertType(isHTMLElement(container));
 
@@ -1077,6 +1261,15 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		this._register(this.onDidChangeEditorPartOptions(() => updateEditorTabsVisibleContext()));
 	}
 
+	/**
+	 * Sets up drag and drop support for the editor area. Creates an editor
+	 * drop target on the container, a blocking overlay that prevents drops
+	 * into the editor itself, and proximity-based part openers that reveal
+	 * the panel or auxiliary bar when a dragged item approaches the edges.
+	 *
+	 * @param parent - The parent DOM element for the overlay.
+	 * @param container - The editor container element for the drop target.
+	 */
 	private setupDragAndDropSupport(parent: HTMLElement, container: HTMLElement): void {
 
 		// Editor drop target
@@ -1172,6 +1365,13 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		}));
 	}
 
+	/**
+	 * Activates or deactivates the centered layout mode.
+	 * When centered, the editor area is constrained to a fixed width
+	 * and centered within the available space.
+	 *
+	 * @param active - Whether to activate centered layout.
+	 */
 	centerLayout(active: boolean): void {
 		this.centeredLayoutWidget.activate(active);
 	}
@@ -1233,6 +1433,17 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		return true; // success
 	}
 
+	/**
+	 * Reconstructs the grid widget from a serialized state. Optionally reuses
+	 * existing group views to avoid unnecessary disposal and recreation.
+	 * Validates that the active group exists and the MRU list is consistent
+	 * with the restored grid.
+	 *
+	 * @param serializedGrid - The serialized grid descriptor to restore.
+	 * @param activeGroupId - The identifier of the group that should be active after restore.
+	 * @param editorGroupViewsToReuse - Optional array of existing group views to reuse.
+	 * @param options - Optional editor group view options for restored groups.
+	 */
 	private doCreateGridControlWithState(serializedGrid: ISerializedGrid, activeGroupId: GroupIdentifier, editorGroupViewsToReuse?: IEditorGroupView[], options?: IEditorGroupViewOptions): void {
 
 		// Determine group views to reuse if any
@@ -1372,6 +1583,12 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		return this.workspaceMemento[EditorPart.EDITOR_PART_UI_STATE_STORAGE_KEY];
 	}
 
+	/**
+	 * Creates a serializable snapshot of the current editor part UI state,
+	 * including the grid layout, active group, and most recently active groups.
+	 *
+	 * @returns The current editor part UI state.
+	 */
 	createState(): IEditorPartUIState {
 		return {
 			serializedGrid: this.gridWidget.serialize(),
@@ -1380,6 +1597,15 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		};
 	}
 
+	/**
+	 * Applies the given UI state to the editor part. Pass `'empty'` to merge
+	 * all groups into the active group, or provide a full state object to
+	 * restore a specific grid layout.
+	 *
+	 * @param state - The state to apply, or `'empty'` to collapse all groups.
+	 * @param options - Optional editor group view options for restored groups.
+	 * @returns A promise that resolves when the state has been fully applied.
+	 */
 	applyState(state: IEditorPartUIState | 'empty', options?: IEditorGroupViewOptions): Promise<void> {
 		if (state === 'empty') {
 			return this.doApplyEmptyState();
@@ -1388,6 +1614,15 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		}
 	}
 
+	/**
+	 * Applies a full editor part UI state by disposing all existing groups,
+	 * recreating the grid from the serialized state, and restoring editors
+	 * that were not closed before the state transition. Add/remove group events
+	 * are paused during the transition to ensure atomicity.
+	 *
+	 * @param state - The UI state to apply.
+	 * @param options - Optional editor group view options for restored groups.
+	 */
 	private async doApplyState(state: IEditorPartUIState, options?: IEditorGroupViewOptions): Promise<void> {
 		const groups = await this.doPrepareApplyState();
 
@@ -1516,6 +1751,10 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 	//#endregion
 }
 
+/**
+ * The main editor part for the primary workbench window.
+ * Extends `EditorPart` with the standard part ID and main window identifier.
+ */
 export class MainEditorPart extends EditorPart {
 
 	constructor(
