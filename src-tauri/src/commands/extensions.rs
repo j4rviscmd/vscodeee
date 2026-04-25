@@ -57,20 +57,25 @@ fn resolve_extensions_dir(app_handle: &tauri::AppHandle) -> Option<PathBuf> {
     use tauri::Manager;
 
     // Try CWD-based resolution first (works during `cargo tauri dev`).
-    // During development, the packaged extensions live in .build/extensions/.
-    // Fall back to the raw extensions/ source directory if .build/ doesn't exist
-    // (e.g., before `package-extensions` has been run).
+    // During development, prefer the source `extensions/` directory over
+    // `.build/extensions/` because the source directory contains `node_modules/`
+    // required by Language Server extensions (markdown, css, etc.) to fork
+    // child processes. `.build/extensions/` only has compiled JS but lacks
+    // `node_modules/`, causing Language Server processes to crash immediately.
+    // See: https://github.com/j4rviscmd/vscodeee/issues/283
     if let Some(dir) = std::env::current_dir()
         .ok()
-        .map(|cwd| cwd.join("../.build/extensions"))
+        .map(|cwd| cwd.join("../extensions"))
         .and_then(|p| p.canonicalize().ok())
         .filter(|p| p.is_dir())
     {
         return Some(dir);
     }
+    // Fall back to .build/extensions/ if source directory is not available
+    // (e.g., in CI or stripped source environments).
     if let Some(dir) = std::env::current_dir()
         .ok()
-        .map(|cwd| cwd.join("../extensions"))
+        .map(|cwd| cwd.join("../.build/extensions"))
         .and_then(|p| p.canonicalize().ok())
         .filter(|p| p.is_dir())
     {
