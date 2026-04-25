@@ -21,13 +21,28 @@ import { IAuxiliaryWindowOpenOptions } from '../../../services/auxiliaryWindow/b
 import { ContextKeyValue, IContextKey, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { coalesce } from '../../../../base/common/arrays.js';
 
+/**
+ * Options for creating an editor part instance.
+ */
 export interface IEditorPartCreationOptions {
 	readonly restorePreviousState: boolean;
 }
 
+/**
+ * Default minimum dimensions for editor panes (220x70 pixels).
+ */
 export const DEFAULT_EDITOR_MIN_DIMENSIONS = new Dimension(220, 70);
+
+/**
+ * Default maximum dimensions for editor panes (unbounded).
+ */
 export const DEFAULT_EDITOR_MAX_DIMENSIONS = new Dimension(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY);
 
+/**
+ * Default editor part options. These values are used as fallbacks
+ * when no user configuration is provided. Properties that are objects
+ * are defined as getters to prevent consumers from mutating the defaults.
+ */
 export const DEFAULT_EDITOR_PART_OPTIONS: IEditorPartOptions = {
 	showTabs: 'multiple',
 	highlightModifiedTabs: false,
@@ -59,6 +74,7 @@ export const DEFAULT_EDITOR_PART_OPTIONS: IEditorPartOptions = {
 	dragToOpenWindow: true,
 	centeredLayoutFixedWidth: false,
 	doubleClickTabToToggleEditorGroupSizes: 'expand',
+	autoMaximizeOnFocus: true,
 	editorActionsLocation: 'default',
 	wrapTabs: false,
 	enablePreviewFromQuickOpen: false,
@@ -77,10 +93,26 @@ export const DEFAULT_EDITOR_PART_OPTIONS: IEditorPartOptions = {
 	get autoLockGroups(): Set<string> { return new Set<string>(); }
 };
 
+/**
+ * Checks whether a configuration change event affects editor part options.
+ * Covers `workbench.editor`, `workbench.iconTheme`, and `window.density` settings.
+ *
+ * @param event - The configuration change event to evaluate.
+ * @returns `true` if the event may change editor part options.
+ */
 export function impactsEditorPartOptions(event: IConfigurationChangeEvent): boolean {
 	return event.affectsConfiguration('workbench.editor') || event.affectsConfiguration('workbench.iconTheme') || event.affectsConfiguration('window.density');
 }
 
+/**
+ * Resolves the effective editor part options by merging user configuration
+ * with the default options. Handles special cases like `autoLockGroups` object
+ * conversion and `window.density.editorTabHeight` override.
+ *
+ * @param configurationService - The configuration service to read settings from.
+ * @param themeService - The theme service to determine icon availability.
+ * @returns The validated and fully resolved `IEditorPartOptions`.
+ */
 export function getEditorPartOptions(configurationService: IConfigurationService, themeService: IThemeService): IEditorPartOptions {
 	const options = {
 		...DEFAULT_EDITOR_PART_OPTIONS,
@@ -146,6 +178,7 @@ function validateEditorPartOptions(options: IEditorPartOptions): IEditorPartOpti
 		'allowDropIntoGroup': new BooleanVerifier(DEFAULT_EDITOR_PART_OPTIONS['allowDropIntoGroup']),
 		'dragToOpenWindow': new BooleanVerifier(DEFAULT_EDITOR_PART_OPTIONS['dragToOpenWindow']),
 		'centeredLayoutFixedWidth': new BooleanVerifier(DEFAULT_EDITOR_PART_OPTIONS['centeredLayoutFixedWidth']),
+		'autoMaximizeOnFocus': new BooleanVerifier(DEFAULT_EDITOR_PART_OPTIONS['autoMaximizeOnFocus']),
 		'hasIcons': new BooleanVerifier(DEFAULT_EDITOR_PART_OPTIONS['hasIcons']),
 
 		'tabSizingFixedMinWidth': new NumberVerifier(DEFAULT_EDITOR_PART_OPTIONS['tabSizingFixedMinWidth']),
@@ -236,6 +269,10 @@ export interface IEditorGroupsView {
 	toggleExpandGroup(group?: IEditorGroupView | GroupIdentifier): void;
 }
 
+/**
+ * Dimensions describing the height of an editor group's title area.
+ * Used for layout calculations and drop overlay positioning.
+ */
 export interface IEditorGroupTitleHeight {
 
 	/**
@@ -297,6 +334,17 @@ export interface IEditorGroupView extends IDisposable, ISerializableView, IEdito
 	relayout(): void;
 }
 
+/**
+ * Fills the view state of the currently active editor into the provided options.
+ * If the active editor does not match `expectedActiveEditor`, the view state is
+ * not applied, preserving the preset options unchanged.
+ *
+ * @param group - The editor group containing the active editor.
+ * @param expectedActiveEditor - Optionally, the editor that is expected to be active.
+ * @param presetOptions - Pre-existing editor options to merge view state into.
+ * @returns The editor options with the active editor's view state applied, or the
+ *          preset options if the active editor does not match.
+ */
 export function fillActiveEditorViewState(group: IEditorGroup, expectedActiveEditor?: EditorInput, presetOptions?: IEditorOptions): IEditorOptions {
 	if (!expectedActiveEditor || !group.activeEditor || expectedActiveEditor.matches(group.activeEditor)) {
 		const options: IEditorOptions = {
@@ -310,6 +358,16 @@ export function fillActiveEditorViewState(group: IEditorGroup, expectedActiveEdi
 	return presetOptions || Object.create(null);
 }
 
+/**
+ * Prepares an array of editors for a move or copy operation from one group to another.
+ * The active editor is placed first, followed by inactive editors sorted in reverse
+ * visual order so that they preserve their relative order in the target group.
+ *
+ * @param sourceGroup - The group the editors are being moved from.
+ * @param editors - The editors to prepare for the move/copy operation.
+ * @param preserveFocus - Whether focus should be preserved in the target group.
+ * @returns An array of editor inputs with options suitable for opening in the target group.
+ */
 export function prepareMoveCopyEditors(sourceGroup: IEditorGroup, editors: EditorInput[], preserveFocus?: boolean): EditorInputWithOptions[] {
 	if (editors.length === 0) {
 		return [];
@@ -371,6 +429,9 @@ export interface EditorServiceImpl extends IEditorService {
 	readonly onDidMostRecentlyActiveEditorsChange: Event<void>;
 }
 
+/**
+ * Internal options for controlling the editor title control behavior.
+ */
 export interface IInternalEditorTitleControlOptions {
 
 	/**
@@ -380,6 +441,11 @@ export interface IInternalEditorTitleControlOptions {
 	readonly skipTitleUpdate?: boolean;
 }
 
+/**
+ * Internal options passed when opening an editor. Extends title control
+ * options with additional flags for side-by-side matching, tab focus,
+ * and window ordering behavior.
+ */
 export interface IInternalEditorOpenOptions extends IInternalEditorTitleControlOptions {
 
 	/**
@@ -408,6 +474,10 @@ export interface IInternalEditorOpenOptions extends IInternalEditorTitleControlO
 	readonly inactiveSelection?: EditorInput[];
 }
 
+/**
+ * Internal options passed when closing an editor. Extends title control
+ * options with hints about error context and close reason.
+ */
 export interface IInternalEditorCloseOptions extends IInternalEditorTitleControlOptions {
 
 	/**
@@ -422,6 +492,10 @@ export interface IInternalEditorCloseOptions extends IInternalEditorTitleControl
 	readonly context?: EditorCloseContext;
 }
 
+/**
+ * Internal options passed when moving or copying editors between groups.
+ * Extends open options with a flag to keep the source editor.
+ */
 export interface IInternalMoveCopyOptions extends IInternalEditorOpenOptions {
 
 	/**

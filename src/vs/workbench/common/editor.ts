@@ -29,13 +29,20 @@ import Severity from '../../base/common/severity.js';
 import { IPreferencesService } from '../services/preferences/common/preferences.js';
 import { IReadonlyEditorGroupModel } from './editor/editorGroupModel.js';
 
-// Static values for editor contributions
+/**
+ * Static values for editor contribution extension points.
+ * Used to register editor panes and editor input factories with the platform registry.
+ */
 export const EditorExtensions = {
 	EditorPane: 'workbench.contributions.editors',
 	EditorFactory: 'workbench.contributions.editor.inputFactories'
 };
 
-// Static information regarding the text editor
+/**
+ * Static information regarding the built-in text editor.
+ * Provides the default editor association used when no specific
+ * editor is configured for a given resource type.
+ */
 export const DEFAULT_EDITOR_ASSOCIATION = {
 	id: 'default',
 	displayName: localize('promptOpenWith.defaultEditor.displayName', "Text Editor"),
@@ -57,6 +64,13 @@ export const TEXT_DIFF_EDITOR_ID = 'workbench.editors.textDiffEditor';
  */
 export const BINARY_DIFF_EDITOR_ID = 'workbench.editors.binaryResourceDiffEditor';
 
+/**
+ * Describes an editor pane that can be instantiated by the editor service.
+ * Editor descriptors are registered via the `EditorExtensions.EditorPane`
+ * extension point and used to create editor pane instances on demand.
+ *
+ * @template T - The concrete editor pane type.
+ */
 export interface IEditorDescriptor<T extends IEditorPane> {
 
 	/**
@@ -209,6 +223,10 @@ export interface IEditorPane extends IComposite {
 	isVisible(): boolean;
 }
 
+/**
+ * Event payload for when the selection within an editor pane changes.
+ * Provides additional context about what triggered the selection change.
+ */
 export interface IEditorPaneSelectionChangeEvent {
 
 	/**
@@ -264,6 +282,11 @@ export const enum EditorPaneSelectionChangeReason {
 	JUMP
 }
 
+/**
+ * Represents the current selection within an editor pane.
+ * Enables comparing selections across editor instances and
+ * restoring selections when reopening editors.
+ */
 export interface IEditorPaneSelection {
 
 	/**
@@ -313,6 +336,11 @@ export const enum EditorPaneSelectionCompareResult {
 	DIFFERENT = 3
 }
 
+/**
+ * An `IEditorPane` that supports selection tracking.
+ * Provides the `onDidChangeSelection` event and `getSelection()` method
+ * for consumers that need to react to or query the current selection state.
+ */
 export interface IEditorPaneWithSelection extends IEditorPane {
 
 	readonly onDidChangeSelection: Event<IEditorPaneSelectionChangeEvent>;
@@ -320,12 +348,23 @@ export interface IEditorPaneWithSelection extends IEditorPane {
 	getSelection(): IEditorPaneSelection | undefined;
 }
 
+/**
+ * Type guard that checks whether an editor pane supports selection tracking.
+ *
+ * @param editorPane - The editor pane to check.
+ * @returns `true` if the pane implements `IEditorPaneWithSelection`.
+ */
 export function isEditorPaneWithSelection(editorPane: IEditorPane | undefined): editorPane is IEditorPaneWithSelection {
 	const candidate = editorPane as IEditorPaneWithSelection | undefined;
 
 	return !!candidate && typeof candidate.getSelection === 'function' && !!candidate.onDidChangeSelection;
 }
 
+/**
+ * An `IEditorPane` that supports scroll position tracking.
+ * Provides events and methods for reading and controlling
+ * the scroll state of the editor pane.
+ */
 export interface IEditorPaneWithScrolling extends IEditorPane {
 
 	readonly onDidChangeScroll: Event<void>;
@@ -335,6 +374,12 @@ export interface IEditorPaneWithScrolling extends IEditorPane {
 	setScrollPosition(position: IEditorPaneScrollPosition): void;
 }
 
+/**
+ * Type guard that checks whether an editor pane supports scroll position tracking.
+ *
+ * @param editorPane - The editor pane to check.
+ * @returns `true` if the pane implements `IEditorPaneWithScrolling`.
+ */
 export function isEditorPaneWithScrolling(editorPane: IEditorPane | undefined): editorPane is IEditorPaneWithScrolling {
 	const candidate = editorPane as IEditorPaneWithScrolling | undefined;
 
@@ -603,6 +648,13 @@ export interface IResourceMergeEditorInput extends IBaseUntypedEditorInput {
 	readonly result: Omit<IResourceEditorInput, 'options'> | Omit<ITextResourceEditorInput, 'options'>;
 }
 
+/**
+ * Type guard that checks whether the given object is a resource editor input.
+ * Returns `false` for typed `EditorInput` instances to avoid accidental matches.
+ *
+ * @param editor - The value to check.
+ * @returns `true` if the value is an `IResourceEditorInput`.
+ */
 export function isResourceEditorInput(editor: unknown): editor is IResourceEditorInput {
 	if (isEditorInput(editor)) {
 		return false; // make sure to not accidentally match on typed editor inputs
@@ -613,6 +665,12 @@ export function isResourceEditorInput(editor: unknown): editor is IResourceEdito
 	return URI.isUri(candidate?.resource);
 }
 
+/**
+ * Type guard that checks whether the given object is a resource diff editor input.
+ *
+ * @param editor - The value to check.
+ * @returns `true` if the value is an `IResourceDiffEditorInput`.
+ */
 export function isResourceDiffEditorInput(editor: unknown): editor is IResourceDiffEditorInput {
 	if (isEditorInput(editor)) {
 		return false; // make sure to not accidentally match on typed editor inputs
@@ -623,6 +681,12 @@ export function isResourceDiffEditorInput(editor: unknown): editor is IResourceD
 	return candidate?.original !== undefined && candidate.modified !== undefined;
 }
 
+/**
+ * Type guard that checks whether the given object is a resource multi-diff editor input.
+ *
+ * @param editor - The value to check.
+ * @returns `true` if the value is an `IResourceMultiDiffEditorInput`.
+ */
 export function isResourceMultiDiffEditorInput(editor: unknown): editor is IResourceMultiDiffEditorInput {
 	if (isEditorInput(editor)) {
 		return false; // make sure to not accidentally match on typed editor inputs
@@ -639,6 +703,13 @@ export function isResourceMultiDiffEditorInput(editor: unknown): editor is IReso
 	return !!candidate.resources || !!candidate.multiDiffSource;
 }
 
+/**
+ * Type guard that checks whether the given object is a resource side-by-side editor input.
+ * Also ensures the input is not a diff editor input.
+ *
+ * @param editor - The value to check.
+ * @returns `true` if the value is an `IResourceSideBySideEditorInput`.
+ */
 export function isResourceSideBySideEditorInput(editor: unknown): editor is IResourceSideBySideEditorInput {
 	if (isEditorInput(editor)) {
 		return false; // make sure to not accidentally match on typed editor inputs
@@ -653,6 +724,12 @@ export function isResourceSideBySideEditorInput(editor: unknown): editor is IRes
 	return candidate?.primary !== undefined && candidate.secondary !== undefined;
 }
 
+/**
+ * Type guard that checks whether the given object is an untitled text resource editor input.
+ *
+ * @param editor - The value to check.
+ * @returns `true` if the value is an `IUntitledTextResourceEditorInput`.
+ */
 export function isUntitledResourceEditorInput(editor: unknown): editor is IUntitledTextResourceEditorInput {
 	if (isEditorInput(editor)) {
 		return false; // make sure to not accidentally match on typed editor inputs
@@ -666,6 +743,12 @@ export function isUntitledResourceEditorInput(editor: unknown): editor is IUntit
 	return candidate.resource === undefined || candidate.resource.scheme === Schemas.untitled || candidate.forceUntitled === true;
 }
 
+/**
+ * Type guard that checks whether the given object is a resource merge editor input.
+ *
+ * @param editor - The value to check.
+ * @returns `true` if the value is an `IResourceMergeEditorInput`.
+ */
 export function isResourceMergeEditorInput(editor: unknown): editor is IResourceMergeEditorInput {
 	if (isEditorInput(editor)) {
 		return false; // make sure to not accidentally match on typed editor inputs
@@ -705,6 +788,10 @@ export const enum SaveReason {
 	WINDOW_CHANGE = 4
 }
 
+/**
+ * Identifier for the source of a save operation.
+ * Use `SaveSourceRegistry.registerSource()` to obtain a registered source.
+ */
 export type SaveSource = string;
 
 interface ISaveSourceDescriptor {
@@ -735,6 +822,10 @@ class SaveSourceFactory {
 	}
 }
 
+/**
+ * Registry for save operation sources. Allows registering and retrieving
+ * human-readable labels for save sources used in telemetry and UI.
+ */
 export const SaveSourceRegistry = new SaveSourceFactory();
 
 export interface ISaveOptions {
@@ -786,6 +877,10 @@ export interface IRevertOptions {
 	readonly soft?: boolean;
 }
 
+/**
+ * Result of a move operation, containing the target editor input
+ * and optional editor options to apply after the move.
+ */
 export interface IMoveResult {
 	editor: EditorInput | IUntypedEditorInput;
 	options?: IEditorOptions;
@@ -864,16 +959,32 @@ export const enum EditorInputCapabilities {
 	RequiresModal = 1 << 11
 }
 
+/**
+ * A union type of all untyped editor input variants.
+ * Used for APIs that accept editor inputs without requiring a specific typed `EditorInput`.
+ */
 export type IUntypedEditorInput = IResourceEditorInput | ITextResourceEditorInput | IUntitledTextResourceEditorInput | IResourceDiffEditorInput | IResourceMultiDiffEditorInput | IResourceSideBySideEditorInput | IResourceMergeEditorInput;
 
 export abstract class AbstractEditorInput extends Disposable {
 	// Marker class for implementing `isEditorInput`
 }
 
+/**
+ * Type guard that checks whether the given object is an `EditorInput` instance.
+ * Relies on `AbstractEditorInput` as the marker class for all editor inputs.
+ *
+ * @param editor - The value to check.
+ * @returns `true` if the value is an `EditorInput`.
+ */
 export function isEditorInput(editor: unknown): editor is EditorInput {
 	return editor instanceof AbstractEditorInput;
 }
 
+/**
+ * An editor input that provides both a canonical resource and a preferred resource.
+ * The canonical resource is used for identity comparison, while the preferred
+ * resource is used for user-facing display (e.g., preserving original casing).
+ */
 export interface EditorInputWithPreferredResource {
 
 	/**
@@ -915,6 +1026,13 @@ export interface ISideBySideEditorInput extends EditorInput {
 	secondary: EditorInput;
 }
 
+/**
+ * Type guard that checks whether the given object is a side-by-side editor input
+ * with both primary and secondary editor inputs.
+ *
+ * @param editor - The value to check.
+ * @returns `true` if the value is an `ISideBySideEditorInput`.
+ */
 export function isSideBySideEditorInput(editor: unknown): editor is ISideBySideEditorInput {
 	const candidate = editor as ISideBySideEditorInput | undefined;
 
@@ -934,6 +1052,13 @@ export interface IDiffEditorInput extends EditorInput {
 	original: EditorInput;
 }
 
+/**
+ * Type guard that checks whether the given object is a diff editor input
+ * with both modified and original editor inputs.
+ *
+ * @param editor - The value to check.
+ * @returns `true` if the value is an `IDiffEditorInput`.
+ */
 export function isDiffEditorInput(editor: unknown): editor is IDiffEditorInput {
 	const candidate = editor as IDiffEditorInput | undefined;
 
@@ -1011,6 +1136,10 @@ export interface IFileEditorInput extends EditorInput, IEncodingSupport, ILangua
 	isResolved(): boolean;
 }
 
+/**
+ * Editor options that include file read limits.
+ * When limits are exceeded, an error is thrown instead of opening the file.
+ */
 export interface IFileLimitedEditorInputOptions extends IEditorOptions {
 
 	/**
@@ -1020,8 +1149,23 @@ export interface IFileLimitedEditorInputOptions extends IEditorOptions {
 	readonly limits?: IFileReadLimits;
 }
 
+/**
+ * Combined editor options for file editor inputs, including text editor
+ * options and file read limits.
+ */
 export interface IFileEditorInputOptions extends ITextEditorOptions, IFileLimitedEditorInputOptions { }
 
+/**
+ * Creates an error for when a file is too large to open.
+ * The error includes actions to open the file anyway or configure the size limit.
+ *
+ * @param group - The editor group where the file was being opened.
+ * @param input - The editor input that was being opened.
+ * @param options - The editor options that were provided.
+ * @param message - The error message to display.
+ * @param preferencesService - The preferences service for opening settings.
+ * @returns An error with associated actions.
+ */
 export function createTooLargeFileError(group: IEditorGroup, input: EditorInput, options: IEditorOptions | undefined, message: string, preferencesService: IPreferencesService): Error {
 	return createEditorOpenError(message, [
 		toAction({
@@ -1047,21 +1191,41 @@ export function createTooLargeFileError(group: IEditorGroup, input: EditorInput,
 	});
 }
 
+/**
+ * An editor input paired with optional editor options.
+ * Used when opening editors with specific configuration.
+ */
 export interface EditorInputWithOptions {
 	editor: EditorInput;
 	options?: IEditorOptions;
 }
 
+/**
+ * An editor input with options and the target editor group.
+ * Used when the editor is already associated with a specific group.
+ */
 export interface EditorInputWithOptionsAndGroup extends EditorInputWithOptions {
 	group: IEditorGroup;
 }
 
+/**
+ * Type guard that checks whether the given object is an `EditorInputWithOptions`.
+ *
+ * @param editor - The value to check.
+ * @returns `true` if the value is an `EditorInputWithOptions`.
+ */
 export function isEditorInputWithOptions(editor: unknown): editor is EditorInputWithOptions {
 	const candidate = editor as EditorInputWithOptions | undefined;
 
 	return isEditorInput(candidate?.editor);
 }
 
+/**
+ * Type guard that checks whether the given object is an `EditorInputWithOptionsAndGroup`.
+ *
+ * @param editor - The value to check.
+ * @returns `true` if the value is an `EditorInputWithOptionsAndGroup`.
+ */
 export function isEditorInputWithOptionsAndGroup(editor: unknown): editor is EditorInputWithOptionsAndGroup {
 	const candidate = editor as EditorInputWithOptionsAndGroup | undefined;
 
@@ -1084,11 +1248,20 @@ export interface IEditorOpenContext {
 	newInGroup?: boolean;
 }
 
+/**
+ * Identifies a specific editor within a group by its group ID and editor input.
+ */
 export interface IEditorIdentifier {
 	groupId: GroupIdentifier;
 	editor: EditorInput;
 }
 
+/**
+ * Type guard that checks whether the given object is an `IEditorIdentifier`.
+ *
+ * @param identifier - The value to check.
+ * @returns `true` if the value is an `IEditorIdentifier`.
+ */
 export function isEditorIdentifier(identifier: unknown): identifier is IEditorIdentifier {
 	const candidate = identifier as IEditorIdentifier | undefined;
 
@@ -1107,6 +1280,12 @@ export interface IEditorCommandsContext {
 	preserveFocus?: boolean;
 }
 
+/**
+ * Type guard that checks whether the given object is an `IEditorCommandsContext`.
+ *
+ * @param context - The value to check.
+ * @returns `true` if the value is an `IEditorCommandsContext`.
+ */
 export function isEditorCommandsContext(context: unknown): context is IEditorCommandsContext {
 	const candidate = context as IEditorCommandsContext | undefined;
 
@@ -1142,6 +1321,10 @@ export enum EditorCloseContext {
 	UNPIN
 }
 
+/**
+ * Event payload emitted when an editor is closed.
+ * Extends `IEditorIdentifier` with additional context about the close operation.
+ */
 export interface IEditorCloseEvent extends IEditorIdentifier {
 
 	/**
@@ -1160,6 +1343,9 @@ export interface IEditorCloseEvent extends IEditorIdentifier {
 	readonly sticky: boolean;
 }
 
+/**
+ * Event payload for when the active editor changes in a group.
+ */
 export interface IActiveEditorChangeEvent {
 
 	/**
@@ -1168,6 +1354,9 @@ export interface IActiveEditorChangeEvent {
 	editor: EditorInput | undefined;
 }
 
+/**
+ * Event payload emitted before an editor is moved to another group.
+ */
 export interface IEditorWillMoveEvent extends IEditorIdentifier {
 
 	/**
@@ -1176,8 +1365,14 @@ export interface IEditorWillMoveEvent extends IEditorIdentifier {
 	readonly target: GroupIdentifier;
 }
 
+/**
+ * Event payload emitted before an editor is opened.
+ */
 export interface IEditorWillOpenEvent extends IEditorIdentifier { }
 
+/**
+ * Event payload emitted before an editor pane is instantiated.
+ */
 export interface IWillInstantiateEditorPaneEvent {
 
 	/**
@@ -1277,6 +1472,7 @@ interface IEditorPartConfiguration {
 	dragToOpenWindow?: boolean;
 	centeredLayoutFixedWidth?: boolean;
 	doubleClickTabToToggleEditorGroupSizes?: 'maximize' | 'expand' | 'off';
+	autoMaximizeOnFocus?: boolean;
 	editorActionsLocation?: 'default' | 'titleBar' | 'hidden';
 	limit?: IEditorPartLimitConfiguration;
 	decorations?: IEditorPartDecorationsConfiguration;
@@ -1505,6 +1701,16 @@ export enum EditorCloseMethod {
 	MOUSE
 }
 
+/**
+ * Determines whether a sticky editor should be prevented from being closed
+ * based on the close method (keyboard or mouse) and the configured policy.
+ *
+ * @param group - The editor group or group model containing the editor.
+ * @param editor - The editor input being closed.
+ * @param method - The method used to close the editor (keyboard or mouse).
+ * @param configuration - The editor part configuration containing the close policy.
+ * @returns `true` if the editor close should be prevented.
+ */
 export function preventEditorClose(group: IEditorGroup | IReadonlyEditorGroupModel, editor: EditorInput, method: EditorCloseMethod, configuration: IEditorPartConfiguration): boolean {
 	if (!group.isSticky(editor)) {
 		return false; // only interested in sticky editors
@@ -1519,6 +1725,11 @@ export function preventEditorClose(group: IEditorGroup | IReadonlyEditorGroupMod
 	return false;
 }
 
+/**
+ * Utility for accessing resources from editor inputs. Provides methods to get
+ * both the original (display) URI and the canonical (identity) URI, with support
+ * for side-by-side, diff, and merge editor inputs.
+ */
 export const EditorResourceAccessor = new EditorResourceAccessorImpl();
 
 export const enum CloseDirection {
@@ -1526,6 +1737,12 @@ export const enum CloseDirection {
 	RIGHT
 }
 
+/**
+ * Provides storage for editor-related state that persists across sessions.
+ * State is scoped to a specific editor resource and group.
+ *
+ * @template T - The type of the stored state.
+ */
 export interface IEditorMemento<T> {
 
 	saveEditorState(group: IEditorGroup, resource: URI, state: T): void;
@@ -1603,6 +1820,16 @@ class EditorFactoryRegistry implements IEditorFactoryRegistry {
 
 Registry.add(EditorExtensions.EditorFactory, new EditorFactoryRegistry());
 
+/**
+ * Converts an array of path data objects into editor inputs.
+ * Validates each path, checks file existence, and creates the appropriate
+ * resource or untitled editor input.
+ *
+ * @param paths - The array of path data objects to convert.
+ * @param fileService - The file service for checking file existence and type.
+ * @param logService - The log service for recording resolution issues.
+ * @returns A promise that resolves to an array of editor inputs (or `undefined` for invalid paths).
+ */
 export async function pathsToEditors(paths: IPathData[] | undefined, fileService: IFileService, logService: ILogService): Promise<ReadonlyArray<IResourceEditorInput | IUntitledTextResourceEditorInput | undefined>> {
 	if (!paths?.length) {
 		return [];
@@ -1669,6 +1896,13 @@ export const enum EditorsOrder {
 	SEQUENTIAL
 }
 
+/**
+ * Type guard that checks whether the given candidate is a valid text editor view state.
+ * Handles both regular code editor view states and diff editor view states recursively.
+ *
+ * @param candidate - The value to check.
+ * @returns `true` if the value is a valid `IEditorViewState`.
+ */
 export function isTextEditorViewState(candidate: unknown): candidate is IEditorViewState {
 	const viewState = candidate as IEditorViewState | undefined;
 	if (!viewState) {
@@ -1710,10 +1944,25 @@ export interface IEditorOpenErrorOptions {
 
 export interface IEditorOpenError extends IErrorWithActions, IEditorOpenErrorOptions { }
 
+/**
+ * Type guard that checks whether the given object is an `IEditorOpenError`.
+ *
+ * @param obj - The value to check.
+ * @returns `true` if the value is an `IEditorOpenError`.
+ */
 export function isEditorOpenError(obj: unknown): obj is IEditorOpenError {
 	return isErrorWithActions(obj);
 }
 
+/**
+ * Creates an editor open error with associated actions and display options.
+ * This error type can optionally be shown in a dialog to the user.
+ *
+ * @param messageOrError - The error message or an existing error to wrap.
+ * @param actions - The actions to present to the user for remediation.
+ * @param options - Additional options controlling how the error is displayed.
+ * @returns An `IEditorOpenError` with the provided actions and options.
+ */
 export function createEditorOpenError(messageOrError: string | Error, actions: IAction[], options?: IEditorOpenErrorOptions): IEditorOpenError {
 	const error: IEditorOpenError = createErrorWithActions(messageOrError, actions);
 
@@ -1724,6 +1973,9 @@ export function createEditorOpenError(messageOrError: string | Error, actions: I
 	return error;
 }
 
+/**
+ * Represents a set of primary and secondary toolbar actions.
+ */
 export interface IToolbarActions {
 	readonly primary: IAction[];
 	readonly secondary: IAction[];
