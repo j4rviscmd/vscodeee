@@ -1,0 +1,7 @@
+{
+	"name": "tas-client",
+	"version": "0.0.0-stub",
+	"description": "No-op stub for tas-client (Treatment Assignment Service). This project does not use Microsoft's A/B experimentation service. All experiment flags return default values.",
+	"main": "./dist/tas-client.min.js",
+	"types": "./dist/tas-client.d.ts"
+}

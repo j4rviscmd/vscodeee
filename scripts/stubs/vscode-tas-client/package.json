@@ -1,0 +1,6 @@
+{
+	"name": "vscode-tas-client",
+	"version": "0.0.0-stub",
+	"description": "No-op stub for vscode-tas-client. This project does not use Microsoft's A/B experimentation service.",
+	"main": "./index.js"
+}
