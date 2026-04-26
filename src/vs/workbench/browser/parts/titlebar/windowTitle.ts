@@ -39,9 +39,12 @@ const enum WindowSettingNames {
 }
 
 export const defaultWindowTitle = (() => {
-	// TODO(Phase 2): Tauri custom titlebar handles dirty indicator and app name natively
+	// Tauri behaves as native app — match upstream Electron defaults per OS
 	if (isTauri) {
-		return '${activeEditorShort}${separator}${rootName}${separator}${profileName}${separator}${remoteName}';
+		if (isMacintosh) {
+			return '${activeEditorShort}${separator}${rootName}${separator}${profileName}'; // macOS has native dirty indicator
+		}
+		return '${dirty}${activeEditorShort}${separator}${rootName}${separator}${profileName}${separator}${appName}';
 	}
 
 	if (isMacintosh && isNative) {
@@ -217,15 +220,10 @@ export class WindowTitle extends Disposable {
 
 			// Tauri: set the native window title separately for Cmd+Tab, Mission Control, etc.
 			// hiddenTitle:true prevents document.title from propagating to the native title.
-			// The native title intentionally differs from document.title (custom titlebar text)
-			// to show a concise "workspace - appName" format in the OS window switcher.
+			// Use the same template-resolved title so Alt+Tab shows the active editor/workspace.
 			if (isTauri) {
-				const workspaceName = this.workspaceName;
-				const tauriNativeTitle = workspaceName
-					? `${workspaceName} - ${this.productService.nameLong}`
-					: this.productService.nameLong;
 				// TODO(Phase 2): extract __TAURI_INTERNALS__ usage into shared tauriInvoke helper
-				(window as unknown as Record<string, { invoke: (cmd: string, args: Record<string, unknown>) => Promise<void> }>).__TAURI_INTERNALS__?.invoke('plugin:window|set_title', { value: tauriNativeTitle }).catch(() => { /* runtime error */ });
+				(window as unknown as Record<string, { invoke: (cmd: string, args: Record<string, unknown>) => Promise<void> }>).__TAURI_INTERNALS__?.invoke('plugin:window|set_title', { value: nativeTitle }).catch(() => { /* runtime error */ });
 			}
 
 			this.title = title;
