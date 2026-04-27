@@ -2,7 +2,6 @@
  *  Copyright (c) VS Codeee Contributors. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-/* eslint-disable @stylistic/ts/indent */
 
 import { localize } from '../../../nls.js';
 import { Action } from '../../../base/common/actions.js';
