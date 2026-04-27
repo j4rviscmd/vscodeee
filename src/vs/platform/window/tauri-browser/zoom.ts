@@ -25,10 +25,10 @@ export const MIN_ZOOM_LEVEL = -8;
  * @returns A promise that resolves when the native zoom has been applied.
  */
 export async function applyZoom(zoomLevel: number, targetWindow: Window = mainWindow): Promise<void> {
-	const clampedLevel = Math.min(Math.max(zoomLevel, MIN_ZOOM_LEVEL), MAX_ZOOM_LEVEL);
-	const factor = zoomLevelToZoomFactor(clampedLevel);
+  const clampedLevel = Math.min(Math.max(zoomLevel, MIN_ZOOM_LEVEL), MAX_ZOOM_LEVEL);
+  const factor = zoomLevelToZoomFactor(clampedLevel);
 
-	await invoke('set_webview_zoom', { scaleFactor: factor });
-	setZoomFactor(factor, targetWindow);
-	setZoomLevel(clampedLevel, targetWindow);
+  await invoke('set_webview_zoom', { scaleFactor: factor });
+  setZoomFactor(factor, targetWindow);
+  setZoomLevel(clampedLevel, targetWindow);
 }
