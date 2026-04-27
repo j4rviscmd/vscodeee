@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-04-28
+
+### Added
+
+- Add zoom status bar indicator with per-window zoom support ([#315](https://github.com/j4rviscmd/vscodeee/pull/315))
+- Add system font enumeration for `editor.fontFamily` suggestions ([#310](https://github.com/j4rviscmd/vscodeee/pull/310))
+
+### Fixed
+
+- Detect and remove symlink at `src-tauri/node_modules` before bundling ([#314](https://github.com/j4rviscmd/vscodeee/pull/314))
+- Disable single-instance plugin in dev builds
+
+### Changed
+
+- Exclude test files from production build (-51MB) ([#317](https://github.com/j4rviscmd/vscodeee/pull/317))
+- Add Cargo release profile for binary size optimization ([#313](https://github.com/j4rviscmd/vscodeee/pull/313))
+- Exclude unused built-in extensions to reduce bundle size ([#311](https://github.com/j4rviscmd/vscodeee/pull/311))
+- Fix ESLint `@stylistic/ts` violations in zoom files ([#316](https://github.com/j4rviscmd/vscodeee/pull/316), [#318](https://github.com/j4rviscmd/vscodeee/pull/318))
+
 ## [0.3.1] - 2026-04-27
 
 ### Fixed
