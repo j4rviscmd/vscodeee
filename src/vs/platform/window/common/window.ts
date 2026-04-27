@@ -211,6 +211,7 @@ export interface IWindowSettings {
 	readonly newWindowProfile: string;
 	readonly density: IDensitySettings;
 	readonly border: 'off' | 'default' | 'system' | string /* color in RGB or other formats */;
+	readonly zoomPerWindow: boolean;
 }
 
 export interface IDensitySettings {

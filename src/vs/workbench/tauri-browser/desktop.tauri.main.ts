@@ -13,7 +13,7 @@
 import product from '../../platform/product/common/product.js';
 import { Workbench } from '../browser/workbench.js';
 import { domContentLoaded, addDisposableListener, EventHelper, EventType } from '../../base/browser/dom.js';
-import { setZoomLevel, getZoomLevel } from '../../base/browser/browser.js';
+import { IWindowZoomService } from '../services/zoom/common/zoom.js';
 import { ServiceCollection } from '../../platform/instantiation/common/serviceCollection.js';
 import { ILogService, ILoggerService, getLogLevel, ConsoleLogger } from '../../platform/log/common/log.js';
 import { FileLoggerService } from '../../platform/log/common/fileLog.js';
@@ -67,7 +67,7 @@ import { TauriNativeHostService } from '../../platform/native/tauri-browser/nati
 import { TauriWorkbenchEnvironmentService, ITauriWindowConfiguration } from '../services/environment/tauri-browser/environmentService.js';
 import { IBrowserWorkbenchEnvironmentService } from '../services/environment/browser/environmentService.js';
 import { IWorkbenchConstructionOptions, IWorkspace, IWorkspaceProvider } from '../browser/web.api.js';
-import { isFolderToOpen, isWorkspaceToOpen, zoomLevelToZoomFactor } from '../../platform/window/common/window.js';
+import { isFolderToOpen, isWorkspaceToOpen } from '../../platform/window/common/window.js';
 import { invoke, listen } from '../../platform/tauri/common/tauriApi.js';
 import { ITauriWindowService, TauriWindowService } from '../../platform/window/tauri-browser/windowService.js';
 import { TauriURLCallbackProvider } from './urlCallbackProvider.js';
@@ -139,7 +139,6 @@ export class TauriDesktopMain extends Disposable {
       const layoutService = accessor.get(IWorkbenchLayoutService);
       const nativeHostService = accessor.get(INativeHostService);
       const openerService = accessor.get(IOpenerService);
-      const configurationService = accessor.get(IWorkbenchConfigurationService);
 
       listen('tauri://resize', () => layoutService.layout())
         .then(unlisten => this._register({ dispose: unlisten }));
@@ -169,27 +168,11 @@ export class TauriDesktopMain extends Disposable {
         },
       });
 
-      // Apply window zoom level via Tauri's native WebView zoom.
-      // In Electron, webFrame.setZoomLevel() changes the Chromium page zoom factor,
-      // which correctly updates window.innerWidth/innerHeight and reflows the layout.
-      // Tauri's Webview::set_zoom() provides the same native behavior via WKWebView
-      // on macOS, unlike CSS zoom which doesn't update viewport dimensions.
-      const applyWindowZoom = async (): Promise<void> => {
-        let zoomLevel = configurationService.getValue<number>('window.zoomLevel') ?? 0;
-        zoomLevel = Math.max(-8, Math.min(24, zoomLevel));
-        if (getZoomLevel(mainWindow) === zoomLevel) {
-          return;
-        }
-        setZoomLevel(zoomLevel, mainWindow);
-        await invoke('set_webview_zoom', { scaleFactor: zoomLevelToZoomFactor(zoomLevel) });
-        layoutService.layout();
-      };
-      applyWindowZoom();
-      this._register(configurationService.onDidChangeConfiguration(e => {
-        if (e.affectsConfiguration('window.zoomLevel')) {
-          applyWindowZoom();
-        }
-      }));
+      // Restore zoom level via IWindowZoomService.
+      // The service handles both per-window and global zoom modes,
+      // and manages the status bar indicator.
+      const windowZoomService = accessor.get(IWindowZoomService);
+      windowZoomService.restoreZoom(); // fire and forget — zoom applies asynchronously
     });
   }
 
