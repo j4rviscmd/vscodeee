@@ -316,6 +316,25 @@ function copyPackage(pkgName) {
 function main() {
 	console.log('[bundle-node-modules] Bundling required node_modules for Tauri build...');
 
+	// Guard: If TARGET_DIR is a symlink (e.g. -> ../node_modules created by
+	// npm install), remove it so we can create a real directory with only the
+	// curated subset of packages. Without this, Tauri would follow the symlink
+	// and bundle the entire root node_modules (~960MB) into the production app.
+	// See: https://github.com/j4rviscmd/vscodeee/issues/312
+	try {
+		const stat = fs.lstatSync(TARGET_DIR);
+		if (stat.isSymbolicLink()) {
+			const linkTarget = fs.readlinkSync(TARGET_DIR);
+			console.log(`[bundle-node-modules] Removing symlink: ${TARGET_DIR} -> ${linkTarget}`);
+			fs.unlinkSync(TARGET_DIR);
+		}
+	} catch (/** @type {any} */ e) {
+		// ENOENT is expected when the directory doesn't exist yet
+		if (e.code !== 'ENOENT') {
+			throw e;
+		}
+	}
+
 	if (clean && fs.existsSync(TARGET_DIR)) {
 		console.log(`[bundle-node-modules] Cleaning ${TARGET_DIR}`);
 		fs.rmSync(TARGET_DIR, { recursive: true });
