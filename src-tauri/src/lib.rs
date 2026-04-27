@@ -308,6 +308,7 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
             commands::native_host::clear_toast,
             commands::native_host::clear_toasts,
             commands::native_host::write_elevated,
+            commands::native_host::enumerate_fonts,
             // ── macOS metadata commands ──
             commands::native_host::set_represented_filename,
             commands::native_host::set_document_edited,
