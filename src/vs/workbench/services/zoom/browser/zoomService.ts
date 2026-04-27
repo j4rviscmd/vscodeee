@@ -9,9 +9,10 @@ import { mainWindow } from '../../../../base/browser/window.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { IWorkbenchLayoutService } from '../../layout/browser/layoutService.js';
-import { applyZoom, MAX_ZOOM_LEVEL, MIN_ZOOM_LEVEL } from '../../../../platform/window/tauri-browser/zoom.js';
-import { getZoomLevel } from '../../../../base/browser/browser.js';
-import { IWindowZoomService } from '../common/zoom.js';
+import { getZoomLevel, setZoomFactor, setZoomLevel } from '../../../../base/browser/browser.js';
+import { invoke } from '../../../../platform/tauri/common/tauriApi.js';
+import { zoomLevelToZoomFactor } from '../../../../platform/window/common/window.js';
+import { IWindowZoomService, MAX_ZOOM_LEVEL, MIN_ZOOM_LEVEL } from '../common/zoom.js';
 
 const ZOOM_PER_WINDOW_STORAGE_KEY = 'window.perWindowZoomLevel';
 
@@ -83,7 +84,7 @@ export class WindowZoomService extends Disposable implements IWindowZoomService 
 		}
 
 		if (this.zoomPerWindow) {
-			await applyZoom(newLevel, mainWindow);
+			await this.applyZoom(newLevel);
 			this.layoutService.layout();
 			this.persistPerWindowZoom(newLevel);
 			this._onDidChangeZoom.fire();
@@ -94,7 +95,7 @@ export class WindowZoomService extends Disposable implements IWindowZoomService 
 
 	async resetZoom(): Promise<void> {
 		if (this.zoomPerWindow) {
-			await applyZoom(this._configuredZoomLevel, mainWindow);
+			await this.applyZoom(this._configuredZoomLevel);
 			this.layoutService.layout();
 			this.storageService.remove(ZOOM_PER_WINDOW_STORAGE_KEY, StorageScope.APPLICATION);
 			this._onDidChangeZoom.fire();
@@ -115,7 +116,7 @@ export class WindowZoomService extends Disposable implements IWindowZoomService 
 			}
 		}
 
-		await applyZoom(targetLevel, mainWindow);
+		await this.applyZoom(targetLevel);
 		this.layoutService.layout();
 		if (notify) {
 			this._onDidChangeZoom.fire();
@@ -130,7 +131,7 @@ export class WindowZoomService extends Disposable implements IWindowZoomService 
 
 	/** Apply the configured (global) zoom level and trigger a layout recalculation. */
 	private async applyConfiguredZoom(): Promise<void> {
-		await applyZoom(this._configuredZoomLevel, mainWindow);
+		await this.applyZoom(this._configuredZoomLevel);
 		this.layoutService.layout();
 		this._onDidChangeZoom.fire();
 	}
@@ -149,5 +150,15 @@ export class WindowZoomService extends Disposable implements IWindowZoomService 
 		} else {
 			this.storageService.store(ZOOM_PER_WINDOW_STORAGE_KEY, level, StorageScope.APPLICATION, StorageTarget.MACHINE);
 		}
+	}
+
+	/** Apply a zoom level to the main window via Tauri's native WebView zoom. */
+	private async applyZoom(level: number): Promise<void> {
+		const clampedLevel = Math.min(Math.max(level, MIN_ZOOM_LEVEL), MAX_ZOOM_LEVEL);
+		const factor = zoomLevelToZoomFactor(clampedLevel);
+
+		await invoke('set_webview_zoom', { scaleFactor: factor });
+		setZoomFactor(factor, mainWindow);
+		setZoomLevel(clampedLevel, mainWindow);
 	}
 }
