@@ -976,6 +976,9 @@ const EXCLUDED_EXTENSIONS = new Set([
 	'vscode-colorize-tests',
 	'vscode-colorize-perf-tests',
 	'vscode-test-resolver',
+	// TODO(Phase 1): Excluded for Tauri fork - SettingsSync/RemoteTunnel not supported
+	'microsoft-authentication',
+	'tunnel-forwarding',
 ]);
 
 /**
