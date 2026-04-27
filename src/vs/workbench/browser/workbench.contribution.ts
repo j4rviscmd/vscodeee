@@ -943,6 +943,12 @@ const registry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Con
 				'maximum': 24,
 				'markdownDescription': localize('zoomLevel', "Adjust the zoom level of the window. The original size is 0 and each increment above (e.g. 1) or below (e.g. -1) represents zooming 20% larger or smaller respectively. You can also enter decimals for a finer zoom level."),
 				'scope': ConfigurationScope.APPLICATION
+			},
+			'window.zoomPerWindow': {
+				'type': 'boolean',
+				'default': true,
+				'markdownDescription': localize('zoomPerWindow', "Controls whether the zoom level applies per window or globally. When enabled, zoom changes only affect the active window and do not modify the `{0}` setting.", '`#window.zoomLevel#`'),
+				'scope': ConfigurationScope.APPLICATION
 			}
 		}
 	});

@@ -93,6 +93,7 @@ import './services/auxiliaryWindow/browser/auxiliaryWindowService.js';
 import './services/browserElements/browser/webBrowserElementsService.js';
 import './services/power/tauri-browser/powerService.js';
 import '../platform/sandbox/browser/sandboxHelperService.js';
+import './services/zoom/browser/zoom.contribution.js';
 
 //#endregion
 
@@ -205,5 +206,8 @@ import './contrib/remote/browser/remoteStartEntry.contribution.js';
 
 // Splash
 import './contrib/splash/browser/splash.contribution.js';
+
+// Zoom
+import './tauri-browser/contrib/zoomStatusEntry.js';
 
 //#endregion

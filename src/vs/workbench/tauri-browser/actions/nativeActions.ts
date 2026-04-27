@@ -10,7 +10,6 @@ import { KeybindingWeight } from '../../../platform/keybinding/common/keybinding
 import { KeyCode, KeyMod } from '../../../base/common/keyCodes.js';
 import { INativeHostService } from '../../../platform/native/common/native.js';
 import { ServicesAccessor } from '../../../platform/instantiation/common/instantiation.js';
-import { IConfigurationService } from '../../../platform/configuration/common/configuration.js';
 
 // #region Quit
 
@@ -153,6 +152,8 @@ registerAction2(ToggleMaximizedWindowAction);
 
 // #region Zoom
 
+import { IWindowZoomService } from '../../services/zoom/common/zoom.js';
+
 /** Increases the workbench zoom level by 1. */
 class ZoomInAction extends Action2 {
   constructor() {
@@ -169,9 +170,8 @@ class ZoomInAction extends Action2 {
   }
 
   async run(accessor: ServicesAccessor): Promise<void> {
-    const configurationService = accessor.get(IConfigurationService);
-    const currentZoom = configurationService.getValue<number>('window.zoomLevel') ?? 0;
-    await configurationService.updateValue('window.zoomLevel', currentZoom + 1);
+    const windowZoomService = accessor.get(IWindowZoomService);
+    await windowZoomService.applyZoomDelta(1);
   }
 }
 
@@ -193,15 +193,14 @@ class ZoomOutAction extends Action2 {
   }
 
   async run(accessor: ServicesAccessor): Promise<void> {
-    const configurationService = accessor.get(IConfigurationService);
-    const currentZoom = configurationService.getValue<number>('window.zoomLevel') ?? 0;
-    await configurationService.updateValue('window.zoomLevel', currentZoom - 1);
+    const windowZoomService = accessor.get(IWindowZoomService);
+    await windowZoomService.applyZoomDelta(-1);
   }
 }
 
 registerAction2(ZoomOutAction);
 
-/** Resets the workbench zoom level to the default (0). */
+/** Resets the workbench zoom level to the default. */
 class ZoomResetAction extends Action2 {
   constructor() {
     super({
@@ -218,8 +217,8 @@ class ZoomResetAction extends Action2 {
   }
 
   async run(accessor: ServicesAccessor): Promise<void> {
-    const configurationService = accessor.get(IConfigurationService);
-    await configurationService.updateValue('window.zoomLevel', 0);
+    const windowZoomService = accessor.get(IWindowZoomService);
+    await windowZoomService.resetZoom();
   }
 }
 
