@@ -65,3 +65,16 @@ core-text = "20"
 # Windows shell command install — creates .cmd wrapper and updates user PATH.
 [target.'cfg(target_os = "windows")'.dependencies]
 winreg = "0.55"
+
+# --- Build profiles for binary size optimization ---
+# Reference: https://tauri.app/concept/size/
+
+[profile.dev]
+incremental = true # Compile in smaller steps for faster iteration.
+
+[profile.release]
+codegen-units = 1 # Allows LLVM to perform better optimization.
+lto = true         # Enables link-time-optimizations.
+opt-level = "s"    # Prioritizes small binary size. Use `3` if you prefer speed.
+panic = "abort"    # Higher performance by disabling panic handlers.
+strip = true       # Ensures debug symbols are removed.
