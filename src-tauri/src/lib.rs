@@ -38,17 +38,59 @@ pub mod cli;
 
 /// Build and run the Tauri application.
 ///
-/// Performs the following setup before entering the event loop:
+/// This is the main entry point for the application. It constructs a Tauri
+/// [`Builder`], registers all plugins and managed state, wires up lifecycle
+/// hooks, and starts the event loop.
 ///
-/// 1. **Plugin registration** — Initialize shell, dialog, os, fs Tauri plugins
-/// 2. **Custom protocol** — Register the `vscode-file://` scheme for secure
-///    access to local files ([`protocol::handle_vscode_file_protocol`])
-/// 3. **Command handlers** — Register Tauri commands callable from the WebView via `invoke()`
-/// 4. **Setup** — Initialize protocol state (register valid roots)
+/// # Initialization sequence
+///
+/// 1. **Shared state** — Create `OnceLock<ProtocolState>`, `EventBus`,
+///    `ChannelRouter`, `WindowManager`, `PendingCloses`, and `PendingShows`.
+/// 2. **Single-instance plugin** *(release builds only)* — Register
+///    `tauri_plugin_single_instance` so that a second process forwards its CLI
+///    arguments to the already-running instance instead of opening a new window.
+///    Disabled in debug builds to allow running production and dev builds
+///    side-by-side for testing.
+/// 3. **Plugin registration** — Initialize shell, dialog, os, fs, clipboard,
+///    window-state, deep-link, updater, and logging plugins.
+///    In debug builds, `tauri_plugin_mcp_bridge` is also registered for AI
+///    agent automation via WebSocket.
+/// 4. **Managed state** — Register stateful services (`PtyManager`,
+///    `FileWatcherState`, `ExtHostState`, `ShutdownCoordinator`, etc.) so they
+///    are accessible from Tauri command handlers.
+/// 5. **Custom protocol** — Register the `vscode-file://` scheme for secure
+///    access to local files ([`protocol::handle_vscode_file_protocol`]).
+/// 6. **Command handlers** — Register all Tauri commands callable from the
+///    WebView via `invoke()`.
+/// 7. **Setup closure** — Executed once before the event loop starts:
+///    - Initialize terminal state store from `app_data_dir`.
+///    - Set up OS-level system event monitors (suspend, resume, lock, battery).
+///    - Register shutdown resources with [`shutdown::ShutdownCoordinator`]
+///      (extension hosts, PTY instances, file watchers).
+///    - Read user window settings and load the session store.
+///    - Compute the window restore plan based on settings and session data.
+///    - Apply platform-specific window chrome to the initial "main" window.
+///    - Initialize protocol state with app root directories.
+///    - Set up deep-link forwarding from `deep-link://new-url` to the WebView.
+///    - Initialize the IPC event bus with the app handle.
+///    - Register the initial "main" window in the `WindowManager`.
+///    - Register ready-to-show safety timeouts for all windows.
+///    - Create additional restored windows from the session.
+///    - Route first-instance CLI arguments to window operations.
+/// 8. **Run loop** — On `RunEvent::Exit`, execute the full shutdown sequence
+///    via [`shutdown::ShutdownCoordinator::shutdown_all`].
+///
+/// # Arguments
+///
+/// * `gui_args` - Parsed CLI arguments from the `eee` launcher, if any.
+///   When present and non-empty, these override the session restore plan
+///   (e.g., `eee /path/to/project` opens that path instead of restoring
+///   previous windows).
 ///
 /// # Panics
 ///
-/// Panics if an error occurs while running the Tauri application.
+/// Panics if the Tauri application fails to build (see `.expect()` on
+/// `.build()`).
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
     // Pre-build protocol state so the handler closure can capture it.
@@ -72,28 +114,45 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
     // are shown automatically if the TypeScript bootstrap crashes.
     let pending_shows = Arc::new(window::events::PendingShows::new());
 
-    let builder = tauri::Builder::default()
-        // IMPORTANT: single-instance plugin must be registered first so the
-        // second-process detection happens before any other plugin setup.
-        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
-            use tauri::Manager;
-            log::info!(
-                target: "vscodeee::single_instance",
-                "Received single-instance callback: args={args:?}, cwd={cwd}"
-            );
-            let wm = match app.try_state::<std::sync::Arc<window::manager::WindowManager>>() {
-                Some(wm) => wm.inner().clone(),
-                None => {
-                    log::error!(target: "vscodeee::single_instance", "WindowManager not available in single-instance callback");
-                    return;
-                }
-            };
-            let handle = app.clone();
-            tauri::async_runtime::spawn(async move {
-                let parsed = cli::dispatch::parse_gui_args(&args);
-                cli::router::route_gui_args(&handle, &wm, &parsed, &cwd).await;
-            });
-        }))
+    // ── Single-instance lock (release builds only) ─────────────────────
+    // IMPORTANT: single-instance plugin must be registered first so the
+    // second-process detection happens before any other plugin setup.
+    // Release only — disabled in dev to allow running production and dev
+    // builds side-by-side for testing.
+    //
+    // When a second instance is launched, its CLI arguments are parsed and
+    // forwarded to the first instance via `cli::router::route_gui_args`,
+    // which opens new windows or focuses existing ones as appropriate.
+    #[cfg(not(debug_assertions))]
+    let builder = {
+        let builder = tauri::Builder::default().plugin(tauri_plugin_single_instance::init(
+            |app, args, cwd| {
+                use tauri::Manager;
+                log::info!(
+                    target: "vscodeee::single_instance",
+                    "Received single-instance callback: args={args:?}, cwd={cwd}"
+                );
+                let wm =
+                    match app.try_state::<std::sync::Arc<window::manager::WindowManager>>() {
+                        Some(wm) => wm.inner().clone(),
+                        None => {
+                            log::error!(target: "vscodeee::single_instance", "WindowManager not available in single-instance callback");
+                            return;
+                        }
+                    };
+                let handle = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let parsed = cli::dispatch::parse_gui_args(&args);
+                    cli::router::route_gui_args(&handle, &wm, &parsed, &cwd).await;
+                });
+            },
+        ));
+        builder
+    };
+    #[cfg(debug_assertions)]
+    let builder = tauri::Builder::default();
+
+    let builder = builder
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
@@ -463,11 +522,8 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
             // If the TypeScript bootstrap never calls `notify_ready`, the
             // window is shown after 30 seconds to avoid a permanently
             // invisible application.
-            {
-                let ps = app.state::<Arc<window::events::PendingShows>>();
-                let handle = app.handle().clone();
-                ps.spawn_safety_timeout(&handle, "main");
-            }
+            app.state::<Arc<window::events::PendingShows>>()
+                .spawn_safety_timeout(app.handle(), "main");
 
             // Apply fullscreen to the main window if restored
             if let Some(ref entry) = first_entry {
@@ -531,6 +587,7 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
             // the CLI args need to be routed to window operations.
             if let Some(ref args) = gui_args {
                 if !args.paths.is_empty() {
+                    let path_count = args.paths.len();
                     let handle = app.handle().clone();
                     let wm = Arc::clone(&window_manager);
                     let args = args.clone();
@@ -542,8 +599,7 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
                     });
                     log::info!(
                         target: "vscodeee",
-                        "Routed first-instance CLI args: {} paths",
-                        gui_args.as_ref().map(|a| a.paths.len()).unwrap_or(0)
+                        "Routed first-instance CLI args: {path_count} paths"
                     );
                 }
             }
@@ -553,6 +609,10 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
+            // On application exit, execute the ordered shutdown sequence:
+            // Phase 0 — Kill extension host sidecar processes
+            // Phase 1 — Close all PTY shell instances
+            // Phase 2 — Stop all file watcher threads
             if let tauri::RunEvent::Exit = event {
                 log::info!(target: "vscodeee", "RunEvent::Exit — running shutdown cleanup");
                 use tauri::Manager;
