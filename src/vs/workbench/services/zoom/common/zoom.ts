@@ -9,6 +9,11 @@ import { createDecorator } from '../../../../platform/instantiation/common/insta
 /** Service identifier for {@link IWindowZoomService}. */
 export const IWindowZoomService = createDecorator<IWindowZoomService>('windowZoomService');
 
+/** Maximum allowed zoom level (inclusive). */
+export const MAX_ZOOM_LEVEL = 8;
+/** Minimum allowed zoom level (inclusive). */
+export const MIN_ZOOM_LEVEL = -8;
+
 /**
  * Service for managing window zoom levels in the workbench.
  *
