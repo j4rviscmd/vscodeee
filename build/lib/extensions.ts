@@ -298,7 +298,6 @@ export function fromGithub({ name, version, repo, sha256, metadata }: IExtension
  */
 const nativeExtensions = [
 	'git',
-	'microsoft-authentication',
 ];
 
 const excludedExtensions = [
@@ -308,6 +307,9 @@ const excludedExtensions = [
 	'vscode-test-resolver',
 	'ms-vscode.node-debug',
 	'ms-vscode.node-debug2',
+	// TODO(Phase 1): Excluded for Tauri fork - SettingsSync/RemoteTunnel not supported
+	'microsoft-authentication',
+	'tunnel-forwarding',
 ];
 
 const marketplaceWebExtensionsExclude = new Set([
