@@ -1105,17 +1105,17 @@ Registry.as<IConfigurationMigrationRegistry>(Extensions.ConfigurationMigration)
 		}
 	}]);
 
-	// VSCodeEE: Editor group index in tab
-	registry.registerConfiguration({
-		'id': 'vscodeee',
-		'order': 20,
-		'title': localize('vscodeeeConfigurationTitle', "VSCodeEE"),
-		'type': 'object',
-		'properties': {
-			'vscodeee.editorGroupIndexInTab': {
-				'type': 'boolean',
-				'default': false,
-				'description': localize('editorGroupIndexInTab', "When enabled, shows the editor group index prefix (e.g., [1]) on the active tab of each editor group. Only appears when 2 or more editor groups are open.")
-			}
+// VSCodeEE: Editor group index in tab
+registry.registerConfiguration({
+	'id': 'vscodeee',
+	'order': 20,
+	'title': localize('vscodeeeConfigurationTitle', "VSCodeEE"),
+	'type': 'object',
+	'properties': {
+		'vscodeee.editorGroupIndexInTab': {
+			'type': 'boolean',
+			'default': false,
+			'description': localize('editorGroupIndexInTab', "When enabled, shows the editor group index prefix (e.g., [1]) on the active tab of each editor group. Only appears when 2 or more editor groups are open.")
 		}
-	});
+	}
+});
