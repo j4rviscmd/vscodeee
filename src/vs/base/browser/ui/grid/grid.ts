@@ -1013,3 +1013,4 @@ export function createSerializedGrid<T>(gridDescriptor: GridDescriptor<T>): ISer
 		height: height || 1
 	};
 }
+
