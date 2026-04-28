@@ -305,7 +305,7 @@ jobs:
 
   build-reh:
     name: Build REH Server (${{ matrix.os }}-${{ matrix.arch }})
-    needs: [preflight, create-release]
+    needs: [preflight, generate-notes, create-release]
     if: needs.preflight.outputs.skip != 'true'
     permissions:
       contents: write
