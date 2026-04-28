@@ -135,4 +135,3 @@ Architectural differences between Electron (bundled Chromium) and Tauri (native 
 ## License
 
 MIT License — see [LICENSE](./LICENSE.txt) for details.
-
