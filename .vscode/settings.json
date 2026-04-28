@@ -217,7 +217,10 @@
 		"Codeee",
 		"libproxy",
 		"msal",
+		"Neovimmer",
 		"titlebarpart",
+		"Vimmer",
+		"Vimmers",
 		"vscodeee"
 	],
 	"markdownlint.config": {
