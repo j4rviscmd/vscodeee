@@ -57,7 +57,62 @@ const EXCLUDED_PACKAGES = new Set([
 	'@microsoft/dynamicproto-js',
 	'@nevware21/ts-async',
 	'@nevware21/ts-utils',
+
+	// Type-definition-only packages — these have no runtime code (empty "main" field
+	// or only .d.ts files). The consuming extensions are esbuild-BUNDLED, so all
+	// runtime code is already inlined into dist/. These packages are only used at
+	// TypeScript compile time and are unnecessary in the production bundle.
+	// NOTE: These are also excluded by the BUNDLED extension skip in Phase 2, but
+	// kept here as a safety net in case the detection logic changes.
+	// See: https://github.com/j4rviscmd/vscodeee/issues/274
+	'@octokit/graphql-schema',   // ~7.3MB — GraphQL schema types for github extension
+	'@octokit/openapi-types',    // ~5.1MB — REST API types for github extension
 ]);
+
+// Extensions excluded from the production build. Their dependencies should NOT
+// be collected in Phase 2 since the extensions themselves are never loaded.
+// This list must be kept in sync with EXCLUDED_EXTENSIONS in build/next/index.ts.
+const EXCLUDED_EXTENSIONS = new Set([
+	'vscode-api-tests',
+	'vscode-colorize-tests',
+	'vscode-colorize-perf-tests',
+	'vscode-test-resolver',
+	// TODO(Phase 1): Excluded for Tauri fork - SettingsSync/RemoteTunnel not supported
+	'microsoft-authentication',
+	'tunnel-forwarding',
+]);
+
+// Packages from esbuild-BUNDLED extensions that are still required at runtime
+// in node_modules/ (i.e., NOT inlined by esbuild). All other BUNDLED extension
+// deps are fully inlined into dist/*.js and do not need to be in node_modules/.
+//
+// How to determine if a package needs to be here:
+// 1. Check esbuild.mts for `external: [...]` — packages listed there are NOT
+//    inlined and require() / import() them at runtime from node_modules.
+// 2. Check if the extension loads a file from node_modules at runtime (e.g.,
+//    vscode-markdown-languageserver's workerMain.js is started as a separate
+//    Node.js process via LanguageClient).
+//
+// To verify: inspect the built dist/*.js for external require()/import() calls:
+//   node -e "const c=require('fs').readFileSync('extensions/git/dist/main.js','utf8');
+//     const r=c.match(/(?:require|import)\(['\"][^'\"]+['\"]\)/g)||[];
+//     console.log(r.filter(x=>!x.includes('node:')&&!x.includes('./')&&!x.includes('vscode')))"
+//
+// Entries can be:
+//   - string: package name (transitive deps will be resolved from its package.json)
+//   - { name: string, skipTransitive: true }: package copied but transitive deps skipped
+//     (use when the package's dist is self-contained / pre-bundled)
+/** @type {Array<string | { name: string, skipTransitive: boolean }>} */
+const REQUIRED_BUNDLED_EXT_PACKAGES = [
+	// git extension: native addon marked as external in esbuild.mts.
+	// Used via dynamic import: `const { cp } = await import('@vscode/fs-copyfile')`
+	'@vscode/fs-copyfile',
+	// markdown-language-features: loaded as a separate Node.js process via
+	// LanguageClient (workerMain.js). The dist/node/workerMain.js is fully
+	// self-contained (all deps inlined, only Node.js builtins as external requires),
+	// so transitive deps are NOT needed in node_modules.
+	{ name: 'vscode-markdown-languageserver', skipTransitive: true },
+];
 
 // Directory containing no-op stub packages that replace real implementations.
 // Stubs maintain the same API surface but have zero dependencies and minimal size.
@@ -195,18 +250,45 @@ function findPackageDir(pkgName) {
 }
 
 /**
+ * Detect whether an extension is "BUNDLED" — i.e., it uses esbuild to inline
+ * all dependencies into dist/*.js. BUNDLED extensions do not need their
+ * node_modules dependencies at runtime (except for packages explicitly listed
+ * in REQUIRED_BUNDLED_EXT_PACKAGES).
+ * @param {string} extName — extension directory name (e.g. "git", "emmet")
+ * @returns {boolean}
+ */
+function isBundledExtension(extName) {
+	return fs.existsSync(path.join(EXTENSIONS_DIR, extName, 'esbuild.mts'));
+}
+
+/**
  * Recursively collect all dependency package names from extension manifests,
  * including transitive dependencies. Returns a set of top-level package names
  * (e.g. "@vscode/extension-telemetry", "which") that exist in any node_modules.
+ *
+ * BUNDLED extensions (those with esbuild.mts) are skipped because esbuild
+ * inlines all their dependencies into dist/*.js. Only packages explicitly
+ * listed in REQUIRED_BUNDLED_EXT_PACKAGES are included from BUNDLED extensions.
  * @returns {Set<string>}
  */
 function collectExtensionDependencies() {
 	const seen = new Set();
 	const queue = [];
 
-	// Seed with direct dependencies from all extension package.json files
+	// Seed with direct dependencies from all extension package.json files.
+	// Skip extensions in EXCLUDED_EXTENSIONS — they are never loaded in production,
+	// so their dependencies (e.g. @azure/* from microsoft-authentication) are unnecessary.
+	// Skip BUNDLED extensions — their deps are inlined by esbuild.
 	for (const extDir of fs.readdirSync(EXTENSIONS_DIR, { withFileTypes: true })) {
 		if (!extDir.isDirectory()) {
+			continue;
+		}
+		if (EXCLUDED_EXTENSIONS.has(extDir.name)) {
+			continue;
+		}
+		// BUNDLED extensions inline all deps via esbuild — skip their dependency trees.
+		// Only REQUIRED_BUNDLED_EXT_PACKAGES are needed at runtime from node_modules.
+		if (isBundledExtension(extDir.name)) {
 			continue;
 		}
 		const pkgPath = path.join(EXTENSIONS_DIR, extDir.name, 'package.json');
@@ -218,6 +300,21 @@ function collectExtensionDependencies() {
 			if (!seen.has(dep)) {
 				seen.add(dep);
 				queue.push(dep);
+			}
+		}
+	}
+
+	// Add packages from BUNDLED extensions that are still required at runtime
+	const skipTransitiveSet = new Set();
+	for (const entry of REQUIRED_BUNDLED_EXT_PACKAGES) {
+		const name = typeof entry === 'string' ? entry : entry.name;
+		const skip = typeof entry === 'object' && entry.skipTransitive;
+		if (!seen.has(name)) {
+			seen.add(name);
+			if (!skip) {
+				queue.push(name);
+			} else {
+				skipTransitiveSet.add(name);
 			}
 		}
 	}
@@ -427,8 +524,16 @@ function main() {
 		}
 	}
 
-	// Phase 2: Auto-discover and copy extension dependencies
+	// Phase 2: Auto-discover and copy extension dependencies.
+	// BUNDLED extensions (with esbuild.mts) are skipped — their deps are inlined.
+	// Only REQUIRED_BUNDLED_EXT_PACKAGES are included from BUNDLED extensions.
 	console.log('[bundle-node-modules] Phase 2: Extension dependencies...');
+	const bundledExtNames = fs.readdirSync(EXTENSIONS_DIR, { withFileTypes: true })
+		.filter(e => e.isDirectory() && isBundledExtension(e.name) && !EXCLUDED_EXTENSIONS.has(e.name))
+		.map(e => e.name);
+	console.log(`[bundle-node-modules]   Skipping ${bundledExtNames.length} BUNDLED extensions (deps inlined by esbuild)`);
+	const requiredNames = REQUIRED_BUNDLED_EXT_PACKAGES.map(e => typeof e === 'string' ? e : e.name);
+	console.log(`[bundle-node-modules]   Required from BUNDLED: ${requiredNames.join(', ')}`);
 	const extDeps = collectExtensionDependencies();
 
 	let extCopied = 0;

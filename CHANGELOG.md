@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-04-28
+
+### Changed
+
+- Skip BUNDLED extension dependencies in Phase 2 node_modules bundling — reduces staging node_modules from 66.9MB to 47.5MB (-19.4MB, -29%) ([#330](https://github.com/j4rviscmd/vscodeee/pull/330))
+- Exclude unused `@azure` and `@octokit` type packages from bundle ([#328](https://github.com/j4rviscmd/vscodeee/pull/328))
+- Parallelize `publish-tauri` and `build-reh` CI jobs for faster releases
+
 ## [0.5.0] - 2026-04-28
 
 ### Added
