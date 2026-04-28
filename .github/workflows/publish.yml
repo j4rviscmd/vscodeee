@@ -29,6 +29,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       skip: ${{ steps.check.outputs.skip }}
+      version: ${{ steps.check.outputs.version }}
+      tag: ${{ steps.check.outputs.tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -40,68 +42,52 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            const path = require('path');
-            const cfgPath = path.join(process.cwd(), 'src-tauri', 'tauri.conf.json');
             let version = '';
             try {
-              const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
-              version = cfg.version || '';
+              version = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8')).version || '';
             } catch (e) {
-              core.info(`Failed reading ${cfgPath}: ${e.message}`);
+              core.info(`Failed reading tauri.conf.json: ${e.message}`);
             }
             if (!version) {
               core.setFailed('Unable to determine version from src-tauri/tauri.conf.json');
               return;
             }
-            const tagName = `v${version}`;
-            core.info(`Checking if tag or release exists for ${tagName} ...`);
+            const tag = `v${version}`;
+            core.setOutput('version', version);
+            core.setOutput('tag', tag);
+            core.info(`Checking if tag or release exists for ${tag} ...`);
 
-            try {
-              await github.rest.git.getRef({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                ref: `tags/${tagName}`,
-              });
-
-              // Tag exists — check if a release is associated with it
-              const releases = await github.rest.repos.listReleases({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                per_page: 100,
-              });
-              const hasRelease = releases.data.find(r => r.tag_name === tagName);
-              if (hasRelease) {
-                core.info(`Tag ${tagName} with release already exists. Skipping release.`);
-                core.setOutput('skip', 'true');
-                return;
-              }
-
-              // Orphaned tag (no release) — delete it so create-release can recreate cleanly
-              core.warning(`Orphaned tag ${tagName} found with no release. Deleting.`);
-              await github.rest.git.deleteRef({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                ref: `tags/${tagName}`,
-              });
-              core.info(`Deleted orphaned tag ${tagName}. Proceeding with release.`);
-              core.setOutput('skip', 'false');
-              return;
-            } catch (e) {
-              if (e.status !== 404) throw e;
-            }
-
+            // Check if a release already exists (single listReleases call)
             const releases = await github.rest.repos.listReleases({
               owner: context.repo.owner,
               repo: context.repo.repo,
               per_page: 100,
             });
-            const found = releases.data.find(r => r.tag_name === tagName);
-            if (found) {
-              core.info(`Release with tag ${tagName} already exists (tag was missing but release present). Skipping.`);
+            if (releases.data.find(r => r.tag_name === tag)) {
+              core.info(`Release for ${tag} already exists. Skipping.`);
               core.setOutput('skip', 'true');
               return;
             }
-            core.info(`OK: ${tagName} does not exist. Proceeding with release.`);
+
+            // No release — check for orphaned tag and clean up if present
+            try {
+              await github.rest.git.getRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `tags/${tag}`,
+              });
+              core.warning(`Orphaned tag ${tag} found with no release. Deleting.`);
+              await github.rest.git.deleteRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `tags/${tag}`,
+              });
+              core.info(`Deleted orphaned tag ${tag}. Proceeding with release.`);
+            } catch (e) {
+              if (e.status !== 404) throw e;
+            }
+
+            core.info(`OK: ${tag} does not exist. Proceeding with release.`);
             core.setOutput('skip', 'false');
 
   generate-notes:
@@ -120,13 +106,12 @@ jobs:
       - name: Generate release notes via GitHub API
         id: notes
         uses: actions/github-script@v9
+        env:
+          TAG: ${{ needs.preflight.outputs.tag }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const fs = require('fs');
-            const cfg = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
-            const version = cfg.version;
-            const tag = `v${version}`;
+            const tag = process.env.TAG;
 
             const params = {
               owner: context.repo.owner,
@@ -156,21 +141,22 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-latest
+    outputs:
+      release-id: ${{ steps.create.outputs.release-id }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
       - name: Create tag and draft release
+        id: create
         uses: actions/github-script@v9
         env:
           RELEASE_NOTES: ${{ needs.generate-notes.outputs.notes }}
+          TAG: ${{ needs.preflight.outputs.tag }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const fs = require('fs');
-            const cfg = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
-            const version = cfg.version;
-            const tag = `v${version}`;
+            const tag = process.env.TAG;
 
             // Create git tag pointing at HEAD
             const ref = `tags/${tag}`;
@@ -209,18 +195,18 @@ jobs:
               release = resp.data;
               core.info(`Created draft release ${release.html_url}`);
             } catch (e) {
-              if (e.status === 422) {
-                const resp = await github.rest.repos.getReleaseByTag({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  tag,
-                });
-                release = resp.data;
-                core.info(`Found existing release ${release.html_url}`);
-              } else {
-                throw e;
-              }
+              if (e.status !== 422) throw e;
+              // Release already exists — find it by listing and filtering
+              const releases = await github.paginate(github.rest.repos.listReleases, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100,
+              });
+              release = releases.find(r => r.tag_name === tag);
+              if (!release) throw new Error(`Release with tag ${tag} not found`);
+              core.info(`Found existing release ${release.html_url}`);
             }
+            core.setOutput('release-id', release.id);
 
   publish-tauri:
     needs: [preflight, generate-notes, create-release]
@@ -294,6 +280,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
+          releaseId: ${{ needs.create-release.outputs.release-id }}
           tagName: v__VERSION__
           releaseName: 'v__VERSION__'
           releaseBody: ${{ needs.generate-notes.outputs.notes }}
@@ -309,6 +296,8 @@ jobs:
     if: needs.preflight.outputs.skip != 'true'
     permissions:
       contents: write
+    env:
+      RELEASE_ID: ${{ needs.create-release.outputs.release-id }}
     strategy:
       fail-fast: false
       matrix:
@@ -458,13 +447,16 @@ jobs:
           script: |
             const fs = require('fs');
             const path = require('path');
-            const cfg = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
-            const tag = `v${cfg.version}`;
+            const releaseId = Number(process.env.RELEASE_ID);
+            if (!releaseId || isNaN(releaseId)) {
+              core.setFailed('RELEASE_ID is not set or invalid');
+              return;
+            }
 
-            const { data: release } = await github.rest.repos.getReleaseByTag({
+            const { data: release } = await github.rest.repos.getRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              tag,
+              release_id: releaseId,
             });
 
             const assetName = `vscodeee-reh-${{ matrix.os }}-${{ matrix.arch }}.tar.gz`;
@@ -489,32 +481,38 @@ jobs:
               name: assetName,
               data,
             });
-            core.info(`Uploaded ${assetName} to release ${tag}`);
+            core.info(`Uploaded ${assetName} to release ${releaseId}`);
 
   upload-stable-assets:
     name: Upload fixed-name assets for README links
-    needs: [publish-tauri, build-reh]
+    needs: [publish-tauri, build-reh, create-release]
     permissions:
       contents: write
     runs-on: ubuntu-latest
+    env:
+      RELEASE_ID: ${{ needs.create-release.outputs.release-id }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
       - name: Upload fixed-name copies
         uses: actions/github-script@v9
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const fs = require('fs');
-            const cfg = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
-            const version = cfg.version;
-            const tag = `v${version}`;
+            const version = process.env.VERSION;
+            const releaseId = Number(process.env.RELEASE_ID);
+            if (!releaseId || isNaN(releaseId)) {
+              core.setFailed('RELEASE_ID is not set or invalid');
+              return;
+            }
 
-            const { data: release } = await github.rest.repos.getReleaseByTag({
+            const { data: release } = await github.rest.repos.getRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              tag,
+              release_id: releaseId,
             });
 
             // Mapping: versioned asset name pattern → fixed name
@@ -565,18 +563,24 @@ jobs:
 
       - name: Verify all expected assets and publish release
         uses: actions/github-script@v9
+        env:
+          TAG: ${{ needs.preflight.outputs.tag }}
+          VERSION: ${{ needs.preflight.outputs.version }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const fs = require('fs');
-            const cfg = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
-            const version = cfg.version;
-            const tag = `v${version}`;
+            const version = process.env.VERSION;
+            const tag = process.env.TAG;
+            const releaseId = Number(process.env.RELEASE_ID);
+            if (!releaseId || isNaN(releaseId)) {
+              core.setFailed('RELEASE_ID is not set or invalid');
+              return;
+            }
 
-            const { data: release } = await github.rest.repos.getReleaseByTag({
+            const { data: release } = await github.rest.repos.getRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              tag,
+              release_id: releaseId,
             });
 
             const assetNames = release.assets.map(a => a.name);
