@@ -4,6 +4,14 @@
 
 <img src="./docs/screenshots/workbench_frieren_background.png" alt="VS Codeee">
 
+[![Windows](https://img.shields.io/badge/Windows-Supported-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/j4rviscmd/vscodeee/releases/latest)
+[![macOS](https://img.shields.io/badge/macOS-Supported-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/j4rviscmd/vscodeee/releases/latest)
+[![Linux](https://img.shields.io/badge/Linux-Supported-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/j4rviscmd/vscodeee/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/j4rviscmd/vscodeee/total?style=for-the-badge&logo=github)](https://github.com/j4rviscmd/vscodeee/releases/latest)
+[![Latest Release](https://img.shields.io/github/v/release/j4rviscmd/vscodeee?style=for-the-badge&label=Latest&logo=github)](https://github.com/j4rviscmd/vscodeee/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/j4rviscmd/vscodeee/ci.yml?style=for-the-badge&label=CI&logo=githubactions)](https://github.com/j4rviscmd/vscodeee/actions)
+[![License](https://img.shields.io/badge/License-MIT-018FF5?style=for-the-badge&logo=opensourceinitiative)](./LICENSE.txt)
+
 ## A project to run VSCode with Tauri 2.0
 
 </div>

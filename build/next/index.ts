@@ -435,6 +435,8 @@ async function copyAllNonTsFiles(outDir: string, excludeTests: boolean): Promise
 	const ignorePatterns = [
 		// Exclude .ts files but keep .d.ts files (they're needed at runtime for type references)
 		'**/*.ts',
+		// Exclude pty-poc entirely — it's a standalone PoC not used by the production workbench
+		'**/pty-poc/**',
 	];
 	if (excludeTests) {
 		ignorePatterns.push('**/test/**');
@@ -447,9 +449,13 @@ async function copyAllNonTsFiles(outDir: string, excludeTests: boolean): Promise
 	});
 
 	// Re-include .d.ts files that were excluded by the *.ts ignore
+	const dtsIgnore = ['**/pty-poc/**'];
+	if (excludeTests) {
+		dtsIgnore.push('**/test/**');
+	}
 	const dtsFiles = await globAsync('**/*.d.ts', {
 		cwd: path.join(REPO_ROOT, SRC_DIR),
-		ignore: excludeTests ? ['**/test/**'] : [],
+		ignore: dtsIgnore,
 	});
 
 	const allFiles = [...new Set([...files, ...dtsFiles])];
@@ -666,7 +672,11 @@ async function transpileFile(srcPath: string, destPath: string): Promise<void> {
 
 async function transpile(outDir: string, excludeTests: boolean): Promise<void> {
 	// Find all .ts files
-	const ignorePatterns = ['**/*.d.ts'];
+	const ignorePatterns = [
+		'**/*.d.ts',
+		// Exclude pty-poc entirely — it's a standalone PoC not used by the production workbench
+		'**/pty-poc/**',
+	];
 	if (excludeTests) {
 		ignorePatterns.push('**/test/**');
 	}
@@ -871,21 +881,39 @@ async function compileExtensionsEsbuild(): Promise<void> {
 			const extName = entry.name;
 			const extDir = path.join(extensionsDir, extName);
 			const esbuildPath = path.join(extDir, 'esbuild.mts');
+			const esbuildNotebookPath = path.join(extDir, 'esbuild.notebook.mts');
 
-			if (!await fileExists(esbuildPath)) {
+			const hasMain = await fileExists(esbuildPath);
+			const hasNotebook = await fileExists(esbuildNotebookPath);
+
+			if (!hasMain && !hasNotebook) {
 				skipped++;
 				continue;
 			}
 
-			const result = await runExtensionEsbuild(extDir, extName);
-			results.push(result);
+			// Run esbuild.mts (main extension bundle) if present
+			if (hasMain) {
+				const result = await runExtensionEsbuild(extDir, extName, 'esbuild.mts');
+				results.push(result);
+				if (result.success) {
+					succeeded++;
+					console.log(`[compile-extensions-esbuild]   ${extName} OK`);
+				} else {
+					failed++;
+					console.warn(`[compile-extensions-esbuild]   ${extName} FAIL - ${result.error}`);
+				}
+			}
 
-			if (result.success) {
-				succeeded++;
-				console.log(`[compile-extensions-esbuild]   ${extName} OK`);
-			} else {
-				failed++;
-				console.warn(`[compile-extensions-esbuild]   ${extName} FAIL - ${result.error}`);
+			// Run esbuild.notebook.mts (notebook renderer bundle) if present
+			if (hasNotebook) {
+				const result = await runExtensionEsbuild(extDir, extName, 'esbuild.notebook.mts');
+				if (result.success) {
+					console.log(`[compile-extensions-esbuild]   ${extName} (notebook) OK`);
+				} else {
+					console.warn(`[compile-extensions-esbuild]   ${extName} (notebook) FAIL - ${result.error}`);
+				}
+				// Notebook build failures don't count as extension failures
+				// since the main esbuild.mts build already covers the critical path
 			}
 		}
 	}
@@ -903,13 +931,13 @@ async function compileExtensionsEsbuild(): Promise<void> {
 }
 
 /**
- * Run `node --experimental-strip-types esbuild.mts` for a single extension.
+ * Run `node --experimental-strip-types <script>` for a single extension.
  */
-function runExtensionEsbuild(extDir: string, extName: string): Promise<{ name: string; success: boolean; error?: string }> {
+function runExtensionEsbuild(extDir: string, extName: string, script: string = 'esbuild.mts'): Promise<{ name: string; success: boolean; error?: string }> {
 	return new Promise((resolve) => {
 		childProcess.execFile(
 			'node',
-			['--experimental-strip-types', 'esbuild.mts'],
+			['--experimental-strip-types', script],
 			{ cwd: extDir, timeout: 60_000 },
 			(error, _stdout, stderr) => {
 				if (error) {
@@ -1079,7 +1107,14 @@ async function packageExtensions(): Promise<void> {
 
 		// Determine if this extension has a usable dist/ output
 		const distMain = mainField ? computeDistMain(mainField, srcDir) : null;
-		const useDistBundle = distMain !== null;
+
+		// Extensions without a `main` field and with no runtime `dependencies`
+		// are renderer-only extensions (e.g., notebook-renderers).  Their webview
+		// bundles live in renderer-out/ and all heavy node_modules are devDeps
+		// used only at build time, so we can safely strip node_modules/.
+		const hasNoDeps = !pkgJson.dependencies || Object.keys(pkgJson.dependencies).length === 0;
+		const isRendererOnly = !mainField && !pkgJson.browser && hasNoDeps;
+		const useDistBundle = distMain !== null || isRendererOnly;
 
 		if (useDistBundle) {
 			distCount++;
