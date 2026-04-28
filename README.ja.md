@@ -18,15 +18,25 @@
 
 </div>
 
+## 開発のモチベーション
+
+本家VSCodeは神エディタですが、Electronベースのアーキテクチャはメモリ使用量が多い、また、Neovimmer(`neovim-vscode`)な私にとってtmuxライクな操作性が再現できないことに不満を感じていました。<br>
+OSSと言えど、大規模プロジェクトであるため、これまでは手を出せずにいましたが、昨今のLLMは人より賢くvibe-codingであれば、前述した課題間を解決できるのではないかと考え、VSCodeeeを開発することにしました。<br>
+本職の片手間で開発しているため、機能の実装やバグ修正が遅れることがありますが、ご了承ください。<br>
+バグ報告や機能追加といったissueは歓迎しますので、気軽に投稿してください。
+
 ## 目的
 
 VSCode の現在の機能を維持しつつ、以下を実現します：
 
 - **メモリ使用量の削減**: Electron → Tauri 2.0（バンドルされた Chromium の代わりにネイティブ WebView を使用）
 - **不要なテレメトリの削減**: Microsoft へのテレメトリ送信を廃止
-- **バイナリサイズの縮小**: Chromium をバンドルしない（システム WebView を使用）。拡張機能ホストサポートのため Node.js は引き続きバンドルします。
+- **バイナリサイズの縮小**: Chromium をバンドルしない（システム WebView を使用）。拡張機能ホストサポートのため Node.js は引き続きバンドルします
 - **透明背景**（実験的）: ネイティブウィンドウの透明性サポート（macOS/Linux）— エディタ越しにデスクトップが見えます
+  - 今後のリリースで、ウィンドウ全体の透明化やブラー効果など、さらに高度な外観オプションを検中
   - <img src="./docs/screenshots/settings_transparent.png" alt="透明エディタの設定" width="300">
+- [Vimmerのための設定やキーバインドの追加](#vscodeee独自の機能)
+- 定期的に本家VSCodeのアップストリームをマージし、最新の機能とセキュリティ修正を維持予定
 
 ---
 
@@ -60,6 +70,21 @@ VSCode の現在の機能を維持しつつ、以下を実現します：
 </picture>
 
 > **Note**: Shared Process（VS Code のギャラリー、同期、テレメトリ用の非表示レンダラー）は VSCodeee では**排除**されています。そのサービスは WebView または Rust バックエンドで直接実装されています — [#88](https://github.com/j4rviscmd/vscodeee/issues/88) を参照。
+
+---
+
+## VSCodeee独自の機能
+
+- tmuxライクなPane操作キーバインド
+  - Paneサイズ調整コマンドを実装
+    - `vscodeee.resizePaneRight`
+    - `vscodeee.resizePaneLeft`
+    - `vscodeee.resizePaneUp`
+    - `vscodeee.resizePaneDown`
+- エディタグループのプレフィックスにインデックスを表示(tmuxのprefix + `n`向け)
+  - `"vscodeee.editorGroupIndexInTab": true`
+- 最小Paneにフォーカスすると自動的に対象Paneが最大化されることを抑制する
+  - `"workbench.editor.autoMaximizeOnFocus": false`
 
 ---
 
