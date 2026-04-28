@@ -91,6 +91,14 @@ export interface IEditorTabsControl extends IDisposable {
 	updateEditorDirty(editor: EditorInput): void;
 	layout(dimensions: IEditorTitleControlDimensions): Dimension;
 	getHeight(): number;
+
+	/**
+	 * Updates the editor group index indicator displayed in the tab bar.
+	 * Called when a group is added, removed, moved, or when the group's
+	 * active state changes. Only has an effect when the
+	 * `editorGroupIndexInTab` option is enabled and multiple groups exist.
+	 */
+	updateEditorGroupIndex?(): void;
 }
 
 export abstract class EditorTabsControl extends Themable implements IEditorTabsControl {

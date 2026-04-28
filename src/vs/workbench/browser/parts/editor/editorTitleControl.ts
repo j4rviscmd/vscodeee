@@ -175,6 +175,15 @@ export class EditorTitleControl extends Themable {
 		return this.editorTabsControl.updateEditorDirty(editor);
 	}
 
+	/**
+	 * Updates the editor group index indicator by delegating to the
+	 * underlying tabs control. Only has a visible effect when the
+	 * `editorGroupIndexInTab` option is enabled and multiple groups exist.
+	 */
+	updateEditorGroupIndex(): void {
+		this.editorTabsControl.updateEditorGroupIndex?.();
+	}
+
 	updateOptions(oldOptions: IEditorPartOptions, newOptions: IEditorPartOptions): void {
 
 		// Update editor tabs control if options changed
