@@ -4,6 +4,8 @@
 
 <img src="./docs/screenshots/workbench_frieren_background.png" alt="VS Codeee">
 
+English | [日本語](README.ja.md)
+
 [![Windows](https://img.shields.io/badge/Windows-Supported-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/j4rviscmd/vscodeee/releases/latest)
 [![macOS](https://img.shields.io/badge/macOS-Supported-000000?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/j4rviscmd/vscodeee/releases/latest)
 [![Linux](https://img.shields.io/badge/Linux-Supported-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/j4rviscmd/vscodeee/releases/latest)
@@ -15,6 +17,16 @@
 ## A project to run VSCode with Tauri 2.0
 
 </div>
+
+## Purpose
+
+Maintain the current functionality of VSCode while achieving the following:
+
+- **Reduce memory usage**: Electron → Tauri 2.0 (native WebView instead of bundled Chromium)
+- **Reduce unnecessary metrics**: Stop sending telemetry to Microsoft
+- **Smaller binary size**: No bundled Chromium (system WebView is used instead). Node.js is still bundled for extension host support.
+- **Transparent background** (experimental): Native window transparency support (macOS/Linux) — see the desktop through your editor
+  - <img src="./docs/screenshots/settings_transparent.png" alt="Transparent Editor Settings" width="300">
 
 ## Installation
 
@@ -35,16 +47,6 @@
 > [!NOTE]
 > This project is developed and tested primarily on **macOS**. Windows and Linux builds are provided but have not been verified on those platforms.
 > If you encounter any issues, please [open an issue](https://github.com/j4rviscmd/vscodeee/issues/new?template=bug_report.md).
-
-## Purpose
-
-Maintain the current functionality of VSCode while achieving the following:
-
-- **Reduce memory usage**: Electron → Tauri 2.0 (native WebView instead of bundled Chromium)
-- **Reduce unnecessary metrics**: Stop sending telemetry to Microsoft
-- **Smaller binary size**: No bundled Chromium (system WebView is used instead). Node.js is still bundled for extension host support.
-- **Transparent background** (experimental): Native window transparency support (macOS/Linux) — see the desktop through your editor
-  - <img src="./docs/screenshots/settings_transparent.png" alt="Transparent Editor Settings" width="300">
 
 ---
 
