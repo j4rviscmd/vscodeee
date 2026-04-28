@@ -29,9 +29,10 @@ export interface IEditorPartCreationOptions {
 }
 
 /**
- * Default minimum dimensions for editor panes (220x70 pixels).
+ * Default minimum dimensions for editor panes.
+ * Reduced from 220x70 to 50x35 to allow tmux-like fine-grained splits.
  */
-export const DEFAULT_EDITOR_MIN_DIMENSIONS = new Dimension(220, 70);
+export const DEFAULT_EDITOR_MIN_DIMENSIONS = new Dimension(50, 35);
 
 /**
  * Default maximum dimensions for editor panes (unbounded).

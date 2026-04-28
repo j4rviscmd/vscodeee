@@ -37,9 +37,10 @@ export class PanelPart extends AbstractPaneCompositePart {
 
 	//#region IView
 
-	readonly minimumWidth: number = 300;
+	// Reduced from 300/77 to allow tmux-like fine-grained splits
+	readonly minimumWidth: number = 100;
 	readonly maximumWidth: number = Number.POSITIVE_INFINITY;
-	readonly minimumHeight: number = 77;
+	readonly minimumHeight: number = 35;
 	readonly maximumHeight: number = Number.POSITIVE_INFINITY;
 
 	get preferredHeight(): number | undefined {
