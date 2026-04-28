@@ -485,7 +485,8 @@ jobs:
 
   upload-stable-assets:
     name: Upload fixed-name assets for README links
-    needs: [publish-tauri, build-reh, create-release]
+    needs: [preflight, publish-tauri, build-reh, create-release]
+    if: needs.preflight.outputs.skip != 'true'
     permissions:
       contents: write
     runs-on: ubuntu-latest
