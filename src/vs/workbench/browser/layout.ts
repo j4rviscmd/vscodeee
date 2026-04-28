@@ -1835,20 +1835,20 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		}
 	}
 
-		/**
-		 * Resizes the border of the currently focused pane in the specified direction.
-		 * Implements tmux-like `resize-pane` behavior:
-		 *
-		 * 1. Determines the focused workbench part (defaults to editor part).
-		 * 2. For the editor part with multiple groups, attempts to resize within
-		 *    the editor group's internal grid first. If no matching border exists
-		 *    in that direction (e.g., two horizontal columns but resizing upward),
-		 *    falls back to the workbench grid to match tmux's tree-walking behavior.
-		 * 3. For other parts, resizes directly on the workbench grid.
-		 *
-		 * @param direction - The direction to move the border.
-		 */
-		resizePaneBorder(direction: Direction): void {
+	/**
+	 * Resizes the border of the currently focused pane in the specified direction.
+	 * Implements tmux-like `resize-pane` behavior:
+	 *
+	 * 1. Determines the focused workbench part (defaults to editor part).
+	 * 2. For the editor part with multiple groups, attempts to resize within
+	 *    the editor group's internal grid first. If no matching border exists
+	 *    in that direction (e.g., two horizontal columns but resizing upward),
+	 *    falls back to the workbench grid to match tmux's tree-walking behavior.
+	 * 3. For other parts, resizes directly on the workbench grid.
+	 *
+	 * @param direction - The direction to move the border.
+	 */
+	resizePaneBorder(direction: Direction): void {
 		if (!this.workbenchGrid) {
 			return;
 		}
@@ -1874,15 +1874,15 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		this.resizePartBorder(part, direction, increment);
 	}
 
-		/**
-		 * Resizes a workbench part's border on the workbench grid.
-		 * No-op if the part is not currently visible.
-		 *
-		 * @param part - The workbench part to resize.
-		 * @param direction - The direction to move the border.
-		 * @param increment - The pixel amount to move the border.
-		 */
-		private resizePartBorder(part: Parts, direction: Direction, increment: number): void {
+	/**
+	 * Resizes a workbench part's border on the workbench grid.
+	 * No-op if the part is not currently visible.
+	 *
+	 * @param part - The workbench part to resize.
+	 * @param direction - The direction to move the border.
+	 * @param increment - The pixel amount to move the border.
+	 */
+	private resizePartBorder(part: Parts, direction: Direction, increment: number): void {
 		if (!this.isVisible(part, mainWindow)) {
 			return;
 		}
@@ -1891,16 +1891,16 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		this.workbenchGrid.resizeViewBorder(partView, direction, increment);
 	}
 
-		/**
-		 * Attempts to resize the active editor group's border within the
-		 * editor group's internal grid. Uses the editor group's grid-level
-		 * `resizeViewBorder` for tmux-strict directional border movement.
-		 *
-		 * @param direction - The direction to move the border.
-		 * @param increment - The pixel amount to move the border.
-		 * @returns `true` if a border was found and resized, `false` otherwise.
-		 */
-		private resizeEditorGroupBorder(direction: Direction, increment: number): boolean {
+	/**
+	 * Attempts to resize the active editor group's border within the
+	 * editor group's internal grid. Uses the editor group's grid-level
+	 * `resizeViewBorder` for tmux-strict directional border movement.
+	 *
+	 * @param direction - The direction to move the border.
+	 * @param increment - The pixel amount to move the border.
+	 * @returns `true` if a border was found and resized, `false` otherwise.
+	 */
+	private resizeEditorGroupBorder(direction: Direction, increment: number): boolean {
 		const activeGroup = this.editorGroupService.mainPart.activeGroup;
 
 		// Use the editor group's internal grid resizeViewBorder for
@@ -1909,13 +1909,13 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		return this.editorGroupService.mainPart.resizeGroupBorder(activeGroup, direction, increment);
 	}
 
-		/**
-		 * Reads the `vscodeee.resizeIncrement` configuration value and
-		 * applies screen-aware scaling for high-DPI displays.
-		 *
-		 * @returns The scaled pixel increment, or 0 if invalid.
-		 */
-		private getResizeIncrement(): number {
+	/**
+	 * Reads the `vscodeee.resizeIncrement` configuration value and
+	 * applies screen-aware scaling for high-DPI displays.
+	 *
+	 * @returns The scaled pixel increment, or 0 if invalid.
+	 */
+	private getResizeIncrement(): number {
 		const configValue = this.configurationService.getValue<number>('vscodeee.resizeIncrement');
 		const raw = typeof configValue === 'number' && configValue > 0 ? configValue : 60;
 		return computeScreenAwareSize(getActiveWindow(), raw);

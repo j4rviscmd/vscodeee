@@ -985,7 +985,7 @@ export /**
  * Describes a grid node with its visibility state, used during
  * grid deserialization to reconstruct the tree structure.
  */
-interface INodeDescriptor {
+	interface INodeDescriptor {
 	node: Node;
 	visible?: boolean;
 }
