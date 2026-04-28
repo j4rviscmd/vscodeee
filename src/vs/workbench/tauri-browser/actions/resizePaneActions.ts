@@ -32,7 +32,7 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
       scope: ConfigurationScope.APPLICATION,
       description: localize(
         'vscodeee.workbench.editor.resizeIncrement',
-        'The number of pixels to resize a pane by when using directional resize commands (vscodeee.resizePaneUp/Down/Left/Right).',
+        'The number of pixels to resize a pane by when using directional resize commands (vscodeee.workbench.editor.resizePaneUp/Down/Left/Right).',
       ),
     },
   },
@@ -74,33 +74,33 @@ abstract class BaseResizePaneAction extends Action2 {
 
 /** Resizes the focused pane by moving its top border upward. */
 class ResizePaneUpAction extends BaseResizePaneAction {
-  static readonly ID = 'vscodeee.resizePaneUp';
+  static readonly ID = 'vscodeee.workbench.editor.resizePaneUp';
   constructor() {
-    super({ id: ResizePaneUpAction.ID, title: localize2('vscodeee.resizePaneUp', 'Resize Pane Up'), f1: true, category: Categories.View }, Direction.Up);
+    super({ id: ResizePaneUpAction.ID, title: localize2('vscodeee.workbench.editor.resizePaneUp', 'Resize Pane Up'), f1: true, category: Categories.View }, Direction.Up);
   }
 }
 
 /** Resizes the focused pane by moving its bottom border downward. */
 class ResizePaneDownAction extends BaseResizePaneAction {
-  static readonly ID = 'vscodeee.resizePaneDown';
+  static readonly ID = 'vscodeee.workbench.editor.resizePaneDown';
   constructor() {
-    super({ id: ResizePaneDownAction.ID, title: localize2('vscodeee.resizePaneDown', 'Resize Pane Down'), f1: true, category: Categories.View }, Direction.Down);
+    super({ id: ResizePaneDownAction.ID, title: localize2('vscodeee.workbench.editor.resizePaneDown', 'Resize Pane Down'), f1: true, category: Categories.View }, Direction.Down);
   }
 }
 
 /** Resizes the focused pane by moving its left border leftward. */
 class ResizePaneLeftAction extends BaseResizePaneAction {
-  static readonly ID = 'vscodeee.resizePaneLeft';
+  static readonly ID = 'vscodeee.workbench.editor.resizePaneLeft';
   constructor() {
-    super({ id: ResizePaneLeftAction.ID, title: localize2('vscodeee.resizePaneLeft', 'Resize Pane Left'), f1: true, category: Categories.View }, Direction.Left);
+    super({ id: ResizePaneLeftAction.ID, title: localize2('vscodeee.workbench.editor.resizePaneLeft', 'Resize Pane Left'), f1: true, category: Categories.View }, Direction.Left);
   }
 }
 
 /** Resizes the focused pane by moving its right border rightward. */
 class ResizePaneRightAction extends BaseResizePaneAction {
-  static readonly ID = 'vscodeee.resizePaneRight';
+  static readonly ID = 'vscodeee.workbench.editor.resizePaneRight';
   constructor() {
-    super({ id: ResizePaneRightAction.ID, title: localize2('vscodeee.resizePaneRight', 'Resize Pane Right'), f1: true, category: Categories.View }, Direction.Right);
+    super({ id: ResizePaneRightAction.ID, title: localize2('vscodeee.workbench.editor.resizePaneRight', 'Resize Pane Right'), f1: true, category: Categories.View }, Direction.Right);
   }
 }
 
