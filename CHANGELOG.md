@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-04-28
+
+### Added
+
+- Add editor group index indicator in tab bar ([#326](https://github.com/j4rviscmd/vscodeee/pull/326))
+
+### Fixed
+
+- Restore Supported label in platform badges
+- Correct indentation formatting in workbench.contribution.ts for CI hygiene check
+
+### Changed
+
+- Exclude pty-poc from bundle and enable notebook-renderers esbuild bundling
+- Add shields.io badges to README header
+
 ## [0.4.0] - 2026-04-28
 
 ### Added
