@@ -85,7 +85,7 @@ VSCode の現在の機能を維持しつつ、以下を実現します：
   - `"vscodeee.editorGroupIndexInTab": true`
 - 最小Paneにフォーカスすると自動的に対象Paneが最大化されることを抑制する
   - `"workbench.editor.autoMaximizeOnFocus": false`
-  - 本家VSCodeの[issue](https://github.com/microsoft/vscode/issues/85309)
+  - 本家VSCodeの[issue#85309](https://github.com/microsoft/vscode/issues/85309)
 
 ---
 
