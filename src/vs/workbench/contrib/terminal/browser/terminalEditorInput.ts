@@ -11,7 +11,7 @@ import { EditorInputCapabilities, IEditorIdentifier, IUntypedEditorInput } from 
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { EditorInput, IEditorCloseHandler } from '../../../common/editor/editorInput.js';
-import { ITerminalInstance, ITerminalInstanceService, terminalEditorId } from './terminal.js';
+import { ITerminalInstance, ITerminalInstanceService, ITerminalEditorSnapshot, terminalEditorId } from './terminal.js';
 import { getColorClass, getUriClasses } from './terminalIcon.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IShellLaunchConfig, TerminalExitReason, TerminalLocation, TerminalSettingId } from '../../../../platform/terminal/common/terminal.js';
@@ -36,6 +36,8 @@ export class TerminalEditorInput extends EditorInput implements IEditorCloseHand
 	private _copyLaunchConfig?: IShellLaunchConfig;
 	private _terminalEditorFocusContextKey: IContextKey<boolean>;
 	private _group: IEditorGroup | undefined;
+	/** Cached serializable snapshot captured before terminal instance disposal on shutdown. */
+	private _serializedSnapshot: ITerminalEditorSnapshot | undefined;
 
 	protected readonly _onDidRequestAttach = this._register(new Emitter<ITerminalInstance>());
 	readonly onDidRequestAttach = this._onDidRequestAttach.event;
@@ -91,6 +93,11 @@ export class TerminalEditorInput extends EditorInput implements IEditorCloseHand
 	 */
 	get terminalInstance(): ITerminalInstance | undefined {
 		return this._isDetached ? undefined : this._terminalInstance;
+	}
+
+	/** Cached serializable snapshot captured before terminal instance disposal on shutdown. */
+	get serializedSnapshot(): ITerminalEditorSnapshot | undefined {
+		return this._serializedSnapshot;
 	}
 
 	showConfirm(): boolean {
@@ -179,6 +186,25 @@ export class TerminalEditorInput extends EditorInput implements IEditorCloseHand
 		// the editor/tabs don't disappear
 		this._register(this._lifecycleService.onWillShutdown((e: WillShutdownEvent) => {
 			this._isShuttingDown = true;
+
+			// Cache serializable state before disposing the instance so the
+			// editor serializer can still produce output during storage flush.
+			this._serializedSnapshot = {
+				persistentProcessId: instance.persistentProcessId,
+				processId: instance.processId,
+				shouldPersist: instance.shouldPersist,
+				title: instance.title,
+				titleSource: instance.titleSource,
+				cwd: instance.initialCwd || '',
+				icon: instance.icon,
+				color: instance.color,
+				hasChildProcesses: instance.hasChildProcesses,
+				isFeatureTerminal: instance.shellLaunchConfig.isFeatureTerminal,
+				hideFromUser: instance.shellLaunchConfig.hideFromUser,
+				reconnectionProperties: instance.shellLaunchConfig.reconnectionProperties,
+				shellIntegrationNonce: instance.shellIntegrationNonce,
+			};
+
 			dispose(disposeListeners);
 
 			// Don't touch processes if the shutdown was a result of reload as they will be reattached

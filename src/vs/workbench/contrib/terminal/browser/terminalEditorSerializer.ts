@@ -7,8 +7,13 @@ import { isNumber, isObject } from '../../../../base/common/types.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IEditorSerializer } from '../../../common/editor.js';
 import { EditorInput } from '../../../common/editor/editorInput.js';
-import { ISerializedTerminalEditorInput, ITerminalEditorService, ITerminalInstance, type IDeserializedTerminalEditorInput } from './terminal.js';
+import { ISerializedTerminalEditorInput, ITerminalEditorService, ITerminalEditorSnapshot, ITerminalInstance, type IDeserializedTerminalEditorInput } from './terminal.js';
 import { TerminalEditorInput } from './terminalEditorInput.js';
+
+/** Serialized format for fresh-restore mode (no process reattachment). */
+interface IFreshSerializedTerminalEditorInput extends ISerializedTerminalEditorInput {
+	freshRestore: true;
+}
 
 export class TerminalInputSerializer implements IEditorSerializer {
 	constructor(
@@ -16,25 +21,86 @@ export class TerminalInputSerializer implements IEditorSerializer {
 	) { }
 
 	public canSerialize(editorInput: TerminalEditorInput): editorInput is TerminalEditorInput & { readonly terminalInstance: ITerminalInstance } {
-		return isNumber(editorInput.terminalInstance?.persistentProcessId) && editorInput.terminalInstance.shouldPersist;
+		// Prefer cached snapshot (available after onWillShutdown begins)
+		const snapshot = editorInput.serializedSnapshot;
+		if (snapshot) {
+			// Reattach path: process persistence is supported
+			if (isNumber(snapshot.persistentProcessId) && snapshot.shouldPersist) {
+				return true;
+			}
+			// Fresh-restore path: tab restoration without process reattachment.
+			// Exclude transient, hidden, and feature terminals.
+			if (!snapshot.isFeatureTerminal && !snapshot.hideFromUser) {
+				return true;
+			}
+			return false;
+		}
+
+		// Live instance path (e.g. window reload without full shutdown)
+		const instance = editorInput.terminalInstance;
+		if (!instance) {
+			return false;
+		}
+		if (isNumber(instance.persistentProcessId) && instance.shouldPersist) {
+			return true;
+		}
+		return !instance.shellLaunchConfig.isTransient &&
+			!instance.shellLaunchConfig.hideFromUser &&
+			!instance.shellLaunchConfig.isFeatureTerminal;
 	}
 
 	public serialize(editorInput: TerminalEditorInput): string | undefined {
 		if (!this.canSerialize(editorInput)) {
 			return;
 		}
-		return JSON.stringify(this._toJson(editorInput.terminalInstance));
+
+		// Use cached snapshot when available (post-shutdown)
+		const snapshot = editorInput.serializedSnapshot;
+		if (snapshot) {
+			return JSON.stringify(this._snapshotToJson(snapshot));
+		}
+
+		// Serialize from live instance
+		const instance = editorInput.terminalInstance;
+		if (instance) {
+			return JSON.stringify(this._instanceToJson(instance));
+		}
+
+		return undefined;
 	}
 
 	public deserialize(instantiationService: IInstantiationService, serializedEditorInput: string): EditorInput | undefined {
-		const editorInput = JSON.parse(serializedEditorInput) as unknown;
-		if (!isDeserializedTerminalEditorInput(editorInput)) {
-			throw new Error(`Could not revive terminal editor input, ${editorInput}`);
+		const parsed = JSON.parse(serializedEditorInput) as unknown;
+		if (!isObject(parsed)) {
+			throw new Error(`Could not revive terminal editor input, ${parsed}`);
 		}
-		return this._terminalEditorService.reviveInput(editorInput);
+
+		// Fresh-restore format: tab is restored with a new shell process
+		if ('freshRestore' in parsed && (parsed as IFreshSerializedTerminalEditorInput).freshRestore === true) {
+			const fresh = parsed as IFreshSerializedTerminalEditorInput;
+			return this._terminalEditorService.reviveFreshInput({
+				title: fresh.title,
+				titleSource: fresh.titleSource,
+				cwd: fresh.cwd,
+				icon: fresh.icon,
+				color: fresh.color,
+				hasChildProcesses: fresh.hasChildProcesses,
+				isFeatureTerminal: fresh.isFeatureTerminal,
+				hideFromUser: fresh.hideFromUser,
+				reconnectionProperties: fresh.reconnectionProperties,
+				shellIntegrationNonce: fresh.shellIntegrationNonce,
+			});
+		}
+
+		// Legacy reattach format
+		if (!isDeserializedTerminalEditorInput(parsed)) {
+			throw new Error(`Could not revive terminal editor input, ${serializedEditorInput}`);
+		}
+		return this._terminalEditorService.reviveInput(parsed);
 	}
 
-	private _toJson(instance: ITerminalInstance): ISerializedTerminalEditorInput {
+	private _instanceToJson(instance: ITerminalInstance): IFreshSerializedTerminalEditorInput | ISerializedTerminalEditorInput {
+		const canReattach = isNumber(instance.persistentProcessId) && instance.shouldPersist;
 		return {
 			id: instance.persistentProcessId!,
 			pid: instance.processId || 0,
@@ -47,7 +113,43 @@ export class TerminalInputSerializer implements IEditorSerializer {
 			isFeatureTerminal: instance.shellLaunchConfig.isFeatureTerminal,
 			hideFromUser: instance.shellLaunchConfig.hideFromUser,
 			reconnectionProperties: instance.shellLaunchConfig.reconnectionProperties,
-			shellIntegrationNonce: instance.shellIntegrationNonce
+			shellIntegrationNonce: instance.shellIntegrationNonce,
+			...(!canReattach ? { freshRestore: true as const } : {}),
+		};
+	}
+
+	private _snapshotToJson(snapshot: ITerminalEditorSnapshot): IFreshSerializedTerminalEditorInput | ISerializedTerminalEditorInput {
+		const canReattach = isNumber(snapshot.persistentProcessId) && snapshot.shouldPersist;
+		if (canReattach) {
+			return {
+				id: snapshot.persistentProcessId!,
+				pid: snapshot.processId || 0,
+				title: snapshot.title,
+				titleSource: snapshot.titleSource,
+				cwd: '',
+				icon: snapshot.icon,
+				color: snapshot.color,
+				hasChildProcesses: snapshot.hasChildProcesses,
+				isFeatureTerminal: snapshot.isFeatureTerminal,
+				hideFromUser: snapshot.hideFromUser,
+				reconnectionProperties: snapshot.reconnectionProperties,
+				shellIntegrationNonce: snapshot.shellIntegrationNonce,
+			};
+		}
+		return {
+			id: 0,
+			pid: 0,
+			title: snapshot.title,
+			titleSource: snapshot.titleSource,
+			cwd: snapshot.cwd,
+			icon: snapshot.icon,
+			color: snapshot.color,
+			hasChildProcesses: snapshot.hasChildProcesses,
+			isFeatureTerminal: snapshot.isFeatureTerminal,
+			hideFromUser: snapshot.hideFromUser,
+			reconnectionProperties: snapshot.reconnectionProperties,
+			shellIntegrationNonce: snapshot.shellIntegrationNonce,
+			freshRestore: true,
 		};
 	}
 }

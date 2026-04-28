@@ -12,7 +12,7 @@ import { IInstantiationService } from '../../../../platform/instantiation/common
 import { IShellLaunchConfig, TerminalLocation } from '../../../../platform/terminal/common/terminal.js';
 import { IEditorPane } from '../../../common/editor.js';
 import { EditorInput } from '../../../common/editor/editorInput.js';
-import { IDeserializedTerminalEditorInput, ITerminalEditorService, ITerminalInstance, ITerminalInstanceService, TerminalEditorLocation } from './terminal.js';
+import { IDeserializedTerminalEditorInput, IFreshTerminalEditorInput, ITerminalEditorService, ITerminalInstance, ITerminalInstanceService, TerminalEditorLocation } from './terminal.js';
 import { TerminalEditorInput } from './terminalEditorInput.js';
 import { getInstanceFromResource } from './terminalUri.js';
 import { TerminalContextKeys } from '../common/terminalContextKey.js';
@@ -238,6 +238,22 @@ export class TerminalEditorService extends Disposable implements ITerminalEditor
 	reviveInput(deserializedInput: IDeserializedTerminalEditorInput): EditorInput {
 		const newDeserializedInput = { ...deserializedInput, findRevivedId: true };
 		const instance = this._terminalInstanceService.createInstance({ attachPersistentProcess: newDeserializedInput }, TerminalLocation.Editor);
+		const input = this._instantiationService.createInstance(TerminalEditorInput, instance.resource, instance);
+		this._registerInstance(instance.resource.path, input, instance);
+		return input;
+	}
+
+	reviveFreshInput(freshInput: IFreshTerminalEditorInput): EditorInput {
+		const shellLaunchConfig: IShellLaunchConfig = {
+			cwd: freshInput.cwd || undefined,
+			icon: freshInput.icon,
+			color: freshInput.color,
+			name: freshInput.title,
+			isFeatureTerminal: freshInput.isFeatureTerminal,
+			hideFromUser: freshInput.hideFromUser,
+			reconnectionProperties: freshInput.reconnectionProperties,
+		};
+		const instance = this._terminalInstanceService.createInstance(shellLaunchConfig, TerminalLocation.Editor);
 		const input = this._instantiationService.createInstance(TerminalEditorInput, instance.resource, instance);
 		this._registerInstance(instance.resource.path, input, instance);
 		return input;

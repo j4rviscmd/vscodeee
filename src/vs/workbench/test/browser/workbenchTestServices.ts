@@ -1826,6 +1826,7 @@ export class TestTerminalEditorService implements ITerminalEditorService {
 	resolveResource(instance: ITerminalInstance): URI { throw new Error('Method not implemented.'); }
 	reviveInput(deserializedInput: IDeserializedTerminalEditorInput): TerminalEditorInput { throw new Error('Method not implemented.'); }
 	getInputFromResource(resource: URI): TerminalEditorInput { throw new Error('Method not implemented.'); }
+	reviveFreshInput(input: import('../../contrib/terminal/browser/terminal.js').IFreshTerminalEditorInput): TerminalEditorInput { throw new Error('Method not implemented.'); }
 	setActiveInstance(instance: ITerminalInstance): void { throw new Error('Method not implemented.'); }
 	focusActiveInstance(): Promise<void> { throw new Error('Method not implemented.'); }
 	async focusInstance(instance: ITerminalInstance): Promise<void> { throw new Error('Method not implemented.'); }
