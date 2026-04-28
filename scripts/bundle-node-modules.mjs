@@ -57,6 +57,27 @@ const EXCLUDED_PACKAGES = new Set([
 	'@microsoft/dynamicproto-js',
 	'@nevware21/ts-async',
 	'@nevware21/ts-utils',
+
+	// Type-definition-only packages — these have no runtime code (empty "main" field
+	// or only .d.ts files). The consuming extensions are esbuild-BUNDLED, so all
+	// runtime code is already inlined into dist/. These packages are only used at
+	// TypeScript compile time and are unnecessary in the production bundle.
+	// See: https://github.com/j4rviscmd/vscodeee/issues/274
+	'@octokit/graphql-schema',   // ~7.3MB — GraphQL schema types for github extension
+	'@octokit/openapi-types',    // ~5.1MB — REST API types for github extension
+]);
+
+// Extensions excluded from the production build. Their dependencies should NOT
+// be collected in Phase 2 since the extensions themselves are never loaded.
+// This list must be kept in sync with EXCLUDED_EXTENSIONS in build/next/index.ts.
+const EXCLUDED_EXTENSIONS = new Set([
+	'vscode-api-tests',
+	'vscode-colorize-tests',
+	'vscode-colorize-perf-tests',
+	'vscode-test-resolver',
+	// TODO(Phase 1): Excluded for Tauri fork - SettingsSync/RemoteTunnel not supported
+	'microsoft-authentication',
+	'tunnel-forwarding',
 ]);
 
 // Directory containing no-op stub packages that replace real implementations.
@@ -204,9 +225,14 @@ function collectExtensionDependencies() {
 	const seen = new Set();
 	const queue = [];
 
-	// Seed with direct dependencies from all extension package.json files
+	// Seed with direct dependencies from all extension package.json files.
+	// Skip extensions in EXCLUDED_EXTENSIONS — they are never loaded in production,
+	// so their dependencies (e.g. @azure/* from microsoft-authentication) are unnecessary.
 	for (const extDir of fs.readdirSync(EXTENSIONS_DIR, { withFileTypes: true })) {
 		if (!extDir.isDirectory()) {
+			continue;
+		}
+		if (EXCLUDED_EXTENSIONS.has(extDir.name)) {
 			continue;
 		}
 		const pkgPath = path.join(EXTENSIONS_DIR, extDir.name, 'package.json');
