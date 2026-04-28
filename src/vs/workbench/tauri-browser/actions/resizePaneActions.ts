@@ -15,7 +15,7 @@ import { ServicesAccessor } from '../../../platform/instantiation/common/instant
 // #region Configuration
 
 const VSCodeEESettings = {
-  RESIZE_INCREMENT: 'vscodeee.resizeIncrement',
+  RESIZE_INCREMENT: 'vscodeee.workbench.editor.resizeIncrement',
 };
 
 Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).registerConfiguration({
@@ -31,7 +31,7 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
       maximum: 500,
       scope: ConfigurationScope.APPLICATION,
       description: localize(
-        'vscodeee.resizeIncrement',
+        'vscodeee.workbench.editor.resizeIncrement',
         'The number of pixels to resize a pane by when using directional resize commands (vscodeee.resizePaneUp/Down/Left/Right).',
       ),
     },
@@ -76,12 +76,7 @@ abstract class BaseResizePaneAction extends Action2 {
 class ResizePaneUpAction extends BaseResizePaneAction {
   static readonly ID = 'vscodeee.resizePaneUp';
   constructor() {
-    super({
-      id: ResizePaneUpAction.ID,
-      title: localize2('vscodeee.resizePaneUp', 'Resize Pane Up'),
-      f1: true,
-      category: Categories.View,
-    }, Direction.Up);
+    super({ id: ResizePaneUpAction.ID, title: localize2('vscodeee.resizePaneUp', 'Resize Pane Up'), f1: true, category: Categories.View }, Direction.Up);
   }
 }
 
@@ -89,12 +84,7 @@ class ResizePaneUpAction extends BaseResizePaneAction {
 class ResizePaneDownAction extends BaseResizePaneAction {
   static readonly ID = 'vscodeee.resizePaneDown';
   constructor() {
-    super({
-      id: ResizePaneDownAction.ID,
-      title: localize2('vscodeee.resizePaneDown', 'Resize Pane Down'),
-      f1: true,
-      category: Categories.View,
-    }, Direction.Down);
+    super({ id: ResizePaneDownAction.ID, title: localize2('vscodeee.resizePaneDown', 'Resize Pane Down'), f1: true, category: Categories.View }, Direction.Down);
   }
 }
 
@@ -102,12 +92,7 @@ class ResizePaneDownAction extends BaseResizePaneAction {
 class ResizePaneLeftAction extends BaseResizePaneAction {
   static readonly ID = 'vscodeee.resizePaneLeft';
   constructor() {
-    super({
-      id: ResizePaneLeftAction.ID,
-      title: localize2('vscodeee.resizePaneLeft', 'Resize Pane Left'),
-      f1: true,
-      category: Categories.View,
-    }, Direction.Left);
+    super({ id: ResizePaneLeftAction.ID, title: localize2('vscodeee.resizePaneLeft', 'Resize Pane Left'), f1: true, category: Categories.View }, Direction.Left);
   }
 }
 
@@ -115,12 +100,7 @@ class ResizePaneLeftAction extends BaseResizePaneAction {
 class ResizePaneRightAction extends BaseResizePaneAction {
   static readonly ID = 'vscodeee.resizePaneRight';
   constructor() {
-    super({
-      id: ResizePaneRightAction.ID,
-      title: localize2('vscodeee.resizePaneRight', 'Resize Pane Right'),
-      f1: true,
-      category: Categories.View,
-    }, Direction.Right);
+    super({ id: ResizePaneRightAction.ID, title: localize2('vscodeee.resizePaneRight', 'Resize Pane Right'), f1: true, category: Categories.View }, Direction.Right);
   }
 }
 

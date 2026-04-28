@@ -431,11 +431,6 @@ const registry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Con
 				'default': false,
 				'description': localize('centeredLayoutDynamicWidth', "Controls whether the centered layout tries to maintain constant width when the window is resized.")
 			},
-			'workbench.editor.autoMaximizeOnFocus': {
-				'type': 'boolean',
-				'default': true,
-				'description': localize('autoMaximizeOnFocus', "Controls whether editor groups are automatically expanded or unmaximized when receiving focus. When disabled, minimized editor groups stay minimized and other groups stay maximized when focus moves between them.")
-			},
 			'workbench.editor.doubleClickTabToToggleEditorGroupSizes': {
 				'type': 'string',
 				'enum': ['maximize', 'expand', 'off'],
@@ -1105,14 +1100,19 @@ Registry.as<IConfigurationMigrationRegistry>(Extensions.ConfigurationMigration)
 		}
 	}]);
 
-// VSCodeEE: Editor group index in tab
+// VSCodeEE: Workbench editor settings
 registry.registerConfiguration({
 	'id': 'vscodeee',
 	'order': 20,
 	'title': localize('vscodeeeConfigurationTitle', "VSCodeEE"),
 	'type': 'object',
 	'properties': {
-		'vscodeee.editorGroupIndexInTab': {
+		'vscodeee.workbench.editor.autoMaximizeOnFocus': {
+			'type': 'boolean',
+			'default': true,
+			'description': localize('autoMaximizeOnFocus', "Controls whether editor groups are automatically expanded or unmaximized when receiving focus. When disabled, minimized editor groups stay minimized and other groups stay maximized when focus moves between them.")
+		},
+		'vscodeee.workbench.editor.editorGroupIndexInTab': {
 			'type': 'boolean',
 			'default': false,
 			'description': localize('editorGroupIndexInTab', "When enabled, shows the editor group index prefix (e.g., [1]) on the active tab of each editor group. Only appears when 2 or more editor groups are open.")

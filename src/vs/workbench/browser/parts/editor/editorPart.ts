@@ -876,7 +876,7 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 	/**
 	 * Restores a minimized group by unmaximizing any currently maximized group
 	 * and expanding the target group if it is at its minimum size.
-	 * This behavior is controlled by the `autoMaximizeOnFocus` editor part option.
+	 * This behavior is controlled by the `vscodeee.workbench.editor.autoMaximizeOnFocus` setting.
 	 *
 	 * @param group - The group to restore.
 	 */

@@ -82,9 +82,9 @@ Maintain the current functionality of VSCode while achieving the following:
     - `vscodeee.resizePaneUp`
     - `vscodeee.resizePaneDown`
 - Display index prefix on editor groups (for tmux prefix + `n`)
-  - `"vscodeee.editorGroupIndexInTab": true`
+  - `"vscodeee.workbench.editor.editorGroupIndexInTab": true`
 - Suppress auto-maximize when focusing the smallest pane
-  - `"workbench.editor.autoMaximizeOnFocus": false`
+  - `"vscodeee.workbench.editor.autoMaximizeOnFocus": false`
   - Upstream VSCode [issue#85309](https://github.com/microsoft/vscode/issues/85309)
 
 ---
