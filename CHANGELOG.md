@@ -12,11 +12,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rename `workbench.editor.autoMaximizeOnFocus` to `vscodeee.workbench.editor.autoMaximizeOnFocus` (Tauri-specific setting now under `vscodeee` prefix)
 - Rename `vscodeee.editorGroupIndexInTab` to `vscodeee.workbench.editor.editorGroupIndexInTab`
 - Rename `vscodeee.resizeIncrement` to `vscodeee.workbench.editor.resizeIncrement`
+- Rename pane resize command IDs to `vscodeee.workbench.editor` namespace
 
 ## [0.5.1] - 2026-04-28
 
+### Added
+
+- Add tmux-like directional pane resize commands ([#334](https://github.com/j4rviscmd/vscodeee/pull/334))
+- Reduce minimum pane dimensions for tmux-like splits
+
+### Fixed
+
+- Add `generate-notes` dependency to `build-reh` job to prevent 404 errors when uploading REH assets ([#337](https://github.com/j4rviscmd/vscodeee/pull/337))
+
 ### Changed
 
+- Add Japanese README (README.ja.md) and restructure documentation ([#335](https://github.com/j4rviscmd/vscodeee/pull/335))
 - Skip BUNDLED extension dependencies in Phase 2 node_modules bundling — reduces staging node_modules from 66.9MB to 47.5MB (-19.4MB, -29%) ([#330](https://github.com/j4rviscmd/vscodeee/pull/330))
 - Exclude unused `@azure` and `@octokit` type packages from bundle ([#328](https://github.com/j4rviscmd/vscodeee/pull/328))
 - Parallelize `publish-tauri` and `build-reh` CI jobs for faster releases
