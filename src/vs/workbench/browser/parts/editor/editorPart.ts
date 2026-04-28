@@ -212,6 +212,10 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		this._register(this.configurationService.onDidChangeConfiguration(e => this.onConfigurationUpdated(e)));
 		this._register(this.themeService.onDidFileIconThemeChange(() => this.handleChangedPartOptions()));
 		this._register(this.onDidChangeMementoValue(StorageScope.WORKSPACE, this._store)(e => this.onDidChangeMementoState(e)));
+
+		// Update editor group index indicator when groups are added/removed
+		this._register(this.onDidAddGroup(() => this.updateAllGroupIndexIndicators()));
+		this._register(this.onDidRemoveGroup(() => this.updateAllGroupIndexIndicators()));
 	}
 
 	private onConfigurationUpdated(event: IConfigurationChangeEvent): void {
@@ -236,6 +240,17 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		this._partOptions = newPartOptions;
 
 		this._onDidChangeEditorPartOptions.fire({ oldPartOptions, newPartOptions });
+	}
+
+	/**
+	 * Updates the editor group index indicator for all groups in the
+	 * editor part. Called when groups are added or removed so that
+	 * each group displays its current position index in the tab bar.
+	 */
+	private updateAllGroupIndexIndicators(): void {
+		for (const groupView of this.groupViews.values()) {
+			groupView.updateEditorGroupIndex();
+		}
 	}
 
 	private enforcedPartOptions: DeepPartial<IEditorPartOptions>[] = [];
@@ -1515,6 +1530,11 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		this.container.classList.toggle('empty', this.isEmpty);
 	}
 
+	/**
+	 * Notifies all editor groups of their current grid appearance index.
+	 * Called after group add, remove, move, or grid layout changes to keep
+	 * the group index indicators in tab bars up to date.
+	 */
 	private notifyGroupIndexChange(): void {
 		this.getGroups(GroupsOrder.GRID_APPEARANCE).forEach((group, index) => group.notifyIndexChanged(index));
 	}

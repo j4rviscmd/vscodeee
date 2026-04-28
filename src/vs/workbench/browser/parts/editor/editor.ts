@@ -50,6 +50,7 @@ export const DEFAULT_EDITOR_PART_OPTIONS: IEditorPartOptions = {
 	tabActionCloseVisibility: true,
 	tabActionUnpinVisibility: true,
 	showTabIndex: false,
+	editorGroupIndexInTab: false,
 	alwaysShowEditorActions: false,
 	tabSizing: 'fit',
 	tabSizingFixedMinWidth: 50,
@@ -95,19 +96,24 @@ export const DEFAULT_EDITOR_PART_OPTIONS: IEditorPartOptions = {
 
 /**
  * Checks whether a configuration change event affects editor part options.
- * Covers `workbench.editor`, `workbench.iconTheme`, and `window.density` settings.
+ * Covers `workbench.editor`, `workbench.iconTheme`, `window.density`,
+ * and `vscodeee.editorGroupIndexInTab` settings.
  *
  * @param event - The configuration change event to evaluate.
  * @returns `true` if the event may change editor part options.
  */
 export function impactsEditorPartOptions(event: IConfigurationChangeEvent): boolean {
-	return event.affectsConfiguration('workbench.editor') || event.affectsConfiguration('workbench.iconTheme') || event.affectsConfiguration('window.density');
+	return event.affectsConfiguration('workbench.editor') ||
+		event.affectsConfiguration('workbench.iconTheme') ||
+		event.affectsConfiguration('window.density') ||
+		event.affectsConfiguration('vscodeee.editorGroupIndexInTab');
 }
 
 /**
  * Resolves the effective editor part options by merging user configuration
  * with the default options. Handles special cases like `autoLockGroups` object
- * conversion and `window.density.editorTabHeight` override.
+ * conversion, `window.density.editorTabHeight` override, and the
+ * `vscodeee.editorGroupIndexInTab` setting.
  *
  * @param configurationService - The configuration service to read settings from.
  * @param themeService - The theme service to determine icon availability.
@@ -144,6 +150,12 @@ export function getEditorPartOptions(configurationService: IConfigurationService
 		options.tabHeight = windowConfig.window.density.editorTabHeight;
 	}
 
+	// Handle vscodeee-specific setting
+	const vscodeeeConfig = configurationService.getValue<{ vscodeee?: { editorGroupIndexInTab?: boolean } }>();
+	if (vscodeeeConfig?.vscodeee?.editorGroupIndexInTab !== undefined) {
+		options.editorGroupIndexInTab = vscodeeeConfig.vscodeee.editorGroupIndexInTab;
+	}
+
 	return validateEditorPartOptions(options);
 }
 
@@ -161,6 +173,7 @@ function validateEditorPartOptions(options: IEditorPartOptions): IEditorPartOpti
 		'tabActionCloseVisibility': new BooleanVerifier(DEFAULT_EDITOR_PART_OPTIONS['tabActionCloseVisibility']),
 		'tabActionUnpinVisibility': new BooleanVerifier(DEFAULT_EDITOR_PART_OPTIONS['tabActionUnpinVisibility']),
 		'showTabIndex': new BooleanVerifier(DEFAULT_EDITOR_PART_OPTIONS['showTabIndex']),
+		'editorGroupIndexInTab': new BooleanVerifier(DEFAULT_EDITOR_PART_OPTIONS['editorGroupIndexInTab']),
 		'alwaysShowEditorActions': new BooleanVerifier(DEFAULT_EDITOR_PART_OPTIONS['alwaysShowEditorActions']),
 		'pinnedTabsOnSeparateRow': new BooleanVerifier(DEFAULT_EDITOR_PART_OPTIONS['pinnedTabsOnSeparateRow']),
 		'focusRecentEditorAfterClose': new BooleanVerifier(DEFAULT_EDITOR_PART_OPTIONS['focusRecentEditorAfterClose']),
@@ -328,6 +341,12 @@ export interface IEditorGroupView extends IDisposable, ISerializableView, IEdito
 
 	notifyIndexChanged(newIndex: number): void;
 	notifyLabelChanged(newLabel: string): void;
+
+	/**
+	 * Updates the editor group index indicator in the tab bar.
+	 * Only has an effect when the `editorGroupIndexInTab` option is enabled.
+	 */
+	updateEditorGroupIndex(): void;
 
 	openEditor(editor: EditorInput, options?: IEditorOptions, internalOptions?: IInternalEditorOpenOptions): Promise<IEditorPane | undefined>;
 

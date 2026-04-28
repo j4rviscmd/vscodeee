@@ -111,6 +111,9 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 	private tabsScrollbar: ScrollableElement | undefined;
 	private tabSizingFixedDisposables: DisposableStore | undefined;
 
+	/** DOM element that displays the editor group index (e.g. `[1]`) in the tab bar. */
+	private editorGroupIndexElement: HTMLElement | undefined;
+
 	private readonly closeEditorAction = this._register(this.instantiationService.createInstance(CloseEditorTabAction, CloseEditorTabAction.ID, CloseEditorTabAction.LABEL));
 	private readonly unpinEditorAction = this._register(this.instantiationService.createInstance(UnpinEditorAction, UnpinEditorAction.ID, UnpinEditorAction.LABEL));
 
@@ -186,6 +189,11 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 		// Tabs Scrollbar
 		this.tabsScrollbar = this.createTabsScrollbar(this.tabsContainer);
 		this.tabsAndActionsContainer.appendChild(this.tabsScrollbar.getDomNode());
+
+		// Editor group index indicator
+		this.editorGroupIndexElement = $('.editor-group-index');
+		this.tabsAndActionsContainer.insertBefore(this.editorGroupIndexElement, this.tabsScrollbar.getDomNode());
+		this._register(scheduleAtNextAnimationFrame(getWindow(this.parent), () => this.updateEditorGroupIndex()));
 
 		// Tabs Container listeners
 		this.registerTabsContainerListeners(this.tabsContainer, this.tabsScrollbar);
@@ -510,6 +518,7 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 	}
 
 	openEditors(editors: EditorInput[]): boolean {
+		this.updateEditorGroupIndex();
 		return this.handleOpenedEditors();
 	}
 
@@ -688,6 +697,9 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 
 	setActive(isGroupActive: boolean): void {
 
+		// Update editor group index indicator
+		this.updateEditorGroupIndex();
+
 		// Activity has an impact on each tab's active indication
 		this.forEachTab((editor, tabIndex, tabContainer, tabLabelWidget, tabLabel, tabActionBar) => {
 			this.redrawTabSelectedActiveAndDirty(isGroupActive, editor, tabContainer, tabActionBar);
@@ -734,6 +746,27 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 		this.withTab(editor, (editor, tabIndex, tabContainer, tabLabelWidget, tabLabel, tabActionBar) => this.redrawTabSelectedActiveAndDirty(this.groupsView.activeGroup === this.groupView, editor, tabContainer, tabActionBar));
 	}
 
+	/**
+	 * Updates the editor group index indicator element in the tabs bar.
+	 * Shows a bracketed index (e.g. `[1]`) when the `editorGroupIndexInTab`
+	 * option is enabled and there are at least 2 editor groups. Hides the
+	 * indicator otherwise.
+	 */
+	updateEditorGroupIndex(): void {
+		if (!this.editorGroupIndexElement) {
+			return;
+		}
+		const options = this.groupsView.partOptions;
+		if (options.editorGroupIndexInTab && this.editorPartsView.count >= 2) {
+			const index = this.groupView.index + 1;
+			this.editorGroupIndexElement.textContent = `[${index}]`;
+			this.editorGroupIndexElement.style.display = 'flex';
+		} else {
+			this.editorGroupIndexElement.textContent = '';
+			this.editorGroupIndexElement.style.display = 'none';
+		}
+	}
+
 	override updateOptions(oldOptions: IEditorPartOptions, newOptions: IEditorPartOptions): void {
 		super.updateOptions(oldOptions, newOptions);
 
@@ -766,6 +799,11 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 			this.updateTabSizing(true);
 		}
 
+		// Update editor group index indicator
+		if (oldOptions.editorGroupIndexInTab !== newOptions.editorGroupIndexInTab) {
+			this.updateEditorGroupIndex();
+		}
+
 		// Redraw tabs when other options change
 		if (
 			oldOptions.labelFormat !== newOptions.labelFormat ||
@@ -779,6 +817,7 @@ export class MultiEditorTabsControl extends EditorTabsControl {
 			oldOptions.highlightModifiedTabs !== newOptions.highlightModifiedTabs ||
 			oldOptions.wrapTabs !== newOptions.wrapTabs ||
 			oldOptions.showTabIndex !== newOptions.showTabIndex ||
+			oldOptions.editorGroupIndexInTab !== newOptions.editorGroupIndexInTab ||
 			!equals(oldOptions.decorations, newOptions.decorations)
 		) {
 			this.redraw();

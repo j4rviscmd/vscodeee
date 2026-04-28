@@ -610,6 +610,11 @@ export class EditorGroupView extends Themable implements IEditorGroupView {
 			case GroupModelChangeKind.EDITORS_SELECTION:
 				this.onDidChangeEditorSelection();
 				break;
+			case GroupModelChangeKind.GROUP_INDEX:
+				if (this.groupsView.partOptions.editorGroupIndexInTab) {
+					this.updateEditorGroupIndex();
+				}
+				break;
 		}
 
 		if (!e.editor) {
@@ -831,6 +836,15 @@ export class EditorGroupView extends Themable implements IEditorGroupView {
 				this.pinEditor(this.model.previewEditor);
 			}
 		}
+	}
+
+	/**
+	 * Updates the editor group index indicator in the title control.
+	 * Delegates to the title control to refresh the displayed group
+	 * index when the `editorGroupIndexInTab` option is enabled.
+	 */
+	updateEditorGroupIndex(): void {
+		this.titleControl.updateEditorGroupIndex();
 	}
 
 	private onDidChangeEditorDirty(editor: EditorInput): void {

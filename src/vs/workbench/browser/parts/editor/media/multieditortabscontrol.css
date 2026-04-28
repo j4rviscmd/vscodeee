@@ -566,3 +566,27 @@
 .monaco-workbench .part.editor > .content .editor-group-container > .title .tabs-container > .tab:first-child.drop-target-right::before {
 	width: 2px;
 }
+
+/* Editor group index indicator */
+.monaco-workbench .part.editor > .content .editor-group-container > .title .tabs-and-actions-container > .editor-group-index {
+	display: none;
+	align-items: center;
+	justify-content: center;
+	align-self: center;
+	min-width: 18px;
+	height: 18px;
+	margin: 0 4px 0 10px;
+	padding: 0 4px;
+	font-size: 13px;
+	font-weight: 600;
+	white-space: nowrap;
+	flex-shrink: 0;
+	border-radius: 5px;
+	background-color: var(--vscode-tab-unfocusedActiveBackground);
+	color: var(--vscode-tab-unfocusedActiveForeground);
+}
+
+.monaco-workbench .part.editor > .content .editor-group-container.active > .title .tabs-and-actions-container > .editor-group-index {
+	background-color: var(--vscode-tab-activeBackground);
+	color: var(--vscode-tab-activeForeground);
+}
