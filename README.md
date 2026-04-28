@@ -85,6 +85,7 @@ Maintain the current functionality of VSCode while achieving the following:
   - `"vscodeee.editorGroupIndexInTab": true`
 - Suppress auto-maximize when focusing the smallest pane
   - `"workbench.editor.autoMaximizeOnFocus": false`
+  - Upstream VSCode [issue](https://github.com/microsoft/vscode/issues/85309)
 
 ---
 
