@@ -167,6 +167,7 @@ export interface ISerializedGridView {
 	height: number;
 }
 
+/** Returns the orthogonal orientation (HORIZONTAL <-> VERTICAL). */
 export function orthogonal(orientation: Orientation): Orientation {
 	return orientation === Orientation.VERTICAL ? Orientation.HORIZONTAL : Orientation.VERTICAL;
 }
@@ -197,6 +198,11 @@ export function isGridBranchNode(node: GridNode): node is GridBranchNode {
 	return !!(node as any).children;
 }
 
+/**
+ * Controls whether layout propagation is enabled. Layout is disabled
+ * until the first explicit call to {@link GridView.layout} to avoid
+ * premature layout of views before the grid is fully constructed.
+ */
 class LayoutController {
 	constructor(public isLayoutEnabled: boolean) { }
 }
@@ -216,6 +222,11 @@ export interface IGridViewOptions {
 	readonly proportionalLayout?: boolean; // default true
 }
 
+/**
+ * Layout context passed down the grid tree during layout propagation.
+ * Contains absolute positioning and sizing information needed by each
+ * node to compute its children's positions.
+ */
 interface ILayoutContext {
 	readonly orthogonalSize: number;
 	readonly absoluteOffset: number;
@@ -224,6 +235,10 @@ interface ILayoutContext {
 	readonly absoluteOrthogonalSize: number;
 }
 
+/**
+ * Converts orientation-relative boundary sashes to absolute boundary sashes.
+ * For horizontal orientation, start/end map to left/right; for vertical, to top/bottom.
+ */
 function toAbsoluteBoundarySashes(sashes: IRelativeBoundarySashes, orientation: Orientation): IBoundarySashes {
 	if (orientation === Orientation.HORIZONTAL) {
 		return { left: sashes.start, right: sashes.end, top: sashes.orthogonalStart, bottom: sashes.orthogonalEnd };
@@ -232,6 +247,10 @@ function toAbsoluteBoundarySashes(sashes: IRelativeBoundarySashes, orientation: 
 	}
 }
 
+/**
+ * Converts absolute boundary sashes to orientation-relative boundary sashes.
+ * Inverse of {@link toAbsoluteBoundarySashes}.
+ */
 function fromAbsoluteBoundarySashes(sashes: IBoundarySashes, orientation: Orientation): IRelativeBoundarySashes {
 	if (orientation === Orientation.HORIZONTAL) {
 		return { start: sashes.left, end: sashes.right, orthogonalStart: sashes.top, orthogonalEnd: sashes.bottom };
@@ -240,6 +259,12 @@ function fromAbsoluteBoundarySashes(sashes: IBoundarySashes, orientation: Orient
 	}
 }
 
+/**
+ * Validates and normalizes a child index using rotation, supporting
+ * negative indices (e.g., -1 maps to the last position).
+ *
+ * @throws Error if the absolute value of `index` exceeds `numChildren + 1`.
+ */
 function validateIndex(index: number, numChildren: number): number {
 	if (Math.abs(index) > numChildren) {
 		throw new Error('Invalid index');
@@ -248,6 +273,11 @@ function validateIndex(index: number, numChildren: number): number {
 	return rot(index, numChildren + 1);
 }
 
+/**
+ * A branch node in the grid tree that contains child nodes arranged
+ * in a {@link SplitView}. Branch nodes flip orientation relative to
+ * their parent, creating the two-dimensional grid layout.
+ */
 class BranchNode implements ISplitView<ILayoutContext>, IDisposable {
 
 	readonly element: HTMLElement;
@@ -753,7 +783,12 @@ class BranchNode implements ISplitView<ILayoutContext>, IDisposable {
 
 /**
  * Creates a latched event that avoids being fired when the view
- * constraints do not change at all.
+ * constraints do not change at all. The event emits a concrete size
+ * when the view explicitly requests a relayout, or `undefined` when
+ * only the constraint properties changed.
+ *
+ * @param view - The view whose `onDidChange` event to latch.
+ * @returns A latched event that only fires when relevant state changes.
  */
 function createLatchedOnDidChangeViewEvent(view: IView): Event<IViewSize | undefined> {
 	const [onDidChangeViewConstraints, onDidSetViewSize] = Event.split<undefined, IViewSize>(view.onDidChange, isUndefined);
@@ -770,6 +805,11 @@ function createLatchedOnDidChangeViewEvent(view: IView): Event<IViewSize | undef
 	);
 }
 
+/**
+ * A leaf node in the grid tree that wraps a single {@link IView}.
+ * Leaf nodes are the terminal nodes of the grid hierarchy and
+ * directly manage view layout and constraint propagation.
+ */
 class LeafNode implements ISplitView<ILayoutContext>, IDisposable {
 
 	private _size: number = 0;
@@ -941,11 +981,24 @@ class LeafNode implements ISplitView<ILayoutContext>, IDisposable {
 
 type Node = BranchNode | LeafNode;
 
-export interface INodeDescriptor {
+export /**
+ * Describes a grid node with its visibility state, used during
+ * grid deserialization to reconstruct the tree structure.
+ */
+interface INodeDescriptor {
 	node: Node;
 	visible?: boolean;
 }
 
+/**
+ * Flips a grid node by swapping its orientation and recursively
+ * flipping all children. The old node is disposed in the process.
+ *
+ * @param node - The node to flip.
+ * @param size - The new size of the flipped node.
+ * @param orthogonalSize - The new orthogonal size of the flipped node.
+ * @returns A new node with the orthogonal orientation.
+ */
 function flipNode(node: BranchNode, size: number, orthogonalSize: number): BranchNode;
 function flipNode(node: LeafNode, size: number, orthogonalSize: number): LeafNode;
 function flipNode(node: Node, size: number, orthogonalSize: number): Node;
@@ -1460,6 +1513,89 @@ export class GridView implements IDisposable {
 	}
 
 	/**
+	 * Resize a view's border in a given direction.
+	 * Moves the border between the view and its neighbor by the specified delta,
+	 * growing the view in that direction and shrinking the neighbor.
+	 *
+	 * This is the grid-primitive equivalent of tmux's `resize-pane -U/-D/-L/-R`.
+	 *
+	 * @param location The {@link GridLocation location} of the view.
+	 * @param targetOrientation The orientation matching the direction (VERTICAL for Up/Down, HORIZONTAL for Left/Right).
+	 * @param isForward Whether the direction is forward (Down/Right) or backward (Up/Left).
+	 * @param delta The pixel amount to move the border. Must be positive.
+	 * @returns true if a border was found and resized, false otherwise.
+	 */
+	resizeViewBorder(location: GridLocation, targetOrientation: Orientation, isForward: boolean, delta: number): boolean {
+		if (this.hasMaximizedView()) {
+			this.exitMaximizedView();
+		}
+
+		// Walk up the location path to find the ancestor BranchNode
+		// whose orientation matches the target direction
+		for (let i = location.length; i > 0; i--) {
+			const parentLocation = location.slice(0, i - 1);
+			const childIndex = location[i - 1];
+			const [, parentNode] = this.getNode(parentLocation);
+
+			if (!(parentNode instanceof BranchNode)) {
+				continue;
+			}
+
+			if (parentNode.orientation !== targetOrientation) {
+				continue;
+			}
+
+			// Find any visible adjacent sibling.
+			// Prefer the sibling in the direction of movement (active grows),
+			// fallback to the opposite side (active shrinks).
+			const candidates = isForward
+				? [childIndex + 1, childIndex - 1]
+				: [childIndex - 1, childIndex + 1];
+			const siblingIndex = candidates.find(idx =>
+				idx >= 0 && idx < parentNode.children.length && parentNode.isChildVisible(idx));
+
+			if (siblingIndex === undefined) {
+				continue;
+			}
+
+			// Compute effective delta for the active child.
+			// isForward=true means border moves right/down; isForward=false means left/up.
+			// With a right/below sibling: isForward -> active grows, !isForward -> active shrinks.
+			// With a left/above sibling: isForward -> active shrinks, !isForward -> active grows.
+			const siblingIsAfter = siblingIndex > childIndex;
+			const activeDeltaSign = (isForward === siblingIsAfter) ? 1 : -1;
+			const rawDelta = activeDeltaSign * delta;
+
+			// Clamp respecting min/max constraints of both children
+			const ourSize = parentNode.getChildSize(childIndex);
+			const siblingSize = parentNode.getChildSize(siblingIndex);
+			const ourMinSize = parentNode.children[childIndex].minimumSize;
+			const ourMaxSize = parentNode.children[childIndex].maximumSize;
+			const siblingMinSize = parentNode.children[siblingIndex].minimumSize;
+			const siblingMaxSize = parentNode.children[siblingIndex].maximumSize;
+
+			const maxGrowDelta = Math.min(ourMaxSize - ourSize, siblingSize - siblingMinSize);
+			const maxShrinkDelta = Math.min(ourSize - ourMinSize, siblingMaxSize - siblingSize);
+
+			const effectiveDelta = rawDelta > 0
+				? Math.min(rawDelta, maxGrowDelta)
+				: Math.max(rawDelta, -maxShrinkDelta);
+
+			if (effectiveDelta === 0) {
+				return false;
+			}
+
+			parentNode.resizeChild(childIndex, ourSize + effectiveDelta);
+			parentNode.resizeChild(siblingIndex, siblingSize - effectiveDelta);
+
+			this.trySet2x2();
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
 	 * Get the size of a {@link IView view}.
 	 *
 	 * @param location The {@link GridLocation location} of the view. Provide `undefined` to get
@@ -1539,6 +1675,13 @@ export class GridView implements IDisposable {
 		return true;
 	}
 
+	/**
+	 * Maximize the size of a {@link IView view} by hiding all other views.
+	 * Optionally excludes specific views from being hidden.
+	 *
+	 * @param location - The {@link GridLocation location} of the view.
+	 * @param excludeViews - Views that should remain visible even when maximizing.
+	 */
 	maximizeView(location: GridLocation, excludeViews: readonly IView[] = []) {
 		const [, nodeToMaximize] = this.getNode(location);
 		if (!(nodeToMaximize instanceof LeafNode)) {
@@ -1574,6 +1717,10 @@ export class GridView implements IDisposable {
 		this._onDidChangeViewMaximized.fire(true);
 	}
 
+	/**
+	 * Restores all views that were hidden during maximization.
+	 * Views are made visible in reverse order to maintain proper sizing.
+	 */
 	exitMaximizedView(): void {
 		if (!this.maximizedNode) {
 			return;
@@ -1598,6 +1745,7 @@ export class GridView implements IDisposable {
 		this._onDidChangeViewMaximized.fire(false);
 	}
 
+	/** Returns whether any view is currently maximized. */
 	hasMaximizedView(): boolean {
 		return this.maximizedNode !== undefined;
 	}

@@ -34,6 +34,7 @@ import './tauri-browser/desktop.tauri.main.js';
 
 import './tauri-browser/actions/developerActions.js';
 import './tauri-browser/actions/nativeActions.js';
+import './tauri-browser/actions/resizePaneActions.js';
 import './tauri-browser/actions/shellCommandActions.js';
 
 //#endregion

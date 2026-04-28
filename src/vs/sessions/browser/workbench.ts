@@ -1240,6 +1240,17 @@ export class Workbench extends Disposable implements IWorkbenchLayoutService {
     });
   }
 
+  /**
+   * Pane border resizing is not supported in session windows.
+   * Session windows use a fixed grid layout where the editor is
+   * rendered as a modal overlay rather than being part of the grid.
+   *
+   * @param _direction - Ignored.
+   */
+  resizePaneBorder(_direction: Direction): void {
+    // Not supported in session windows
+  }
+
   private getPartView(part: Parts): ISerializableView | undefined {
     switch (part) {
       case Parts.TITLEBAR_PART:

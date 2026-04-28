@@ -14,6 +14,9 @@ import type { SplitView, AutoSizing as SplitViewAutoSizing } from '../splitview/
 export type { IViewSize };
 export { LayoutPriority, Orientation, orthogonal } from './gridview.js';
 
+/**
+ * Cardinal directions used for navigating and resizing views within a {@link Grid}.
+ */
 export const enum Direction {
 	Up,
 	Down,
@@ -21,6 +24,7 @@ export const enum Direction {
 	Right
 }
 
+/** Returns the opposite cardinal direction (e.g., `Up` becomes `Down`). */
 function oppositeDirection(direction: Direction): Direction {
 	switch (direction) {
 		case Direction.Up: return Direction.Down;
@@ -51,6 +55,7 @@ export interface IView extends IGridViewView {
 export interface GridLeafNode<T extends IView> {
 	readonly view: T;
 	readonly box: Box;
+	/** The size of the view at the moment it was last hidden, or `undefined` if visible. */
 	readonly cachedVisibleSize: number | undefined;
 	readonly maximized: boolean;
 }
@@ -94,6 +99,10 @@ interface Boundary {
 	readonly range: Range;
 }
 
+/**
+ * Computes the boundary (offset + orthogonal range) of a box edge
+ * in the specified direction.
+ */
 function getBoxBoundary(box: Box, direction: Direction): Boundary {
 	const orientation = getDirectionOrientation(direction);
 	const offset = direction === Direction.Up ? box.top :
@@ -109,6 +118,11 @@ function getBoxBoundary(box: Box, direction: Direction): Boundary {
 	return { offset, range };
 }
 
+/**
+ * Recursively finds all leaf nodes whose edge in the opposite of `direction`
+ * matches the given `boundary`. Used by {@link Grid.getNeighborViews} to
+ * determine which views are adjacent to a reference view.
+ */
 function findAdjacentBoxLeafNodes<T extends IView>(boxNode: GridNode<T>, direction: Direction, boundary: Boundary): GridLeafNode<T>[] {
 	const result: GridLeafNode<T>[] = [];
 
@@ -130,14 +144,28 @@ function findAdjacentBoxLeafNodes<T extends IView>(boxNode: GridNode<T>, directi
 	return result;
 }
 
+/**
+ * Determines the orientation at a given depth in the grid tree.
+ * Even depths use the root orientation; odd depths use its orthogonal.
+ */
 function getLocationOrientation(rootOrientation: Orientation, location: GridLocation): Orientation {
 	return location.length % 2 === 0 ? orthogonal(rootOrientation) : rootOrientation;
 }
 
+/** Maps a cardinal direction to its corresponding orientation (Up/Down -> Vertical, Left/Right -> Horizontal). */
 function getDirectionOrientation(direction: Direction): Orientation {
 	return direction === Direction.Up || direction === Direction.Down ? Orientation.VERTICAL : Orientation.HORIZONTAL;
 }
 
+/**
+ * Computes the grid location where a new view should be inserted when
+ * placing it relative to an existing view in a given direction.
+ *
+ * @param rootOrientation - The orientation of the root split view.
+ * @param location - The location of the reference view.
+ * @param direction - The direction to place the new view.
+ * @returns The grid location for the new view.
+ */
 export function getRelativeLocation(rootOrientation: Orientation, location: GridLocation, direction: Direction): GridLocation {
 	const orientation = getLocationOrientation(rootOrientation, location);
 	const directionOrientation = getDirectionOrientation(direction);
@@ -291,6 +319,7 @@ export class Grid<T extends IView = IView> extends Disposable {
 
 	private didLayout = false;
 
+	/** Fires when a view's maximized state changes. */
 	readonly onDidChangeViewMaximized: Event<boolean>;
 	/**
 	 * Create a new {@link Grid}. A grid must *always* have a view
@@ -418,6 +447,10 @@ export class Grid<T extends IView = IView> extends Disposable {
 		this._addView(newView, viewSize, location);
 	}
 
+	/**
+	 * Internal method to add a view at a specific grid location with
+	 * fixed, distribute, or invisible sizing.
+	 */
 	private addViewAt(newView: T, size: number | DistributeSizing | InvisibleSizing, location: GridLocation): void {
 		if (this.views.has(newView)) {
 			throw new Error('Can\'t add same view twice');
@@ -436,6 +469,10 @@ export class Grid<T extends IView = IView> extends Disposable {
 		this._addView(newView, viewSize, location);
 	}
 
+	/**
+	 * Low-level method to register a view in the internal map and add it
+	 * to the underlying grid view at the specified location.
+	 */
 	protected _addView(newView: T, size: number | GridViewSizing, location: GridLocation): void {
 		this.views.set(newView, newView.element);
 		this.gridview.addView(newView, size, location);
@@ -546,6 +583,25 @@ export class Grid<T extends IView = IView> extends Disposable {
 	}
 
 	/**
+	 * Resize a view's border in a given direction.
+	 * Moves the border between the view and its neighbor by the specified delta,
+	 * growing the view in that direction and shrinking the neighbor.
+	 *
+	 * This is the grid-level equivalent of tmux's `resize-pane -U/-D/-L/-R`.
+	 *
+	 * @param view The reference view.
+	 * @param direction The direction to move the border. All directions grow the view.
+	 * @param delta The pixel amount to move the border. Must be positive.
+	 * @returns true if a border was found and resized, false otherwise.
+	 */
+	resizeViewBorder(view: T, direction: Direction, delta: number): boolean {
+		const location = this.getViewLocation(view);
+		const targetOrientation = getDirectionOrientation(direction);
+		const isForward = direction === Direction.Down || direction === Direction.Right;
+		return this.gridview.resizeViewBorder(location, targetOrientation, isForward, delta);
+	}
+
+	/**
 	 * Returns whether all other {@link IView views} are at their minimum size.
 	 *
 	 * @param view The reference {@link IView view}.
@@ -613,6 +669,7 @@ export class Grid<T extends IView = IView> extends Disposable {
 		this.gridview.maximizeView(location, excludeViews);
 	}
 
+	/** Restores all views that were hidden when a view was maximized. */
 	exitMaximizedView(): void {
 		this.gridview.exitMaximizedView();
 	}
@@ -870,6 +927,13 @@ function isGridBranchNodeDescriptor<T>(nodeDescriptor: GridNodeDescriptor<T>): n
 	return !!(nodeDescriptor as GridBranchNodeDescriptor<T>).groups;
 }
 
+/**
+ * Normalizes a grid node descriptor by removing unnecessary single-child
+ * branch wrappers and ensuring all children have a defined size.
+ *
+ * @param nodeDescriptor - The descriptor to sanitize (mutated in place).
+ * @param rootNode - Whether this descriptor represents the root node.
+ */
 export function sanitizeGridNodeDescriptor<T>(nodeDescriptor: GridNodeDescriptor<T>, rootNode: boolean): void {
 	// eslint-disable-next-line local/code-no-any-casts
 	if (!rootNode && (nodeDescriptor as any).groups && (nodeDescriptor as any).groups.length <= 1) {
