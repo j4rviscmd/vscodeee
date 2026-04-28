@@ -76,7 +76,7 @@ export class TerminalInputSerializer implements IEditorSerializer {
 		}
 
 		// Fresh-restore format: tab is restored with a new shell process
-		if ('freshRestore' in parsed && (parsed as IFreshSerializedTerminalEditorInput).freshRestore === true) {
+		if (Object.prototype.hasOwnProperty.call(parsed, 'freshRestore') && (parsed as IFreshSerializedTerminalEditorInput).freshRestore === true) {
 			const fresh = parsed as IFreshSerializedTerminalEditorInput;
 			return this._terminalEditorService.reviveFreshInput({
 				title: fresh.title,
@@ -155,5 +155,5 @@ export class TerminalInputSerializer implements IEditorSerializer {
 }
 
 function isDeserializedTerminalEditorInput(obj: unknown): obj is IDeserializedTerminalEditorInput {
-	return isObject(obj) && 'id' in obj && 'pid' in obj;
+	return isObject(obj) && Object.prototype.hasOwnProperty.call(obj, 'id') && Object.prototype.hasOwnProperty.call(obj, 'pid');
 }
