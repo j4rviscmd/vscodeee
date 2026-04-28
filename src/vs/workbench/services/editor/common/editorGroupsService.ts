@@ -10,8 +10,7 @@ import { EditorInput } from '../../../common/editor/editorInput.js';
 import { IEditorOptions, IModalEditorNavigation, IModalEditorPartOptions } from '../../../../platform/editor/common/editor.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IDimension } from '../../../../editor/common/core/2d/dimension.js';
-// TODO: Consider moving Direction to base/common to avoid browser import in common layer
-import { Direction } from '../../../../base/browser/ui/grid/grid.js';
+import { Direction } from '../../../../base/common/direction.js';
 import { DisposableStore, IDisposable } from '../../../../base/common/lifecycle.js';
 import { ContextKeyValue, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { URI } from '../../../../base/common/uri.js';

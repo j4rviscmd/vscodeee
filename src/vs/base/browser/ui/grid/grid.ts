@@ -13,16 +13,9 @@ import type { SplitView, AutoSizing as SplitViewAutoSizing } from '../splitview/
 
 export type { IViewSize };
 export { LayoutPriority, Orientation, orthogonal } from './gridview.js';
+export { Direction } from '../../../common/direction.js';
 
-/**
- * Cardinal directions used for navigating and resizing views within a {@link Grid}.
- */
-export const enum Direction {
-	Up,
-	Down,
-	Left,
-	Right
-}
+import { Direction } from '../../../common/direction.js';
 
 /** Returns the opposite cardinal direction (e.g., `Up` becomes `Down`). */
 function oppositeDirection(direction: Direction): Direction {
