@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Add `generate-notes` dependency to `build-reh` job to prevent 404 errors when uploading REH assets ([#337](https://github.com/j4rviscmd/vscodeee/pull/337))
+- Restore terminal editor tabs on app restart ([#344](https://github.com/j4rviscmd/vscodeee/pull/344))
+- Resolve draft release lookup failure in CI publish workflow — replace `getReleaseByTag` with `getRelease` by ID across build-reh and upload-stable-assets jobs, add input validation guards, and consolidate `tauri.conf.json` reads ([#345](https://github.com/j4rviscmd/vscodeee/pull/345))
 
 ### Changed
 
