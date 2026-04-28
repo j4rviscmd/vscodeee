@@ -5,11 +5,12 @@
 # for the current version (read from src-tauri/tauri.conf.json) already exists.
 #
 # Jobs:
-#   1. preflight           — deduplication gate
+#   1. preflight           — deduplication gate + orphaned tag cleanup
 #   2. generate-notes      — auto-generate release notes via GitHub API
-#   3. publish-tauri       — cross-platform build matrix (macOS arm64/x64, Linux, Windows)
-#   4. build-reh           — build REH (Remote Extension Host) server for SSH remotes
-#   5. upload-stable-assets — upload fixed-name copies for stable README download links
+#   3. create-release      — create git tag + draft release (gateway for parallel builds)
+#   4. publish-tauri       — cross-platform build matrix (macOS arm64/x64, Linux, Windows)
+#   5. build-reh           — build REH (Remote Extension Host) server for SSH remotes
+#   6. upload-stable-assets — upload fixed-name copies + publish draft release
 name: Release
 
 on:
@@ -24,7 +25,7 @@ jobs:
   preflight:
     name: Preflight — check if release already exists
     permissions:
-      contents: read
+      contents: write
     runs-on: ubuntu-latest
     outputs:
       skip: ${{ steps.check.outputs.skip }}
@@ -61,8 +62,29 @@ jobs:
                 repo: context.repo.repo,
                 ref: `tags/${tagName}`,
               });
-              core.info(`Tag ${tagName} already exists. Skipping release.`);
-              core.setOutput('skip', 'true');
+
+              // Tag exists — check if a release is associated with it
+              const releases = await github.rest.repos.listReleases({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100,
+              });
+              const hasRelease = releases.data.find(r => r.tag_name === tagName);
+              if (hasRelease) {
+                core.info(`Tag ${tagName} with release already exists. Skipping release.`);
+                core.setOutput('skip', 'true');
+                return;
+              }
+
+              // Orphaned tag (no release) — delete it so create-release can recreate cleanly
+              core.warning(`Orphaned tag ${tagName} found with no release. Deleting.`);
+              await github.rest.git.deleteRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `tags/${tagName}`,
+              });
+              core.info(`Deleted orphaned tag ${tagName}. Proceeding with release.`);
+              core.setOutput('skip', 'false');
               return;
             } catch (e) {
               if (e.status !== 404) throw e;
@@ -75,7 +97,7 @@ jobs:
             });
             const found = releases.data.find(r => r.tag_name === tagName);
             if (found) {
-              core.info(`Release with tag ${tagName} already exists. Skipping release.`);
+              core.info(`Release with tag ${tagName} already exists (tag was missing but release present). Skipping.`);
               core.setOutput('skip', 'true');
               return;
             }
@@ -127,8 +149,81 @@ jobs:
             const { data } = await github.rest.repos.generateReleaseNotes(params);
             core.setOutput('notes', data.body);
 
-  publish-tauri:
+  create-release:
+    name: Create draft release
     needs: [preflight, generate-notes]
+    if: needs.preflight.outputs.skip != 'true'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Create tag and draft release
+        uses: actions/github-script@v9
+        env:
+          RELEASE_NOTES: ${{ needs.generate-notes.outputs.notes }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const cfg = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+            const version = cfg.version;
+            const tag = `v${version}`;
+
+            // Create git tag pointing at HEAD
+            const ref = `tags/${tag}`;
+            try {
+              await github.rest.git.getRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref,
+              });
+              core.info(`Tag ${tag} already exists, skipping tag creation`);
+            } catch (e) {
+              if (e.status !== 404) throw e;
+              await github.rest.git.createRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `refs/${ref}`,
+                sha: context.sha,
+              });
+              core.info(`Created tag ${tag}`);
+            }
+
+            // Create draft release (idempotent on re-run)
+            const notes = process.env.RELEASE_NOTES;
+            let release;
+            try {
+              const resp = await github.rest.repos.createRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag_name: tag,
+                name: tag,
+                body: notes,
+                draft: true,
+                prerelease: false,
+                target_commitish: 'main',
+              });
+              release = resp.data;
+              core.info(`Created draft release ${release.html_url}`);
+            } catch (e) {
+              if (e.status === 422) {
+                const resp = await github.rest.repos.getReleaseByTag({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  tag,
+                });
+                release = resp.data;
+                core.info(`Found existing release ${release.html_url}`);
+              } else {
+                throw e;
+              }
+            }
+
+  publish-tauri:
+    needs: [preflight, generate-notes, create-release]
     if: needs.preflight.outputs.skip != 'true'
     permissions:
       contents: write
@@ -202,7 +297,7 @@ jobs:
           tagName: v__VERSION__
           releaseName: 'v__VERSION__'
           releaseBody: ${{ needs.generate-notes.outputs.notes }}
-          releaseDraft: false
+          releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
           updaterJsonPreferNsis: true
@@ -210,7 +305,7 @@ jobs:
 
   build-reh:
     name: Build REH Server (${{ matrix.os }}-${{ matrix.arch }})
-    needs: [preflight, publish-tauri]
+    needs: [preflight, create-release]
     if: needs.preflight.outputs.skip != 'true'
     permissions:
       contents: write
@@ -467,3 +562,55 @@ jobs:
               });
               core.info(`Uploaded ${fixedName} (from ${asset.name})`);
             }
+
+      - name: Verify all expected assets and publish release
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const cfg = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+            const version = cfg.version;
+            const tag = `v${version}`;
+
+            const { data: release } = await github.rest.repos.getReleaseByTag({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag,
+            });
+
+            const assetNames = release.assets.map(a => a.name);
+
+            // Expected Tauri desktop assets (4 platforms)
+            const expectedTauri = [
+              `_${version}_aarch64.dmg`,
+              `_${version}_x64.dmg`,
+              `_${version}_amd64.AppImage`,
+              `_${version}_x64-setup.exe`,
+            ];
+            // Expected REH server assets (5 targets)
+            const expectedReh = [
+              'vscodeee-reh-linux-x64.tar.gz',
+              'vscodeee-reh-linux-arm64.tar.gz',
+              'vscodeee-reh-linux-armhf.tar.gz',
+              'vscodeee-reh-darwin-arm64.tar.gz',
+              'vscodeee-reh-darwin-x64.tar.gz',
+            ];
+
+            const missingTauri = expectedTauri.filter(p => !assetNames.some(n => n.endsWith(p)));
+            const missingReh = expectedReh.filter(p => !assetNames.includes(p));
+            const missing = [...missingTauri, ...missingReh];
+
+            if (missing.length > 0) {
+              core.setFailed(`Missing required assets, not publishing: ${missing.join(', ')}`);
+              return;
+            }
+
+            core.info(`All ${expectedTauri.length + expectedReh.length} expected assets present. Publishing release.`);
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.id,
+              draft: false,
+            });
+            core.info(`Published release ${tag} (${release.html_url})`);
