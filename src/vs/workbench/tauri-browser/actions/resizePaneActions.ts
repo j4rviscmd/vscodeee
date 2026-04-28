@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { localize, localize2 } from '../../../nls.js';
-import { Action2, registerAction2 } from '../../../platform/actions/common/actions.js';
+import { Action2, IAction2Options, registerAction2 } from '../../../platform/actions/common/actions.js';
 import { Categories } from '../../../platform/action/common/actionCommonCategories.js';
 import { Extensions as ConfigurationExtensions, ConfigurationScope, IConfigurationRegistry } from '../../../platform/configuration/common/configurationRegistry.js';
 import { Registry } from '../../../platform/registry/common/platform.js';
@@ -51,21 +51,14 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration).regis
  */
 abstract class BaseResizePaneAction extends Action2 {
   /**
-   * @param id - The unique action identifier (e.g., `'vscodeee.resizePaneUp'`).
-   * @param title - The human-readable title shown in the command palette.
+   * @param desc - The action descriptor including id and localized title.
    * @param direction - The direction to move the focused pane's border.
    */
   constructor(
-    id: string,
-    title: string,
+    desc: Readonly<IAction2Options>,
     private readonly direction: Direction,
   ) {
-    super({
-      id,
-      title: localize2(id, title),
-      f1: true,
-      category: Categories.View,
-    });
+    super(desc);
   }
 
   /**
@@ -83,7 +76,12 @@ abstract class BaseResizePaneAction extends Action2 {
 class ResizePaneUpAction extends BaseResizePaneAction {
   static readonly ID = 'vscodeee.resizePaneUp';
   constructor() {
-    super(ResizePaneUpAction.ID, 'Resize Pane Up', Direction.Up);
+    super({
+      id: ResizePaneUpAction.ID,
+      title: localize2('vscodeee.resizePaneUp', 'Resize Pane Up'),
+      f1: true,
+      category: Categories.View,
+    }, Direction.Up);
   }
 }
 
@@ -91,7 +89,12 @@ class ResizePaneUpAction extends BaseResizePaneAction {
 class ResizePaneDownAction extends BaseResizePaneAction {
   static readonly ID = 'vscodeee.resizePaneDown';
   constructor() {
-    super(ResizePaneDownAction.ID, 'Resize Pane Down', Direction.Down);
+    super({
+      id: ResizePaneDownAction.ID,
+      title: localize2('vscodeee.resizePaneDown', 'Resize Pane Down'),
+      f1: true,
+      category: Categories.View,
+    }, Direction.Down);
   }
 }
 
@@ -99,7 +102,12 @@ class ResizePaneDownAction extends BaseResizePaneAction {
 class ResizePaneLeftAction extends BaseResizePaneAction {
   static readonly ID = 'vscodeee.resizePaneLeft';
   constructor() {
-    super(ResizePaneLeftAction.ID, 'Resize Pane Left', Direction.Left);
+    super({
+      id: ResizePaneLeftAction.ID,
+      title: localize2('vscodeee.resizePaneLeft', 'Resize Pane Left'),
+      f1: true,
+      category: Categories.View,
+    }, Direction.Left);
   }
 }
 
@@ -107,7 +115,12 @@ class ResizePaneLeftAction extends BaseResizePaneAction {
 class ResizePaneRightAction extends BaseResizePaneAction {
   static readonly ID = 'vscodeee.resizePaneRight';
   constructor() {
-    super(ResizePaneRightAction.ID, 'Resize Pane Right', Direction.Right);
+    super({
+      id: ResizePaneRightAction.ID,
+      title: localize2('vscodeee.resizePaneRight', 'Resize Pane Right'),
+      f1: true,
+      category: Categories.View,
+    }, Direction.Right);
   }
 }
 
