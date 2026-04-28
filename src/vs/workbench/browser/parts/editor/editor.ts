@@ -22,6 +22,21 @@ import { ContextKeyValue, IContextKey, RawContextKey } from '../../../../platfor
 import { coalesce } from '../../../../base/common/arrays.js';
 
 /**
+ * Configuration shape for VSCodeEE-specific editor settings.
+ * Nested under `vscodeee.workbench.editor` in settings.json.
+ */
+interface IVSCodeEEEditorConfiguration {
+	vscodeee?: {
+		workbench?: {
+			editor?: {
+				autoMaximizeOnFocus?: boolean;
+				editorGroupIndexInTab?: boolean;
+			};
+		};
+	};
+}
+
+/**
  * Options for creating an editor part instance.
  */
 export interface IEditorPartCreationOptions {
@@ -98,7 +113,7 @@ export const DEFAULT_EDITOR_PART_OPTIONS: IEditorPartOptions = {
 /**
  * Checks whether a configuration change event affects editor part options.
  * Covers `workbench.editor`, `workbench.iconTheme`, `window.density`,
- * and `vscodeee.editorGroupIndexInTab` settings.
+ * and `vscodeee.workbench.editor` settings.
  *
  * @param event - The configuration change event to evaluate.
  * @returns `true` if the event may change editor part options.
@@ -107,14 +122,14 @@ export function impactsEditorPartOptions(event: IConfigurationChangeEvent): bool
 	return event.affectsConfiguration('workbench.editor') ||
 		event.affectsConfiguration('workbench.iconTheme') ||
 		event.affectsConfiguration('window.density') ||
-		event.affectsConfiguration('vscodeee.editorGroupIndexInTab');
+		event.affectsConfiguration('vscodeee.workbench.editor');
 }
 
 /**
  * Resolves the effective editor part options by merging user configuration
  * with the default options. Handles special cases like `autoLockGroups` object
  * conversion, `window.density.editorTabHeight` override, and the
- * `vscodeee.editorGroupIndexInTab` setting.
+ * `vscodeee.workbench.editor` settings.
  *
  * @param configurationService - The configuration service to read settings from.
  * @param themeService - The theme service to determine icon availability.
@@ -151,10 +166,13 @@ export function getEditorPartOptions(configurationService: IConfigurationService
 		options.tabHeight = windowConfig.window.density.editorTabHeight;
 	}
 
-	// Handle vscodeee-specific setting
-	const vscodeeeConfig = configurationService.getValue<{ vscodeee?: { editorGroupIndexInTab?: boolean } }>();
-	if (vscodeeeConfig?.vscodeee?.editorGroupIndexInTab !== undefined) {
-		options.editorGroupIndexInTab = vscodeeeConfig.vscodeee.editorGroupIndexInTab;
+	// Handle vscodeee.workbench.editor settings
+	const vscodeeeEditorConfig = configurationService.getValue<IVSCodeEEEditorConfiguration>()?.vscodeee?.workbench?.editor;
+	if (vscodeeeEditorConfig?.autoMaximizeOnFocus !== undefined) {
+		options.autoMaximizeOnFocus = vscodeeeEditorConfig.autoMaximizeOnFocus;
+	}
+	if (vscodeeeEditorConfig?.editorGroupIndexInTab !== undefined) {
+		options.editorGroupIndexInTab = vscodeeeEditorConfig.editorGroupIndexInTab;
 	}
 
 	return validateEditorPartOptions(options);

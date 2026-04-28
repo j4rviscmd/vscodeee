@@ -16,8 +16,15 @@ import { isFullscreen, isWCOEnabled } from '../../../../base/browser/browser.js'
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IDisposable } from '../../../../base/common/lifecycle.js';
 
+/**
+ * Service decorator that refines {@link ILayoutService} into the full
+ * {@link IWorkbenchLayoutService} interface used by the workbench.
+ */
 export const IWorkbenchLayoutService = refineServiceDecorator<ILayoutService, IWorkbenchLayoutService>(ILayoutService);
 
+/**
+ * Identifiers for all workbench parts that participate in the layout grid.
+ */
 export const enum Parts {
 	TITLEBAR_PART = 'workbench.parts.titlebar',
 	BANNER_PART = 'workbench.parts.banner',
@@ -30,6 +37,9 @@ export const enum Parts {
 	STATUSBAR_PART = 'workbench.parts.statusbar'
 }
 
+/**
+ * Configuration setting keys that control zen mode behavior.
+ */
 export const enum ZenModeSettings {
 	SHOW_TABS = 'zenMode.showTabs',
 	HIDE_LINENUMBERS = 'zenMode.hideLineNumbers',
@@ -41,6 +51,9 @@ export const enum ZenModeSettings {
 	SILENT_NOTIFICATIONS = 'zenMode.silentNotifications',
 }
 
+/**
+ * Configuration setting keys for workbench layout options.
+ */
 export const enum LayoutSettings {
 	ACTIVITY_BAR_LOCATION = 'workbench.activityBar.location',
 	ACTIVITY_BAR_AUTO_HIDE = 'workbench.activityBar.autoHide',
@@ -52,6 +65,9 @@ export const enum LayoutSettings {
 	SHADOWS = 'workbench.shadows'
 }
 
+/**
+ * Possible positions for the activity bar.
+ */
 export const enum ActivityBarPosition {
 	DEFAULT = 'default',
 	TOP = 'top',
@@ -59,18 +75,27 @@ export const enum ActivityBarPosition {
 	HIDDEN = 'hidden'
 }
 
+/**
+ * Display modes for editor tabs in the editor title area.
+ */
 export const enum EditorTabsMode {
 	MULTIPLE = 'multiple',
 	SINGLE = 'single',
 	NONE = 'none'
 }
 
+/**
+ * Locations where editor actions can be displayed.
+ */
 export const enum EditorActionsLocation {
 	DEFAULT = 'default',
 	TITLEBAR = 'titleBar',
 	HIDDEN = 'hidden'
 }
 
+/**
+ * Cardinal positions for side bar and panel placement.
+ */
 export const enum Position {
 	LEFT,
 	RIGHT,
@@ -78,18 +103,36 @@ export const enum Position {
 	TOP
 }
 
+/**
+ * Returns `true` if the given position is horizontal (top or bottom).
+ *
+ * @param position - The position to check.
+ * @returns Whether the position is horizontal.
+ */
 export function isHorizontal(position: Position): boolean {
 	return position === Position.BOTTOM || position === Position.TOP;
 }
 
+/**
+ * Options controlling when a part (panel, auxiliary bar) opens maximized.
+ */
 export const enum PartOpensMaximizedOptions {
 	ALWAYS,
 	NEVER,
 	REMEMBER_LAST
 }
 
+/**
+ * Horizontal alignment options for the panel when positioned at the top or bottom.
+ */
 export type PanelAlignment = 'left' | 'center' | 'right' | 'justify';
 
+/**
+ * Converts a {@link Position} enum value to its lowercase string representation.
+ *
+ * @param position - The position to convert.
+ * @returns The lowercase string representation, or `'bottom'` as a fallback.
+ */
 export function positionToString(position: Position): string {
 	switch (position) {
 		case Position.LEFT: return 'left';
@@ -107,6 +150,12 @@ const positionsByString: { [key: string]: Position } = {
 	[positionToString(Position.TOP)]: Position.TOP
 };
 
+/**
+ * Converts a lowercase string to a {@link Position} enum value.
+ *
+ * @param str - The string to convert (e.g., `'left'`, `'right'`, `'top'`, `'bottom'`).
+ * @returns The corresponding `Position`, or `undefined` if not recognized.
+ */
 export function positionFromString(str: string): Position {
 	return positionsByString[str];
 }
@@ -126,24 +175,53 @@ const partOpensMaximizedByString: { [key: string]: PartOpensMaximizedOptions } =
 	[partOpensMaximizedSettingToString(PartOpensMaximizedOptions.REMEMBER_LAST)]: PartOpensMaximizedOptions.REMEMBER_LAST
 };
 
+/**
+ * Converts a string to a {@link PartOpensMaximizedOptions} enum value.
+ *
+ * @param str - The string to convert (e.g., `'always'`, `'never'`, `'preserve'`).
+ * @returns The corresponding `PartOpensMaximizedOptions`, or `undefined` if not recognized.
+ */
 export function partOpensMaximizedFromString(str: string): PartOpensMaximizedOptions {
 	return partOpensMaximizedByString[str];
 }
 
+/**
+ * Parts that can exist in multiple windows (main and auxiliary).
+ */
 export type MULTI_WINDOW_PARTS = Parts.EDITOR_PART | Parts.STATUSBAR_PART | Parts.TITLEBAR_PART;
+
+/**
+ * Parts that only exist in the main window.
+ */
 export type SINGLE_WINDOW_PARTS = Exclude<Parts, MULTI_WINDOW_PARTS>;
 
+/**
+ * Type guard that returns `true` if the given part is a multi-window part.
+ *
+ * @param part - The part to check.
+ * @returns Whether the part is a multi-window part.
+ */
 export function isMultiWindowPart(part: Parts): part is MULTI_WINDOW_PARTS {
 	return part === Parts.EDITOR_PART ||
 		part === Parts.STATUSBAR_PART ||
 		part === Parts.TITLEBAR_PART;
 }
 
+/**
+ * Event payload fired when a workbench part's visibility changes.
+ */
 export interface IPartVisibilityChangeEvent {
+	/** The identifier of the part whose visibility changed. */
 	readonly partId: string;
+	/** Whether the part is now visible. */
 	readonly visible: boolean;
 }
 
+/**
+ * The workbench layout service manages the layout of all workbench parts
+ * (title bar, sidebar, panel, editor, status bar, activity bar, etc.),
+ * including visibility, position, maximized states, zen mode, and pane resizing.
+ */
 export interface IWorkbenchLayoutService extends ILayoutService {
 
 	readonly _serviceBrand: undefined;
@@ -353,7 +431,7 @@ export interface IWorkbenchLayoutService extends ILayoutService {
 	 * direction (e.g., two horizontal columns but resizing upward), falls
 	 * back to the workbench grid to match tmux's tree-walking behavior.
 	 *
-	 * The pixel increment is controlled by the `vscodeee.resizeIncrement`
+	 * The pixel increment is controlled by the `vscodeee.workbench.editor.resizeIncrement`
 	 * configuration setting (default: 60, range: 1-500).
 	 *
 	 * @param direction The direction to move the border.
@@ -381,6 +459,22 @@ export interface IWorkbenchLayoutService extends ILayoutService {
 	getVisibleNeighborPart(part: Parts, direction: Direction): Parts | undefined;
 }
 
+/**
+ * Determines whether the custom title bar should be shown based on the
+ * current configuration, platform, and fullscreen state.
+ *
+ * Takes into account:
+ * - Custom title bar configuration setting
+ * - Native title bar and native menu availability
+ * - Fullscreen state on macOS (Electron and Tauri)
+ * - Window Controls Overlay (WCO) visibility on the web
+ * - Menu bar visibility mode
+ *
+ * @param configurationService - The configuration service to read settings from.
+ * @param window - The target window to evaluate.
+ * @param menuBarToggled - Whether the menu bar has been manually toggled.
+ * @returns `true` if the custom title bar should be displayed.
+ */
 export function shouldShowCustomTitleBar(configurationService: IConfigurationService, window: Window, menuBarToggled?: boolean): boolean {
 	if (!hasCustomTitlebar(configurationService)) {
 		return false;

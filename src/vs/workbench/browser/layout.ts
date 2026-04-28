@@ -123,6 +123,10 @@ const COMMAND_CENTER_SETTINGS = [
 	'workbench.experimental.share.enabled',
 ];
 
+/**
+ * Configuration setting keys that affect the title bar appearance.
+ * Used to trigger layout recalculations when any of these settings change.
+ */
 export const TITLE_BAR_SETTINGS = [
 	LayoutSettings.ACTIVITY_BAR_LOCATION,
 	LayoutSettings.COMMAND_CENTER,
@@ -137,6 +141,17 @@ export const TITLE_BAR_SETTINGS = [
 const DEFAULT_EMPTY_WINDOW_DIMENSIONS = new Dimension(DEFAULT_EMPTY_WINDOW_SIZE.width, DEFAULT_EMPTY_WINDOW_SIZE.height);
 const DEFAULT_WORKSPACE_WINDOW_DIMENSIONS = new Dimension(DEFAULT_WORKSPACE_WINDOW_SIZE.width, DEFAULT_WORKSPACE_WINDOW_SIZE.height);
 
+/**
+ * Abstract base class for the workbench layout manager.
+ *
+ * Manages the sizing, visibility, and positioning of all workbench parts
+ * (title bar, activity bar, sidebar, editor, panel, auxiliary bar, status bar)
+ * within a grid-based layout system. Handles initialization, restoration,
+ * zen mode transitions, panel maximization, and pane resizing.
+ *
+ * Implementations must provide `createWorkbenchLayout()` to build the
+ * concrete grid of parts.
+ */
 export abstract class Layout extends Disposable implements IWorkbenchLayoutService {
 
 	declare readonly _serviceBrand: undefined;
@@ -1406,6 +1421,16 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		this.stateModel.setRuntimeValue(LayoutStateKeys.ZEN_MODE_ACTIVE, active);
 	}
 
+	/**
+		 * Toggles the workbench in and out of zen mode. When entering zen mode,
+		 * parts are hidden, the window may go fullscreen, line numbers may be
+		 * hidden, and notifications may be silenced depending on configuration.
+		 * When exiting, the previous state of all parts is restored.
+		 *
+		 * @param skipLayout - If `true`, skips the layout recalculation after toggling.
+		 * @param restoring - If `true`, this is a session restore and transition
+		 *                    metadata (fullscreen, centered layout) is not re-recorded.
+		 */
 	toggleZenMode(skipLayout?: boolean, restoring = false): void {
 		const focusedPartPreTransition = this._getFocusedPart();
 
@@ -1595,6 +1620,12 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		this.workbenchGrid.setViewVisible(this.statusBarPartView, !hidden);
 	}
 
+	/**
+		 * Creates the workbench grid layout from all registered parts.
+		 * Builds the grid descriptor, deserializes the grid widget, and sets up
+		 * event listeners for part visibility changes, state persistence, and
+		 * pane composite open/close events.
+		 */
 	protected createWorkbenchLayout(): void {
 		const titleBar = this.getPart(Parts.TITLEBAR_PART);
 		const bannerPart = this.getPart(Parts.BANNER_PART);
@@ -1720,6 +1751,15 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		return this.stateModel.getRuntimeValue(LayoutStateKeys.MAIN_EDITOR_CENTERED);
 	}
 
+	/**
+		 * Enables or disables the centered editor layout on the main editor part.
+		 * Automatically disables centering when complex editors (diff, multi-editor)
+		 * are active or when there is more than one editor column, unless
+		 * `workbench.editor.centeredLayoutAutoResize` is disabled.
+		 *
+		 * @param active - Whether to enable centered layout.
+		 * @param skipLayout - If `true`, skips the layout recalculation.
+		 */
 	centerMainEditorLayout(active: boolean, skipLayout?: boolean): void {
 		this.stateModel.setRuntimeValue(LayoutStateKeys.MAIN_EDITOR_CENTERED, active);
 
@@ -1771,6 +1811,17 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		this.workbenchGrid.resizeView(this.getPart(part), size);
 	}
 
+	/**
+		 * Resizes the specified workbench part by the given pixel amounts.
+		 * Applies screen-aware scaling for high-DPI displays.
+		 * For the editor part with multiple groups, resizes the active group
+		 * within the editor grid; falls back to resizing the full editor part
+		 * if the active group cannot be resized in the requested direction.
+		 *
+		 * @param part - The workbench part to resize.
+		 * @param sizeChangeWidth - The horizontal size change in logical pixels.
+		 * @param sizeChangeHeight - The vertical size change in logical pixels.
+		 */
 	resizePart(part: Parts, sizeChangeWidth: number, sizeChangeHeight: number): void {
 		const sizeChangePxWidth = Math.sign(sizeChangeWidth) * computeScreenAwareSize(getActiveWindow(), Math.abs(sizeChangeWidth));
 		const sizeChangePxHeight = Math.sign(sizeChangeHeight) * computeScreenAwareSize(getActiveWindow(), Math.abs(sizeChangeHeight));
@@ -1910,13 +1961,13 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 	}
 
 	/**
-	 * Reads the `vscodeee.resizeIncrement` configuration value and
+	 * Reads the `vscodeee.workbench.editor.resizeIncrement` configuration value and
 	 * applies screen-aware scaling for high-DPI displays.
 	 *
 	 * @returns The scaled pixel increment, or 0 if invalid.
 	 */
 	private getResizeIncrement(): number {
-		const configValue = this.configurationService.getValue<number>('vscodeee.resizeIncrement');
+		const configValue = this.configurationService.getValue<number>('vscodeee.workbench.editor.resizeIncrement');
 		const raw = typeof configValue === 'number' && configValue > 0 ? configValue : 60;
 		return computeScreenAwareSize(getActiveWindow(), raw);
 	}
@@ -2193,6 +2244,15 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		this.setAuxiliaryBarMaximized(!this.isAuxiliaryBarMaximized());
 	}
 
+	/**
+		 * Maximizes or restores the auxiliary sidebar. When maximizing, hides the
+		 * sidebar, editor, and panel. When restoring, shows the previously visible
+		 * parts and restores the auxiliary bar to its last non-maximized size.
+		 * Re-entrant calls during a transition are no-ops.
+		 *
+		 * @param maximized - `true` to maximize, `false` to restore.
+		 * @returns `true` if the maximization state changed, `false` otherwise.
+		 */
 	setAuxiliaryBarMaximized(maximized: boolean): boolean {
 		if (
 			this.inMaximizedAuxiliaryBarTransition ||		// prevent re-entrance
@@ -2413,6 +2473,14 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		return this.stateModel.getRuntimeValue(LayoutStateKeys.PANEL_POSITION);
 	}
 
+	/**
+		 * Sets the panel position. If the panel is currently hidden, it is shown.
+		 * Preserves the panel's non-maximized size when moving between horizontal
+		 * and vertical positions. Adjusts sidebar and auxiliary bar positions
+		 * to maintain the correct grid layout.
+		 *
+		 * @param position - The new panel position.
+		 */
 	setPanelPosition(position: Position): void {
 		if (!this.isVisible(Parts.PANEL_PART)) {
 			this.setPanelHidden(false);
@@ -2516,6 +2584,15 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		this._onDidChangeWindowMaximized.fire({ windowId: targetWindowId, maximized });
 	}
 
+	/**
+		 * Returns the next visible workbench part adjacent to the given part
+		 * in the specified direction. Returns `undefined` if no visible neighbor
+		 * exists in that direction.
+		 *
+		 * @param part - The source part to search from.
+		 * @param direction - The direction to search for a neighbor.
+		 * @returns The adjacent visible part, or `undefined`.
+		 */
 	getVisibleNeighborPart(part: Parts, direction: Direction): Parts | undefined {
 		if (!this.workbenchGrid) {
 			return undefined;
