@@ -5,6 +5,7 @@
 
 import { localize } from '../../../../nls.js';
 import { EditorGroupLayout, GroupDirection, GroupLocation, GroupOrientation, GroupsArrangement, GroupsOrder, IAuxiliaryEditorPart, IEditorGroupContextKeyProvider, IEditorDropTargetDelegate, IEditorGroupsService, IEditorSideGroup, IEditorWorkingSet, IFindGroupScope, IMergeGroupOptions, IEditorWorkingSetOptions, IEditorPart, IModalEditorPart, IEditorGroupActivationEvent } from '../../../services/editor/common/editorGroupsService.js';
+import { Direction } from '../../../../base/browser/ui/grid/grid.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { DisposableMap, DisposableStore, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { GroupIdentifier, IEditorPartOptions } from '../../../common/editor.js';
@@ -982,6 +983,19 @@ export class EditorParts extends MultiWindowParts<EditorPart, IEditorPartsMement
 
 	enforcePartOptions(options: DeepPartial<IEditorPartOptions>): IDisposable {
 		return this.mainPart.enforcePartOptions(options);
+	}
+
+	/**
+	 * Resizes the border of an editor group in the main editor part.
+	 * Delegates to {@link EditorPart.resizeGroupBorder}.
+	 *
+	 * @param group - The editor group or its identifier.
+	 * @param direction - The direction to move the border.
+	 * @param delta - The pixel amount to move the border (must be positive).
+	 * @returns `true` if a border was found and resized, `false` otherwise.
+	 */
+	resizeGroupBorder(group: number | IEditorGroupView, direction: Direction, delta: number): boolean {
+		return this.mainPart.resizeGroupBorder(group, direction, delta);
 	}
 
 	//#endregion

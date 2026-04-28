@@ -10,6 +10,7 @@ import { EditorInput } from '../../../common/editor/editorInput.js';
 import { IEditorOptions, IModalEditorNavigation, IModalEditorPartOptions } from '../../../../platform/editor/common/editor.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IDimension } from '../../../../editor/common/core/2d/dimension.js';
+import { Direction } from '../../../../base/common/direction.js';
 import { DisposableStore, IDisposable } from '../../../../base/common/lifecycle.js';
 import { ContextKeyValue, IContextKeyService, RawContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -352,6 +353,21 @@ export interface IEditorGroupsContainer {
 	 * Sets the size of a group.
 	 */
 	setSize(group: IEditorGroup | GroupIdentifier, size: { width: number; height: number }): void;
+
+	/**
+	 * Resizes a group's border in the specified direction.
+	 * Moves the border between the group and its neighbor by delta pixels,
+	 * growing the group in that direction. Returns false if no border
+	 * exists in that direction (group is at the grid edge).
+	 *
+	 * This is the service-level equivalent of tmux's `resize-pane -U/-D/-L/-R`.
+	 *
+	 * @param group - The editor group or its identifier.
+	 * @param direction - The direction to move the border.
+	 * @param delta - The pixel amount to move the border. Must be positive.
+	 * @returns `true` if a border was found and resized, `false` otherwise.
+	 */
+	resizeGroupBorder(group: IEditorGroup | GroupIdentifier, direction: Direction, delta: number): boolean;
 
 	/**
 	 * Arrange all groups in the container according to the provided arrangement.

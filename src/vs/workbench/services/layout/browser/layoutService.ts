@@ -344,6 +344,23 @@ export interface IWorkbenchLayoutService extends ILayoutService {
 	resizePart(part: Parts, sizeChangeWidth: number, sizeChangeHeight: number): void;
 
 	/**
+	 * Resize the focused pane's border in the specified direction.
+	 * Mimics tmux's resize-pane behavior: the border moves in the
+	 * given direction, growing or shrinking the focused pane accordingly.
+	 *
+	 * For the editor part with multiple groups, attempts to resize within
+	 * the editor group grid first. If no matching border exists in that
+	 * direction (e.g., two horizontal columns but resizing upward), falls
+	 * back to the workbench grid to match tmux's tree-walking behavior.
+	 *
+	 * The pixel increment is controlled by the `vscodeee.resizeIncrement`
+	 * configuration setting (default: 60, range: 1-500).
+	 *
+	 * @param direction The direction to move the border.
+	 */
+	resizePaneBorder(direction: Direction): void;
+
+	/**
 	 * Register a part to participate in the layout.
 	 */
 	registerPart(part: Part): IDisposable;
