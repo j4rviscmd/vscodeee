@@ -1444,7 +1444,7 @@ interface IEditorPartConfiguration {
 	 * Controls whether the editor group index is displayed in the tab bar.
 	 * When enabled, a bracketed number (e.g. `[1]`, `[2]`) is shown
 	 * before the tabs when multiple editor groups exist. Only visible when
-	 * the `vscodeee.editorGroupIndexInTab` setting is enabled and there are
+	 * the `vscodeee.workbench.editor.editorGroupIndexInTab` setting is enabled and there are
 	 * at least 2 editor groups in the grid.
 	 */
 	editorGroupIndexInTab?: boolean;

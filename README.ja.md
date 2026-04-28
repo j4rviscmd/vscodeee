@@ -77,14 +77,14 @@ VSCode の現在の機能を維持しつつ、以下を実現します：
 
 - tmuxライクなPane操作キーバインド
   - Paneサイズ調整コマンドを実装
-    - `vscodeee.resizePaneRight`
-    - `vscodeee.resizePaneLeft`
-    - `vscodeee.resizePaneUp`
-    - `vscodeee.resizePaneDown`
+    - `vscodeee.workbench.editor.resizePaneRight`
+    - `vscodeee.workbench.editor.resizePaneLeft`
+    - `vscodeee.workbench.editor.resizePaneUp`
+    - `vscodeee.workbench.editor.resizePaneDown`
 - エディタグループのプレフィックスにインデックスを表示(tmuxのprefix + `n`向け)
-  - `"vscodeee.editorGroupIndexInTab": true`
+  - `"vscodeee.workbench.editor.editorGroupIndexInTab": true`
 - 最小Paneにフォーカスすると自動的に対象Paneが最大化されることを抑制する
-  - `"workbench.editor.autoMaximizeOnFocus": false`
+  - `"vscodeee.workbench.editor.autoMaximizeOnFocus": false`
   - 本家VSCodeの[issue#85309](https://github.com/microsoft/vscode/issues/85309)
 
 ---
