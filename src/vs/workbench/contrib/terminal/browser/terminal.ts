@@ -628,6 +628,10 @@ export interface ITerminalEditorService extends ITerminalInstanceHost {
 	revealActiveEditor(preserveFocus?: boolean): Promise<void>;
 	resolveResource(instance: ITerminalInstance): URI;
 	reviveInput(deserializedInput: IDeserializedTerminalEditorInput): EditorInput;
+	/** Creates a new terminal editor input from a fresh-restore snapshot, launching a brand new shell process
+	 *  instead of reattaching to a persistent process. Used when the original process cannot be reconnected
+	 *  (e.g. non-persistent terminals on cold start). */
+	reviveFreshInput(input: IFreshTerminalEditorInput): EditorInput;
 	getInputFromResource(resource: URI): TerminalEditorInput;
 }
 
@@ -653,6 +657,37 @@ export interface ISerializedTerminalEditorInput extends ITerminalEditorInputObje
 }
 
 export interface IDeserializedTerminalEditorInput extends ITerminalEditorInputObject {
+}
+
+/** Serialized state for a terminal editor that will be restored with a fresh shell process. */
+export interface IFreshTerminalEditorInput {
+	readonly title: string;
+	readonly titleSource: TitleEventSource;
+	readonly cwd: string;
+	readonly icon: TerminalIcon | undefined;
+	readonly color: string | undefined;
+	readonly hasChildProcesses?: boolean;
+	readonly isFeatureTerminal?: boolean;
+	readonly hideFromUser?: boolean;
+	readonly reconnectionProperties?: IReconnectionProperties;
+	readonly shellIntegrationNonce: string;
+}
+
+/** Cached serializable snapshot captured before terminal instance disposal on shutdown. */
+export interface ITerminalEditorSnapshot {
+	readonly persistentProcessId: number | undefined;
+	readonly processId: number | undefined;
+	readonly shouldPersist: boolean;
+	readonly title: string;
+	readonly titleSource: TitleEventSource;
+	readonly cwd: string;
+	readonly icon: TerminalIcon | undefined;
+	readonly color: string | undefined;
+	readonly hasChildProcesses: boolean;
+	readonly isFeatureTerminal: boolean | undefined;
+	readonly hideFromUser: boolean | undefined;
+	readonly reconnectionProperties: IReconnectionProperties | undefined;
+	readonly shellIntegrationNonce: string;
 }
 
 export type ITerminalLocationOptions = TerminalLocation | TerminalEditorLocation | { parentTerminal: MaybePromise<ITerminalInstance> } | { splitActiveTerminal: boolean };
