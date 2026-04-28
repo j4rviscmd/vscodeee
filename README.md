@@ -18,15 +18,27 @@ English | [日本語](README.ja.md)
 
 </div>
 
+## Motivation
+
+While VSCode is an excellent editor, its Electron-based architecture leads to high memory usage. As a Neovim user (`neovim-vscode`), I was also frustrated that tmux-like operability couldn't be replicated.<br>
+Although it's open source, the sheer scale of the project had kept me from attempting anything — but with today's LLMs being smarter than humans at vibe-coding, I figured these pain points could finally be solved, and so VSCodeee was born.<br>
+This is developed as a side project, so feature implementations and bug fixes may be slow — your understanding is appreciated.<br>
+Bug reports and feature requests are always welcome, so feel free to submit issues.
+
 ## Purpose
 
 Maintain the current functionality of VSCode while achieving the following:
 
 - **Reduce memory usage**: Electron → Tauri 2.0 (native WebView instead of bundled Chromium)
 - **Reduce unnecessary metrics**: Stop sending telemetry to Microsoft
-- **Smaller binary size**: No bundled Chromium (system WebView is used instead). Node.js is still bundled for extension host support.
+- **Smaller binary size**: No bundled Chromium (system WebView is used instead). Node.js is still bundled for extension host support
 - **Transparent background** (experimental): Native window transparency support (macOS/Linux) — see the desktop through your editor
+  - Future releases will explore more advanced appearance options such as full window transparency and blur effects
   - <img src="./docs/screenshots/settings_transparent.png" alt="Transparent Editor Settings" width="300">
+- [Settings and keybindings for Vimmers](#vscodeee-original-features)
+- Regularly merge upstream VSCode to maintain the latest features and security patches
+
+---
 
 ## Installation
 
@@ -58,6 +70,21 @@ Maintain the current functionality of VSCode while achieving the following:
 </picture>
 
 > **Note**: Shared Process (upstream VS Code's hidden renderer for gallery, sync, telemetry) is **eliminated** in VSCodeee. Its services are implemented directly in the WebView or Rust backend — see [#88](https://github.com/j4rviscmd/vscodeee/issues/88).
+
+---
+
+## VSCodeee Original Features
+
+- tmux-like pane control keybindings
+  - Pane resize commands
+    - `vscodeee.resizePaneRight`
+    - `vscodeee.resizePaneLeft`
+    - `vscodeee.resizePaneUp`
+    - `vscodeee.resizePaneDown`
+- Display index prefix on editor groups (for tmux prefix + `n`)
+  - `"vscodeee.editorGroupIndexInTab": true`
+- Suppress auto-maximize when focusing the smallest pane
+  - `"workbench.editor.autoMaximizeOnFocus": false`
 
 ---
 
