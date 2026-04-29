@@ -684,32 +684,13 @@ function registerFocusEditorGroupAtIndexCommands(): void {
 			primary: KeyMod.CtrlCmd | toKeyCode(groupIndex),
 			handler: accessor => {
 				const editorGroupsService = accessor.get(IEditorGroupsService);
-				const configurationService = accessor.get(IConfigurationService);
 
-				// To keep backwards compatibility (pre-grid), allow to focus a group
-				// that does not exist as long as it is the next group after the last
-				// opened group. Otherwise we return.
-				if (groupIndex > editorGroupsService.count) {
-					return;
-				}
-
-				// Group exists: just focus
+				// Only focus groups that already exist. Do not create new
+				// empty editor groups for non-existent indices.
 				const groups = editorGroupsService.getGroups(GroupsOrder.GRID_APPEARANCE);
 				if (groups[groupIndex]) {
 					return groups[groupIndex].focus();
 				}
-
-				// Group does not exist: create new by splitting the active one of the last group
-				const direction = preferredSideBySideGroupDirection(configurationService);
-				const lastGroup = editorGroupsService.findGroup({ location: GroupLocation.LAST });
-				if (!lastGroup) {
-					return;
-				}
-
-				const newGroup = editorGroupsService.addGroup(lastGroup, direction);
-
-				// Focus
-				newGroup.focus();
 			}
 		});
 	}
