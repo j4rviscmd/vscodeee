@@ -116,6 +116,9 @@ else {
 	console.error('Unable to resolve platform.');
 }
 
+/**
+ * Enumeration of supported platform types.
+ */
 export const enum Platform {
 	Web,
 	Mac,
@@ -124,6 +127,12 @@ export const enum Platform {
 }
 export type PlatformName = 'Web' | 'Windows' | 'Mac' | 'Linux';
 
+/**
+ * Converts a {@link Platform} enum value to its human-readable name.
+ *
+ * @param platform - The platform enum value.
+ * @returns The platform name string ('Web', 'Mac', 'Linux', or 'Windows').
+ */
 export function PlatformToString(platform: Platform): PlatformName {
 	switch (platform) {
 		case Platform.Web: return 'Web';
@@ -149,7 +158,20 @@ export const isLinuxSnap = _isLinuxSnap;
 export const isNative = _isNative;
 export const isElectron = _isElectron;
 export const isWeb = _isWeb;
+/**
+ * Whether the application is running inside Tauri's WebView.
+ *
+ * Detected by checking for the presence of `__TAURI_INTERNALS__` on
+ * the global object, which Tauri injects into the WebView at startup.
+ */
 export const isTauri = _isTauri;
+/**
+ * Whether the platform has native OS capabilities (filesystem, window management, etc.)
+ * even though it runs in a WebView. True for Electron (`isNative`) and Tauri (`isTauri`).
+ * Use this when the distinction is "desktop app with OS access" vs "browser tab",
+ * not "Node.js process available" (which is what `isNative` means).
+ */
+export const isNativeDesktop = isNative || isTauri;
 export const isWebWorker = (_isWeb && typeof $globalThis.importScripts === 'function');
 export const webWorkerOrigin = isWebWorker ? $globalThis.origin : undefined;
 export const isIOS = _isIOS;
@@ -169,6 +191,9 @@ export const userAgent = _userAgent;
  */
 export const language = _language;
 
+/**
+ * Utility namespace for inspecting the current UI language setting.
+ */
 export namespace Language {
 
 	export function value(): string {
@@ -252,6 +277,10 @@ export const setTimeout0 = (() => {
 	return (callback: () => void) => setTimeout(callback);
 })();
 
+/**
+ * Enumeration of operating system types used for OS-specific behavior.
+ * iOS is grouped with Macintosh (both Darwin-based).
+ */
 export const enum OperatingSystem {
 	Windows = 1,
 	Macintosh = 2,
@@ -261,6 +290,13 @@ export const OS = (_isMacintosh || _isIOS ? OperatingSystem.Macintosh : (_isWind
 
 let _isLittleEndian = true;
 let _isLittleEndianComputed = false;
+/**
+ * Determines whether the current platform uses little-endian byte order.
+ *
+ * The result is computed once on first call and cached for subsequent calls.
+ *
+ * @returns `true` if the platform is little-endian, `false` otherwise.
+ */
 export function isLittleEndian(): boolean {
 	if (!_isLittleEndianComputed) {
 		_isLittleEndianComputed = true;
@@ -279,6 +315,12 @@ export const isSafari = !!(!isChrome && (userAgent && userAgent.indexOf('Safari'
 export const isEdge = !!(userAgent && userAgent.indexOf('Edg/') >= 0);
 export const isAndroid = !!(userAgent && userAgent.indexOf('Android') >= 0);
 
+/**
+ * Checks whether the given macOS version string represents Tahoe (macOS 26) or newer.
+ *
+ * @param osVersion - The macOS version string (e.g., `"26.0"`, `"25.1"`).
+ * @returns `true` if the parsed version is 25 or greater.
+ */
 export function isTahoeOrNewer(osVersion: string): boolean {
 	return parseFloat(osVersion) >= 25;
 }

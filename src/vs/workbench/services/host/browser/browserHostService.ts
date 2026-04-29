@@ -9,7 +9,7 @@ import { InstantiationType, registerSingleton } from '../../../../platform/insta
 import { ILayoutService } from '../../../../platform/layout/browser/layoutService.js';
 import { IEditorService } from '../../editor/common/editorService.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
-import { IWindowSettings, IWindowOpenable, IOpenWindowOptions, isFolderToOpen, isWorkspaceToOpen, isFileToOpen, IOpenEmptyWindowOptions, IPathData, IFileToOpen, IOpenedMainWindow, IOpenedAuxiliaryWindow } from '../../../../platform/window/common/window.js';
+import { IWindowSettings, IWindowOpenable, IOpenWindowOptions, isFolderToOpen, isWorkspaceToOpen, isFileToOpen, IOpenEmptyWindowOptions, IPathData, IFileToOpen, IOpenedMainWindow, IOpenedAuxiliaryWindow, IPoint, IRectangle } from '../../../../platform/window/common/window.js';
 import { isResourceEditorInput, pathsToEditors } from '../../../common/editor.js';
 import { whenEditorClosed } from '../../../browser/editor.js';
 import { IWorkspace, IWorkspaceProvider } from '../../../browser/web.api.js';
@@ -64,6 +64,16 @@ enum HostShutdownReason {
 	Api = 3
 }
 
+/**
+ * Default implementation of {@link IHostService} for browser-based environments.
+ *
+ * Provides host-level operations (window management, focus tracking, lifecycle,
+ * screenshots) using browser/DOM APIs. In Tauri, this class is extended by
+ * {@link TauriHostService} which overrides methods that require native OS access.
+ *
+ * Registered as a delayed singleton. When running in Tauri, the Tauri-specific
+ * subclass re-registers itself and takes precedence (last-write-wins semantics).
+ */
 export class BrowserHostService extends Disposable implements IHostService {
 
 	declare readonly _serviceBrand: undefined;
@@ -101,6 +111,12 @@ export class BrowserHostService extends Disposable implements IHostService {
 	}
 
 
+	/**
+	 * Registers lifecycle and focus-related listeners:
+	 * - Vetos shutdown based on `window.confirmBeforeClose` setting.
+	 * - Tracks modifier key usage to distinguish keyboard-triggered closes from API calls.
+	 * - Clears toast notifications when the window gains focus.
+	 */
 	private registerListeners(): void {
 
 		// Veto shutdown depending on `window.confirmBeforeClose` setting
@@ -117,6 +133,14 @@ export class BrowserHostService extends Disposable implements IHostService {
 		}));
 	}
 
+	/**
+	 * Evaluates whether to veto a shutdown based on the current shutdown reason
+	 * and the `window.confirmBeforeClose` configuration setting.
+	 *
+	 * - `always`: always show a confirmation dialog.
+	 * - `keyboardOnly`: only show when the close was triggered via keyboard.
+	 * - API-triggered shutsdowns are never vetoed.
+	 */
 	private onBeforeShutdown(e: BeforeShutdownEvent): void {
 
 		switch (this.shutdownReason) {
@@ -415,6 +439,10 @@ export class BrowserHostService extends Disposable implements IHostService {
 		}
 	}
 
+	/**
+	 * Executes a callback with a service accessor, deferring service resolution
+	 * to avoid cyclic dependency issues (see https://github.com/microsoft/vscode/issues/108522).
+	 */
 	private withServices(fn: (accessor: ServicesAccessor) => unknown): void {
 		// Host service is used in a lot of contexts and some services
 		// need to be resolved dynamically to avoid cyclic dependencies
@@ -422,6 +450,17 @@ export class BrowserHostService extends Disposable implements IHostService {
 		this.instantiationService.invokeFunction(accessor => fn(accessor));
 	}
 
+	/**
+	 * Builds a payload array to carry state to newly opened windows.
+	 *
+	 * Currently preserves only extension development properties and forced
+	 * profile name, since these are needed to maintain the extension debug
+	 * session across window reloads.
+	 *
+	 * @param isEmptyWindow - Whether the new window will be empty.
+	 * @param options - The window open options that may contain a forced profile.
+	 * @returns A payload array, or `undefined` if no state needs to be preserved.
+	 */
 	private preservePayload(isEmptyWindow: boolean, options?: IOpenWindowOptions): Array<unknown> | undefined {
 
 		// Selectively copy payload: for now only extension debugging properties are considered
@@ -460,6 +499,14 @@ export class BrowserHostService extends Disposable implements IHostService {
 		return this.labelService.getUriLabel(openable.fileUri, { appendWorkspaceSuffix: true });
 	}
 
+	/**
+	 * Determines whether a window open action should reuse the current window
+	 * or open a new one, based on configuration settings and options.
+	 *
+	 * @param options - The window open options (force flags, wait marker, etc.).
+	 * @param isFile - Whether the openable is a file (vs. folder/workspace).
+	 * @returns `true` if the current window should be reused.
+	 */
 	private shouldReuse(options: IOpenWindowOptions = Object.create(null), isFile: boolean): boolean {
 		if (options.waitMarkerFileURI) {
 			return true; // always handle --wait in same window
@@ -526,6 +573,14 @@ export class BrowserHostService extends Disposable implements IHostService {
 		}
 	}
 
+	/**
+	 * Toggles the fullscreen state of the given window using the DOM Fullscreen API.
+	 *
+	 * Handles both the standard `requestFullscreen`/`exitFullscreen` and the
+	 * WebKit-prefixed variants used by older Safari and Edge versions.
+	 *
+	 * @param targetWindow - The window whose layout container to fullscreen.
+	 */
 	async toggleFullScreen(targetWindow: Window): Promise<void> {
 		const target = this.layoutService.getContainer(targetWindow);
 
@@ -573,6 +628,10 @@ export class BrowserHostService extends Disposable implements IHostService {
 		}
 	}
 
+	/**
+	 * Brings the window to the front. No-op in browser environments since
+	 * there is no API to programmatically raise a browser tab.
+	 */
 	async moveTop(targetWindow: Window): Promise<void> {
 		// There seems to be no API to bring a window to front in browsers
 	}
@@ -581,7 +640,11 @@ export class BrowserHostService extends Disposable implements IHostService {
 		// not supported in browser
 	}
 
-	async getCursorScreenPoint(): Promise<undefined> {
+	/**
+	 * Returns the cursor position in screen coordinates. Not available in
+	 * browser environments -- always returns `undefined`.
+	 */
+	async getCursorScreenPoint(): Promise<{ readonly point: IPoint; readonly display: IRectangle } | undefined> {
 		return undefined;
 	}
 
@@ -661,6 +724,15 @@ export class BrowserHostService extends Disposable implements IHostService {
 
 	//#region Screenshots
 
+	/**
+	 * Captures a screenshot using the browser's Display Media API.
+	 *
+	 * Prompts the user to select a screen or window, captures a single
+	 * video frame, and converts it to a JPEG `VSBuffer`.
+	 *
+	 * @returns The screenshot as a `VSBuffer`, or `undefined` if the user
+	 *          cancels the screen picker or an error occurs.
+	 */
 	async getScreenshot(): Promise<VSBuffer | undefined> {
 		// Gets a screenshot from the browser. This gets the screenshot via the browser's display
 		// media API which will typically offer a picker of all available screens and windows for
