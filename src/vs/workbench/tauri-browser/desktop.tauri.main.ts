@@ -71,6 +71,7 @@ import { isFolderToOpen, isWorkspaceToOpen } from '../../platform/window/common/
 import { invoke, listen } from '../../platform/tauri/common/tauriApi.js';
 import { ITauriWindowService, TauriWindowService } from '../../platform/window/tauri-browser/windowService.js';
 import { TauriURLCallbackProvider } from './urlCallbackProvider.js';
+import { initTauriDnD } from '../../platform/dnd/tauri-browser/tauriDnd.js';
 
 /**
  * Tauri equivalent of Electron's `DesktopMain`.
@@ -116,6 +117,10 @@ export class TauriDesktopMain extends Disposable {
    * Services and DOM readiness are initialized in parallel for faster startup.
    */
   async open(): Promise<void> {
+
+    // Initialize Tauri D&D bridge before services start
+    // to capture native file paths from OS drop events
+    await initTauriDnD();
 
     // Init services and wait for DOM to be ready in parallel
     const [services] = await Promise.all([this.initServices(), domContentLoaded(mainWindow)]);
