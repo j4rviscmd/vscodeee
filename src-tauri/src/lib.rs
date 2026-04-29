@@ -259,6 +259,7 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
             commands::native_host::read_clipboard_find_text,
             commands::native_host::write_clipboard_find_text,
             commands::native_host::read_clipboard_image,
+            commands::native_host::has_clipboard_image,
             commands::native_host::trigger_paste,
             // ── OS commands ──
             commands::native_host::get_os_properties,

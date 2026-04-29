@@ -6620,6 +6620,7 @@ dependencies = [
  "futures-util",
  "globset",
  "hostname",
+ "image",
  "keyring",
  "libc",
  "log",
