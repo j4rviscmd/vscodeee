@@ -37,15 +37,42 @@ export interface IBrowserWorkbenchEnvironmentService extends IWorkbenchEnvironme
 	 * Gets whether a resolver extension is expected for the environment.
 	 */
 	readonly expectsResolverExtension: boolean;
+
+	/**
+	 * Whether the application was compiled in debug mode.
+	 * Always `false` in the base browser implementation;
+	 * overridden to `true` by `TauriWorkbenchEnvironmentService`
+	 * when `cfg!(debug_assertions)` is set in the Rust backend.
+	 */
+	readonly isDevBuild: boolean;
 }
 
+/**
+ * Base browser implementation of the workbench environment service.
+ *
+ * Provides environment information for the workbench when running in a
+ * browser context. Filesystem URIs default to virtual in-memory paths
+ * (`vscode-userdata://`). Subclasses (e.g., `TauriWorkbenchEnvironmentService`)
+ * override these to point at real local filesystem paths.
+ *
+ * Reads initial configuration from `IWorkbenchConstructionOptions` and an
+ * optional payload map provided by the workspace provider (used to pass
+ * CLI arguments and debug flags into the web workbench).
+ */
 export class BrowserWorkbenchEnvironmentService implements IBrowserWorkbenchEnvironmentService {
 
 	declare readonly _serviceBrand: undefined;
 
+	/** The remote authority string, or `undefined` for local sessions. */
 	@memoize
 	get remoteAuthority(): string | undefined { return this.options.remoteAuthority; }
 
+	/**
+	 * Whether a resolver extension is expected to handle the remote connection.
+	 *
+	 * Returns `true` when the remote authority contains a `+` separator
+	 * (e.g., `ssh-remote+host`) and no custom WebSocket factory is provided.
+	 */
 	@memoize
 	get expectsResolverExtension(): boolean {
 		return !!this.options.remoteAuthority?.includes('+') && !this.options.webSocketFactory;
@@ -53,6 +80,8 @@ export class BrowserWorkbenchEnvironmentService implements IBrowserWorkbenchEnvi
 
 	@memoize
 	get isBuilt(): boolean { return !!this.productService.commit; }
+
+	get isDevBuild(): boolean { return false; }
 
 	@memoize
 	get logLevel(): string | undefined {
@@ -283,6 +312,17 @@ export class BrowserWorkbenchEnvironmentService implements IBrowserWorkbenchEnvi
 		}
 	}
 
+	/**
+	 * Resolve extension host debug settings from the workspace payload and
+	 * development options.
+	 *
+	 * Parses payload keys such as `extensionDevelopmentPath`,
+	 * `inspect-brk-extensions`, and `enableProposedApi` into a structured
+	 * environment object. Falls back to `developmentOptions` from the
+	 * workbench construction options when no payload entries exist.
+	 *
+	 * @returns The resolved extension host debug environment.
+	 */
 	private resolveExtensionHostDebugEnvironment(): IExtensionHostDebugEnvironment {
 		const extensionHostDebugEnvironment: IExtensionHostDebugEnvironment = {
 			params: {
@@ -417,6 +457,7 @@ export class BrowserWorkbenchEnvironmentService implements IBrowserWorkbenchEnvi
 	}
 }
 
+/** Internal structure holding resolved extension host debug settings. */
 interface IExtensionHostDebugEnvironment {
 	params: IExtensionHostDebugParams;
 	debugRenderer: boolean;

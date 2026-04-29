@@ -63,6 +63,10 @@ pub struct WindowConfiguration {
     /// Used as a fallback when the URL query string doesn't contain `?workspace=`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub restored_workspace_uri: Option<String>,
+    /// Whether the binary was compiled in debug mode (`cargo build` without `--release`).
+    /// Determined by `cfg!(debug_assertions)` — a compile-time constant.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_dev_build: Option<bool>,
 }
 
 /// Retrieve native host environment information.
@@ -166,6 +170,7 @@ pub async fn get_window_configuration(
     // and None on subsequent calls (e.g. after "Close Folder" page reload).
     let restored_folder_uri = window_manager.consume_restored_uri(&label).await;
     let restored_workspace_uri: Option<String> = None; // workspace files handled separately
+    let is_dev_build = cfg!(debug_assertions).then_some(true);
 
     Ok(WindowConfiguration {
         window_id,
@@ -175,6 +180,7 @@ pub async fn get_window_configuration(
         app_data_dir,
         restored_folder_uri,
         restored_workspace_uri,
+        is_dev_build,
     })
 }
 
