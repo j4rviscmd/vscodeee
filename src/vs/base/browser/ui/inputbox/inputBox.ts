@@ -808,6 +808,7 @@ export interface IHistoryInputOptions extends IInputOptions {
  *
  * Tracks previously entered values and allows navigating through them with
  * up/down arrow keys. A history hint suffix (e.g. "or ⇅ for history")
+ * // allow-any-unicode-next-line
  * is appended to the placeholder when history entries exist.
  *
  * Implements {@link IHistoryNavigationWidget} for integration with history-aware containers.
