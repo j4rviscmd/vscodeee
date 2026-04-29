@@ -62,22 +62,44 @@ import { ILocalizedString } from '../../../../platform/action/common/action.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { getPathForFile } from '../../../../platform/dnd/browser/dnd.js';
 
+/** Command ID for creating a new file in the explorer. */
 export const NEW_FILE_COMMAND_ID = 'explorer.newFile';
+/** Localized label for the new file command. */
 export const NEW_FILE_LABEL = nls.localize2('newFile', "New File...");
+/** Command ID for creating a new folder in the explorer. */
 export const NEW_FOLDER_COMMAND_ID = 'explorer.newFolder';
+/** Localized label for the new folder command. */
 export const NEW_FOLDER_LABEL = nls.localize2('newFolder', "New Folder...");
+/** Localized label for the rename action. */
 export const TRIGGER_RENAME_LABEL = nls.localize('rename', "Rename...");
+/** Localized label for the move-to-trash action. */
 export const MOVE_FILE_TO_TRASH_LABEL = nls.localize('delete', "Delete");
+/** Localized label for the copy file action. */
 export const COPY_FILE_LABEL = nls.localize('copyFile', "Copy");
+/** Localized label for the paste file action. */
 export const PASTE_FILE_LABEL = nls.localize('pasteFile', "Paste");
+/** Context key that is `true` when a file has been copied to the clipboard. */
 export const FileCopiedContext = new RawContextKey<boolean>('fileCopied', false);
+/** Command ID for downloading a file from the explorer. */
 export const DOWNLOAD_COMMAND_ID = 'explorer.download';
+/** Localized label for the download command. */
 export const DOWNLOAD_LABEL = nls.localize('download', "Download...");
+/** Command ID for uploading a file to the explorer. */
 export const UPLOAD_COMMAND_ID = 'explorer.upload';
+/** Localized label for the upload command. */
 export const UPLOAD_LABEL = nls.localize('upload', "Upload...");
 const CONFIRM_DELETE_SETTING_KEY = 'explorer.confirmDelete';
 const MAX_UNDO_FILE_SIZE = 5000000; // 5mb
 
+/**
+ * Refreshes the explorer view if the given value contains path separators.
+ *
+ * This is a workaround for cases where creating a file/folder with a separator
+ * in the name results in multiple nested resources being created (issue #68204).
+ *
+ * @param value - The input value to check for path separators.
+ * @param explorerService - The explorer service to refresh.
+ */
 async function refreshIfSeparator(value: string, explorerService: IExplorerService): Promise<void> {
 	if (value && ((value.indexOf('/') >= 0) || (value.indexOf('\\') >= 0))) {
 		// New input contains separator, multiple resources will get created workaround for #68204
@@ -85,6 +107,23 @@ async function refreshIfSeparator(value: string, explorerService: IExplorerServi
 	}
 }
 
+/**
+ * Deletes the given explorer elements, handling dirty working copies, readonly files,
+ * and user confirmation dialogs.
+ *
+ * When `useTrash` is `true`, files are moved to the system trash/recycle bin
+ * (if supported). Otherwise, files are permanently deleted.
+ *
+ * @param explorerService - The explorer service.
+ * @param workingCopyFileService - Service for checking dirty working copies.
+ * @param dialogService - Service for showing confirmation dialogs.
+ * @param configurationService - Service for reading configuration settings.
+ * @param filesConfigurationService - Service for checking readonly status.
+ * @param elements - The explorer items to delete.
+ * @param useTrash - Whether to move to trash instead of permanently deleting.
+ * @param skipConfirm - If `true`, skip the confirmation dialog.
+ * @param ignoreIfNotExists - If `true`, silently ignore files that don't exist.
+ */
 async function deleteFiles(explorerService: IExplorerService, workingCopyFileService: IWorkingCopyFileService, dialogService: IDialogService, configurationService: IConfigurationService, filesConfigurationService: IFilesConfigurationService, elements: ExplorerItem[], useTrash: boolean, skipConfirm = false, ignoreIfNotExists = false): Promise<void> {
 	let primaryButton: string;
 	if (useTrash) {
@@ -319,6 +358,18 @@ function containsBothDirectoryAndFile(distinctElements: ExplorerItem[]): boolean
 }
 
 
+/**
+ * Finds a valid target URI for pasting a file into a folder, handling name conflicts
+ * by incrementing the file name based on the `incrementalNaming` strategy.
+ *
+ * @param explorerService - The explorer service for checking existing items.
+ * @param fileService - The file service for checking file existence.
+ * @param dialogService - The dialog service for overwrite confirmation prompts.
+ * @param targetFolder - The destination folder explorer item.
+ * @param fileToPaste - The file to paste, with resource, directory flag, and overwrite permission.
+ * @param incrementalNaming - The naming strategy: `'simple'`, `'smart'`, or `'disabled'`.
+ * @returns A valid target URI, or `undefined` if the user cancelled.
+ */
 export async function findValidPasteFileTarget(
 	explorerService: IExplorerService,
 	fileService: IFileService,
@@ -353,6 +404,20 @@ export async function findValidPasteFileTarget(
 	return candidate;
 }
 
+/**
+ * Increments a file or folder name to avoid naming conflicts during copy/paste.
+ *
+ * Supports two strategies:
+ * - `'simple'`: Appends " copy" (or " copy N") to the base name.
+ * - `'smart'`: Inserts or increments a numeric suffix at various positions
+ *   (before extension, after separator, as prefix, etc.) depending on the
+ *   existing name pattern.
+ *
+ * @param name - The original file or folder name.
+ * @param isFolder - Whether the name refers to a folder (no extension handling).
+ * @param incrementalNaming - The naming strategy to use.
+ * @returns The incremented name.
+ */
 export function incrementFileName(name: string, isFolder: boolean, incrementalNaming: 'simple' | 'smart'): string {
 	if (incrementalNaming === 'simple') {
 		let namePrefix = name;
@@ -494,6 +559,10 @@ async function askForOverwrite(fileService: IFileService, dialogService: IDialog
 }
 
 // Global Compare with
+/**
+ * Action that opens a quick picker to select a file to diff against the active editor.
+ * Registered as a command palette action under the File category.
+ */
 export class GlobalCompareResourcesAction extends Action2 {
 
 	static readonly ID = 'workbench.files.action.compareFileWith';
@@ -535,6 +604,10 @@ export class GlobalCompareResourcesAction extends Action2 {
 	}
 }
 
+/**
+ * Action that toggles the auto-save feature on or off.
+ * Registered as a command palette action under the File category.
+ */
 export class ToggleAutoSaveAction extends Action2 {
 	static readonly ID = 'workbench.action.toggleAutoSave';
 
@@ -597,6 +670,10 @@ abstract class BaseSaveAllAction extends Action {
 	}
 }
 
+/**
+ * Action that saves all dirty editors in the current editor group.
+ * Extends {@link BaseSaveAllAction} with group-scoped save behavior.
+ */
 export class SaveAllInGroupAction extends BaseSaveAllAction {
 
 	static readonly ID = 'workbench.files.action.saveAllInGroup';
@@ -611,6 +688,9 @@ export class SaveAllInGroupAction extends BaseSaveAllAction {
 	}
 }
 
+/**
+ * Action that closes the entire editor group.
+ */
 export class CloseGroupAction extends Action {
 
 	static readonly ID = 'workbench.files.action.closeGroup';
@@ -625,6 +705,10 @@ export class CloseGroupAction extends Action {
 	}
 }
 
+/**
+ * Action that moves focus to the Files Explorer view in the sidebar.
+ * Registered as a command palette action under the File category.
+ */
 export class FocusFilesExplorer extends Action2 {
 
 	static readonly ID = 'workbench.files.action.focusFilesExplorer';
@@ -905,6 +989,7 @@ async function openExplorerAndCreate(accessor: ServicesAccessor, isFolder: boole
 	const remoteAgentService = accessor.get(IRemoteAgentService);
 	const commandService = accessor.get(ICommandService);
 	const pathService = accessor.get(IPathService);
+	const quickInputService = accessor.get(IQuickInputService);
 
 	const wasHidden = !viewsService.isViewVisible(VIEW_ID);
 	const view = await viewsService.openView(VIEW_ID, true);
@@ -935,44 +1020,45 @@ async function openExplorerAndCreate(accessor: ServicesAccessor, isFolder: boole
 		throw new Error('Parent folder is readonly.');
 	}
 
-	const newStat = new NewExplorerItem(fileService, configService, filesConfigService, folder, isFolder);
-	folder.addChild(newStat);
-
-	const onSuccess = async (value: string): Promise<void> => {
-		try {
-			const resourceToCreate = resources.joinPath(folder.resource, value);
-			if (value.endsWith('/')) {
-				isFolder = true;
-			}
-			await explorerService.applyBulkEdit([new ResourceFileEdit(undefined, resourceToCreate, { folder: isFolder })], {
-				undoLabel: nls.localize('createBulkEdit', "Create {0}", value),
-				progressLabel: nls.localize('creatingBulkEdit', "Creating {0}", value),
-				confirmBeforeUndo: true
-			});
-			await refreshIfSeparator(value, explorerService);
-
-			if (isFolder) {
-				await explorerService.select(resourceToCreate, true);
-			} else {
-				await editorService.openEditor({ resource: resourceToCreate, options: { pinned: true } });
-			}
-		} catch (error) {
-			onErrorWithRetry(notificationService, error, () => onSuccess(value));
-		}
-	};
-
+	// Use a phantom stat for validation only (never added to the tree)
+	const phantomStat = new NewExplorerItem(fileService, configService, filesConfigService, folder, isFolder);
 	const os = (await remoteAgentService.getEnvironment())?.os ?? OS;
 
-	await explorerService.setEditable(newStat, {
-		validationMessage: value => validateFileName(pathService, newStat, value, os),
-		onFinish: async (value, success) => {
-			folder.removeChild(newStat);
-			await explorerService.setEditable(newStat, null);
-			if (success) {
-				onSuccess(value);
-			}
+	const result = await quickInputService.input({
+		placeHolder: isFolder
+			? nls.localize('newFolderNamePlaceholder', "New Folder Name")
+			: nls.localize('newFileNamePlaceholder', "New File Name"),
+		validateInput: async (value) => {
+			return validateFileName(pathService, phantomStat, value, os);
 		}
 	});
+
+	if (!result) {
+		return; // User cancelled
+	}
+
+	// Create the file/folder
+	try {
+		const resourceToCreate = resources.joinPath(folder.resource, result);
+		let targetIsFolder = isFolder;
+		if (result.endsWith('/')) {
+			targetIsFolder = true;
+		}
+		await explorerService.applyBulkEdit([new ResourceFileEdit(undefined, resourceToCreate, { folder: targetIsFolder })], {
+			undoLabel: nls.localize('createBulkEdit', "Create {0}", result),
+			progressLabel: nls.localize('creatingBulkEdit', "Creating {0}", result),
+			confirmBeforeUndo: true
+		});
+		await refreshIfSeparator(result, explorerService);
+
+		if (targetIsFolder) {
+			await explorerService.select(resourceToCreate, true);
+		} else {
+			await editorService.openEditor({ resource: resourceToCreate, options: { pinned: true } });
+		}
+	} catch (error) {
+		onErrorWithRetry(notificationService, error, () => openExplorerAndCreate(accessor, isFolder));
+	}
 }
 
 CommandsRegistry.registerCommand({
@@ -995,6 +1081,7 @@ export const renameHandler = async (accessor: ServicesAccessor) => {
 	const remoteAgentService = accessor.get(IRemoteAgentService);
 	const pathService = accessor.get(IPathService);
 	const configurationService = accessor.get(IConfigurationService);
+	const quickInputService = accessor.get(IQuickInputService);
 
 	const stats = explorerService.getContext(false);
 	const stat = stats.length > 0 ? stats[0] : undefined;
@@ -1004,28 +1091,41 @@ export const renameHandler = async (accessor: ServicesAccessor) => {
 
 	const os = (await remoteAgentService.getEnvironment())?.os ?? OS;
 
-	await explorerService.setEditable(stat, {
-		validationMessage: value => validateFileName(pathService, stat, value, os),
-		onFinish: async (value, success) => {
-			if (success) {
-				const parentResource = stat.parent!.resource;
-				const targetResource = resources.joinPath(parentResource, value);
-				if (stat.resource.toString() !== targetResource.toString()) {
-					try {
-						await explorerService.applyBulkEdit([new ResourceFileEdit(stat.resource, targetResource)], {
-							confirmBeforeUndo: configurationService.getValue<IFilesConfiguration>().explorer.confirmUndo === UndoConfirmLevel.Verbose,
-							undoLabel: nls.localize('renameBulkEdit', "Rename {0} to {1}", stat.name, value),
-							progressLabel: nls.localize('renamingBulkEdit', "Renaming {0} to {1}", stat.name, value),
-						});
-						await refreshIfSeparator(value, explorerService);
-					} catch (e) {
-						notificationService.error(e);
-					}
-				}
-			}
-			await explorerService.setEditable(stat, null);
+	// Pre-fill with current filename, select up to extension
+	const currentName = stat.name || '';
+	const lastDot = currentName.lastIndexOf('.');
+	const valueSelection: [number, number] = lastDot > 0 && !stat.isDirectory
+		? [0, lastDot]
+		: [0, currentName.length];
+
+	const result = await quickInputService.input({
+		placeHolder: nls.localize('renamePlaceholder', "Rename to"),
+		value: currentName,
+		valueSelection,
+		validateInput: async (value) => {
+			return validateFileName(pathService, stat, value, os);
 		}
 	});
+
+	if (!result) {
+		return; // User cancelled
+	}
+
+	// Apply the rename
+	const parentResource = stat.parent!.resource;
+	const targetResource = resources.joinPath(parentResource, result);
+	if (stat.resource.toString() !== targetResource.toString()) {
+		try {
+			await explorerService.applyBulkEdit([new ResourceFileEdit(stat.resource, targetResource)], {
+				confirmBeforeUndo: configurationService.getValue<IFilesConfiguration>().explorer.confirmUndo === UndoConfirmLevel.Verbose,
+				undoLabel: nls.localize('renameBulkEdit', "Rename {0} to {1}", stat.name, result),
+				progressLabel: nls.localize('renamingBulkEdit', "Renaming {0} to {1}", stat.name, result),
+			});
+			await refreshIfSeparator(result, explorerService);
+		} catch (e) {
+			notificationService.error(e);
+		}
+	}
 };
 
 export const moveFileToTrashHandler = async (accessor: ServicesAccessor) => {

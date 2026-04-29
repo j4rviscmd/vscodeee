@@ -15,6 +15,7 @@ import { Disposable, DisposableStore, dispose } from '../../../base/common/lifec
 import Severity from '../../../base/common/severity.js';
 import { isString } from '../../../base/common/types.js';
 import { isModifierKey } from '../../../base/common/keyCodes.js';
+import { StandardKeyboardEvent } from '../../../base/browser/keyboardEvent.js';
 import { localize } from '../../../nls.js';
 import { IInputBox, IInputOptions, IKeyMods, IPickOptions, IQuickInput, IQuickInputButton, IQuickNavigateConfiguration, IQuickPick, IQuickPickItem, IQuickWidget, QuickInputHideReason, QuickPickInput, QuickPickFocus, QuickInputType, IQuickTree, IQuickTreeItem, QuickInputAlignment } from '../common/quickInput.js';
 import { QuickInputBox } from './quickInputBox.js';
@@ -49,6 +50,17 @@ type QuickInputViewState = {
 	readonly left?: number;
 };
 
+/**
+ * Controller for the quick input UI widget.
+ *
+ * Manages the lifecycle, visibility, layout, and positioning of the quick input
+ * overlay (used for QuickPick, InputBox, QuickWidget, and QuickTree). Supports
+ * drag-and-drop repositioning with snap-to-top/center behavior, anchored positioning
+ * relative to DOM elements, and persistence of position via storage service.
+ *
+ * The controller lazily creates the UI DOM tree on first use and supports
+ * reparenting across auxiliary windows.
+ */
 export class QuickInputController extends Disposable {
 	private static readonly MAX_WIDTH = 600; // Max total width of quick input widget
 
@@ -460,7 +472,21 @@ export class QuickInputController extends Disposable {
 		}
 	}
 
-	pick<T extends IQuickPickItem, O extends IPickOptions<T>>(picks: Promise<QuickPickInput<T>[]> | QuickPickInput<T>[], options: IPickOptions<T> = {}, token: CancellationToken = CancellationToken.None): Promise<(O extends { canPickMany: true } ? T[] : T) | undefined> {
+	/**
+		 * Shows a quick pick UI and returns the user's selection.
+		 *
+		 * This is a convenience method that creates a `QuickPick`, configures it
+		 * from the provided options, and returns a promise that resolves with the
+		 * selected item(s) or `undefined` if cancelled.
+		 *
+		 * @typeParam T - The type of quick pick items.
+		 * @typeParam O - The pick options type, used to determine single vs multi-select return type.
+		 * @param picks - A promise or array of items to display.
+		 * @param options - Configuration options for the quick pick behavior.
+		 * @param token - A cancellation token to abort the pick operation.
+		 * @returns The selected item, array of items (for `canPickMany`), or `undefined`.
+		 */
+		pick<T extends IQuickPickItem, O extends IPickOptions<T>>(picks: Promise<QuickPickInput<T>[]> | QuickPickInput<T>[], options: IPickOptions<T> = {}, token: CancellationToken = CancellationToken.None): Promise<(O extends { canPickMany: true } ? T[] : T) | undefined> {
 		type R = (O extends { canPickMany: true } ? T[] : T) | undefined;
 		return new Promise<R>((doResolve, reject) => {
 			let resolve = (result: R) => {
@@ -590,7 +616,18 @@ export class QuickInputController extends Disposable {
 		}
 	}
 
-	input(options: IInputOptions = {}, token: CancellationToken = CancellationToken.None): Promise<string | undefined> {
+	/**
+		 * Shows an input box UI and returns the user's input value.
+		 *
+		 * Supports async validation via `options.validateInput`. The input is only
+		 * accepted if validation returns no error. IME composition state is checked
+		 * before accepting to prevent premature submission.
+		 *
+		 * @param options - Configuration options for the input box.
+		 * @param token - A cancellation token to abort the input operation.
+		 * @returns The entered string, or `undefined` if cancelled.
+		 */
+		input(options: IInputOptions = {}, token: CancellationToken = CancellationToken.None): Promise<string | undefined> {
 		return new Promise<string | undefined>((resolve) => {
 			if (token.isCancellationRequested) {
 				resolve(undefined);
@@ -615,6 +652,9 @@ export class QuickInputController extends Disposable {
 					});
 				}),
 				input.onDidAccept(() => {
+					if (StandardKeyboardEvent.isComposingActive || StandardKeyboardEvent.recentlyComposed) {
+						return;
+					}
 					const value = input.value;
 					if (value !== validationValue) {
 						validation = Promise.resolve(validateInput(value));
@@ -651,31 +691,57 @@ export class QuickInputController extends Disposable {
 
 	backButton = backButton;
 
-	createQuickPick<T extends IQuickPickItem>(options: { useSeparators: true }): IQuickPick<T, { useSeparators: true }>;
-	createQuickPick<T extends IQuickPickItem>(options?: { useSeparators: boolean }): IQuickPick<T, { useSeparators: false }>;
-	createQuickPick<T extends IQuickPickItem>(options: { useSeparators: boolean } = { useSeparators: false }): IQuickPick<T, { useSeparators: boolean }> {
+	/**
+		 * Creates a new `IQuickPick` instance.
+		 *
+		 * The returned quick pick is not shown until `quickPick.show()` is called.
+		 * Overloaded to encode `useSeparators` in the type system.
+		 *
+		 * @typeParam T - The type of quick pick items.
+		 * @param options - Whether separators are supported.
+		 * @returns A new `IQuickPick` instance.
+		 */
+		createQuickPick<T extends IQuickPickItem>(options: { useSeparators: true }): IQuickPick<T, { useSeparators: true }>;
+		createQuickPick<T extends IQuickPickItem>(options?: { useSeparators: boolean }): IQuickPick<T, { useSeparators: false }>;
+		createQuickPick<T extends IQuickPickItem>(options: { useSeparators: boolean } = { useSeparators: false }): IQuickPick<T, { useSeparators: boolean }> {
 		const ui = this.getUI(true);
 		return new QuickPick<T, typeof options>(ui);
 	}
 
-	createInputBox(): IInputBox {
+	/** Creates a new `IInputBox` instance. Not shown until `inputBox.show()` is called. */
+		createInputBox(): IInputBox {
 		const ui = this.getUI(true);
 		return new InputBox(ui);
 	}
 
-	setAlignment(alignment: 'top' | 'center' | { top: number; left: number }): void {
+	/**
+		 * Sets the vertical and horizontal alignment of the quick input widget.
+		 *
+		 * No-op if the current controller has an anchor (anchored inputs own their positioning).
+		 *
+		 * @param alignment - `'top'` for default top-center, `'center'` for vertical center,
+		 *   or an object with explicit `top` and `left` ratios (0-1).
+		 */
+		setAlignment(alignment: 'top' | 'center' | { top: number; left: number }): void {
 		if (this.controller?.anchor) {
 			return; // anchored inputs own their own positioning
 		}
 		this.dndController?.setAlignment(alignment);
 	}
 
-	createQuickWidget(): IQuickWidget {
+	/** Creates a new `IQuickWidget` instance. Not shown until `widget.show()` is called. */
+		createQuickWidget(): IQuickWidget {
 		const ui = this.getUI(true);
 		return new QuickWidget(ui);
 	}
 
-	createQuickTree<T extends IQuickTreeItem>(): IQuickTree<T> {
+	/**
+		 * Creates a new `IQuickTree` instance.
+		 *
+		 * @typeParam T - The type of tree items.
+		 * @returns A new `IQuickTree` instance.
+		 */
+		createQuickTree<T extends IQuickTreeItem>(): IQuickTree<T> {
 		const ui = this.getUI(true);
 		return new QuickTree<T>(ui);
 	}
@@ -739,7 +805,8 @@ export class QuickInputController extends Disposable {
 		this.quickInputTypeContext.set(controller.type);
 	}
 
-	isVisible(): boolean {
+		/** Returns `true` if the quick input widget is currently visible. */
+		isVisible(): boolean {
 		return !!this.ui && this.ui.container.style.display !== 'none';
 	}
 
@@ -820,7 +887,11 @@ export class QuickInputController extends Disposable {
 		controller.didHide(reason);
 	}
 
-	focus() {
+		/**
+		 * Focuses the quick input widget.
+		 * If the input box is enabled, it receives focus; otherwise the list is focused.
+		 */
+		focus() {
 		if (this.isVisible()) {
 			const ui = this.getUI();
 			if (ui.inputBox.enabled) {
@@ -831,7 +902,11 @@ export class QuickInputController extends Disposable {
 		}
 	}
 
-	toggle() {
+		/**
+		 * Toggles the checkbox of the currently focused item.
+		 * Only applies when the controller is a multi-select QuickPick or QuickTree.
+		 */
+		toggle() {
 		if (!this.isVisible()) {
 			return;
 		}
@@ -842,13 +917,20 @@ export class QuickInputController extends Disposable {
 		}
 	}
 
-	toggleHover() {
+		/** Toggles the hover detail view for the currently focused item in a QuickPick. */
+		toggleHover() {
 		if (this.isVisible() && this.controller instanceof QuickPick) {
 			this.getUI().list.toggleHover();
 		}
 	}
 
-	navigate(next: boolean, quickNavigate?: IQuickNavigateConfiguration) {
+		/**
+		 * Navigates focus to the next or previous item in the quick pick list.
+		 *
+		 * @param next - `true` to move focus forward, `false` to move backward.
+		 * @param quickNavigate - Optional quick navigate configuration to apply.
+		 */
+		navigate(next: boolean, quickNavigate?: IQuickNavigateConfiguration) {
 		if (this.isVisible() && this.getUI().list.displayed) {
 			this.getUI().list.focus(next ? QuickPickFocus.Next : QuickPickFocus.Previous);
 			if (quickNavigate && this.controller instanceof QuickPick) {
@@ -857,7 +939,16 @@ export class QuickInputController extends Disposable {
 		}
 	}
 
-	async accept(keyMods: IKeyMods = { alt: false, ctrlCmd: false, shift: false }) {
+		/**
+		 * Programmatically accepts (confirms) the current quick input selection.
+		 *
+		 * Updates the internal modifier key state from the provided `keyMods`
+		 * to ensure correct behavior when the accept was not triggered by
+		 * keyboard or mouse interaction on the list.
+		 *
+		 * @param keyMods - The modifier key state to apply during accept.
+		 */
+		async accept(keyMods: IKeyMods = { alt: false, ctrlCmd: false, shift: false }) {
 		// When accepting the item programmatically, it is important that
 		// we update `keyMods` either from the provided set or unset it
 		// because the accept did not happen from mouse or keyboard
@@ -877,7 +968,13 @@ export class QuickInputController extends Disposable {
 		this.hide(reason);
 	}
 
-	layout(dimension: dom.IDimension, titleBarOffset: number): void {
+		/**
+		 * Updates the layout dimensions for positioning the quick input widget.
+		 *
+		 * @param dimension - The available container dimensions.
+		 * @param titleBarOffset - The top offset accounting for the title bar height.
+		 */
+		layout(dimension: dom.IDimension, titleBarOffset: number): void {
 		this.dimension = dimension;
 		this.titleBarOffset = titleBarOffset;
 		this.updateLayout();
@@ -1020,8 +1117,23 @@ export class QuickInputController extends Disposable {
 	}
 }
 
+/**
+ * Host interface for the quick input controller, extending the layout service.
+ * Used to type the container that hosts the quick input widget.
+ */
 export interface IQuickInputControllerHost extends ILayoutService { }
 
+/**
+ * Handles drag-and-drop repositioning of the quick input widget.
+ *
+ * Supports mouse-based dragging with snap-to-top and snap-to-center behavior.
+ * Tracks the widget position as normalized ratios (0-1) of the container dimensions,
+ * enabling persistence across layout changes. Provides an observable `alignment`
+ * value that reflects the current snap state ('top', 'center', or 'custom').
+ *
+ * Also respects window control regions on macOS (left) and Windows/Linux (right)
+ * to prevent the widget from overlapping traffic light / window buttons.
+ */
 class QuickInputDragAndDropController extends Disposable {
 	readonly dndViewState = observableValue<{ top?: number; left?: number; done: boolean } | undefined>(this, undefined);
 

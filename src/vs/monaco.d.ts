@@ -485,7 +485,13 @@ declare namespace monaco {
 		readonly enabledCommands: readonly string[];
 	}
 
-	export interface IKeyboardEvent {
+		/**
+		 * Standardized keyboard event interface used throughout the Monaco API.
+		 *
+		 * Wraps a native browser `KeyboardEvent` and provides platform-agnostic
+		 * access to modifier keys, key codes, and IME composition state.
+		 */
+		export interface IKeyboardEvent {
 		readonly _standardKeyboardEventBrand: true;
 		readonly browserEvent: KeyboardEvent;
 		readonly target: HTMLElement;
@@ -496,6 +502,7 @@ declare namespace monaco {
 		readonly altGraphKey: boolean;
 		readonly keyCode: KeyCode;
 		readonly code: string;
+		readonly isComposing: boolean;
 		equals(keybinding: number): boolean;
 		preventDefault(): void;
 		stopPropagation(): void;

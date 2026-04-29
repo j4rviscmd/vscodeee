@@ -26,23 +26,44 @@ import { MutableDisposable, type IDisposable } from '../../../common/lifecycle.j
 
 const $ = dom.$;
 
+/**
+ * Configuration options for creating an {@link InputBox} widget.
+ */
 export interface IInputOptions {
+	/** The placeholder text displayed when the input is empty. */
 	readonly placeholder?: string;
+	/** If `true`, the placeholder is only shown when the input has focus. */
 	readonly showPlaceholderOnFocus?: boolean;
+	/** The tooltip text displayed on hover. Defaults to the placeholder text. */
 	readonly tooltip?: string;
+	/** The ARIA label for accessibility. */
 	readonly ariaLabel?: string;
+	/** The HTML input type (e.g. `'text'`, `'password'`). Defaults to `'text'`. */
 	readonly type?: string;
+	/** Validation options for the input value. */
 	readonly validationOptions?: IInputValidationOptions;
+	/** If `true`, the input uses a `<textarea>` that grows with content. */
 	readonly flexibleHeight?: boolean;
+	/** If `true`, the textarea supports horizontal scrolling (no line wrapping). */
 	readonly flexibleWidth?: boolean;
+	/** Maximum height in pixels for a flexible-height textarea. */
 	readonly flexibleMaxHeight?: number;
+	/** Optional actions displayed in the input box. */
 	readonly actions?: ReadonlyArray<IAction>;
+	/** Optional provider for customizing action item rendering. */
 	readonly actionViewItemProvider?: IActionViewItemProvider;
+	/** Style configuration for the input box. */
 	readonly inputBoxStyles: IInputBoxStyles;
+	/** Optional navigation history for the input. */
 	readonly history?: IHistory<string>;
+	/** If `true`, the hover tooltip is hidden when the value changes. */
 	readonly hideHoverOnValueChange?: boolean;
 }
 
+/**
+ * Color and style definitions for the {@link InputBox} widget.
+ * Each property is `string | undefined` to allow theme-based overrides.
+ */
 export interface IInputBoxStyles {
 	readonly inputBackground: string | undefined;
 	readonly inputForeground: string | undefined;
@@ -58,26 +79,46 @@ export interface IInputBoxStyles {
 	readonly inputValidationErrorForeground: string | undefined;
 }
 
+/**
+ * A validation function that checks an input value and returns an error/warning
+ * message if the value is invalid, or `null` if the value is valid.
+ */
 export interface IInputValidator {
 	(value: string): IMessage | null;
 }
 
+/**
+ * A validation message with optional content formatting and severity type.
+ */
 export interface IMessage {
+	/** The message content text. */
 	readonly content?: string;
+	/** If `true`, the content is rendered as formatted (markdown-like) text. Defaults to `false`. */
 	readonly formatContent?: boolean; // defaults to false
+	/** The severity type of the message (info, warning, or error). */
 	readonly type?: MessageType;
 }
 
+/**
+ * Options for configuring input validation behavior.
+ */
 export interface IInputValidationOptions {
+	/** A validator function to check input values. */
 	validation?: IInputValidator;
 }
 
+/**
+ * Message severity types for input validation.
+ */
 export const enum MessageType {
 	INFO = 1,
 	WARNING = 2,
 	ERROR = 3
 }
 
+/**
+ * A character range within the input value, specified by start and end indices.
+ */
 export interface IRange {
 	start: number;
 	end: number;
@@ -98,6 +139,17 @@ export const unthemedInboxStyles: IInputBoxStyles = {
 	inputValidationWarningForeground: undefined
 };
 
+/**
+ * A reusable input box widget with support for validation messages, flexible height,
+ * action buttons, placeholder text, and IME composition handling.
+ *
+ * When `flexibleHeight` is enabled, the widget uses a `<textarea>` and a hidden
+ * mirror element to automatically grow with the content, up to `flexibleMaxHeight`.
+ * A `ScrollableElement` is used for overflow scrolling.
+ *
+ * IME composition events are tracked to prevent spurious `input` events during
+ * composition in WKWebView environments.
+ */
 export class InputBox extends Widget {
 	private contextViewProvider?: IContextViewProvider;
 	element: HTMLElement;
@@ -110,6 +162,10 @@ export class InputBox extends Widget {
 	private ariaLabel: string;
 	private validation?: IInputValidator;
 	private state: 'idle' | 'open' | 'closed' = 'idle';
+
+	private _isComposing = false;
+	private _compositionEndTime = 0;
+	private _skipNextInput = false;
 
 	private mirror: HTMLElement | undefined;
 	private cachedHeight: number | undefined;
@@ -124,7 +180,15 @@ export class InputBox extends Widget {
 	private _onDidHeightChange = this._register(new Emitter<number>());
 	public get onDidHeightChange(): Event<number> { return this._onDidHeightChange.event; }
 
-	constructor(container: HTMLElement, contextViewProvider: IContextViewProvider | undefined, options: IInputOptions) {
+	/**
+		 * Creates a new `InputBox`.
+		 *
+		 * @param container - The parent DOM element to append the input box to.
+		 * @param contextViewProvider - Optional provider for showing validation messages
+		 *   in a floating context view anchored to the input box.
+		 * @param options - Configuration options for the input box.
+		 */
+		constructor(container: HTMLElement, contextViewProvider: IContextViewProvider | undefined, options: IInputOptions) {
 		super();
 
 		this.contextViewProvider = contextViewProvider;
@@ -198,9 +262,38 @@ export class InputBox extends Widget {
 			this.setTooltip(this.tooltip);
 		}
 
-		this.oninput(this.input, () => this.onValueChange());
+		this.oninput(this.input, () => {
+			if (this._skipNextInput) {
+				this._skipNextInput = false;
+				return;
+			}
+			// WKWebView: during IME confirmation, the browser briefly fires an input
+			// event with an empty value before the committed text arrives. Skip this
+			// transitional empty event to avoid sending incorrect values to consumers.
+			if (this._isComposing && !this.input.value) {
+				return;
+			}
+			this.onValueChange();
+		});
 		this.onblur(this.input, () => this.onBlur());
 		this.onfocus(this.input, () => this.onFocus());
+
+		// IME composition tracking for WKWebView compatibility
+		this._register(dom.addDisposableListener(this.input, 'compositionstart', () => {
+			this._isComposing = true;
+		}));
+		this._register(dom.addDisposableListener(this.input, 'compositionend', (e: CompositionEvent) => {
+			this._isComposing = false;
+			this._compositionEndTime = Date.now();
+			// WKWebView: compositionend fires before text is committed to input.value.
+			// Use setTimeout to ensure the browser has committed the composition text
+			// before firing onValueChange, so consumers receive the final value.
+			if (e.data && !this.input.value) {
+				this._skipNextInput = true;
+				this.input.value = e.data;
+			}
+			setTimeout(() => this.onValueChange(), 0);
+		}));
 
 		this._register(this.ignoreGesture(this.input));
 
@@ -217,7 +310,13 @@ export class InputBox extends Widget {
 		this.applyStyles();
 	}
 
-	public setActions(actions: ReadonlyArray<IAction> | undefined, actionViewItemProvider?: IActionViewItemProvider): void {
+		/**
+		 * Sets or replaces the action buttons displayed in the input box.
+		 *
+		 * @param actions - The actions to display, or `undefined` to clear.
+		 * @param actionViewItemProvider - Optional provider for customizing action item rendering.
+		 */
+		public setActions(actions: ReadonlyArray<IAction> | undefined, actionViewItemProvider?: IActionViewItemProvider): void {
 		if (this.actionbar) {
 			this.actionbar.clear();
 			if (actions) {
@@ -245,12 +344,14 @@ export class InputBox extends Widget {
 		}
 	}
 
-	public setPlaceHolder(placeHolder: string): void {
+		/** Sets the placeholder text displayed when the input is empty. */
+		public setPlaceHolder(placeHolder: string): void {
 		this.placeholder = placeHolder;
 		this.input.setAttribute('placeholder', placeHolder);
 	}
 
-	public setTooltip(tooltip: string): void {
+		/** Sets the tooltip text shown when hovering over the input element. */
+		public setTooltip(tooltip: string): void {
 		this.tooltip = tooltip;
 		if (!this.hover.value) {
 			this.hover.value = this._register(getBaseLayerHoverDelegate().setupDelayedHoverAtMouse(this.input, () => ({
@@ -262,7 +363,8 @@ export class InputBox extends Widget {
 		}
 	}
 
-	public setAriaLabel(label: string): void {
+		/** Sets the ARIA label for accessibility. Pass an empty string to remove it. */
+		public setAriaLabel(label: string): void {
 		this.ariaLabel = label;
 
 		if (label) {
@@ -272,12 +374,19 @@ export class InputBox extends Widget {
 		}
 	}
 
-	public getAriaLabel(): string {
+		/** Returns the current ARIA label. */
+		public getAriaLabel(): string {
 		return this.ariaLabel;
 	}
 
-	public get mirrorElement(): HTMLElement | undefined {
+		/** Returns the hidden mirror element used for auto-sizing flexible-height textareas. */
+		public get mirrorElement(): HTMLElement | undefined {
 		return this.mirror;
+	}
+
+	/** Whether an IME composition is currently active or recently ended. */
+	public get isComposing(): boolean {
+		return this._isComposing || (Date.now() - this._compositionEndTime) < 200;
 	}
 
 	public get inputElement(): HTMLInputElement {
@@ -319,7 +428,13 @@ export class InputBox extends Widget {
 		return dom.isActiveElement(this.input);
 	}
 
-	public select(range: IRange | null = null): void {
+		/**
+		 * Selects all text in the input, or a specific range if provided.
+		 *
+		 * @param range - Optional start/end indices for the selection range.
+		 *   If `null` or omitted, all text is selected.
+		 */
+		public select(range: IRange | null = null): void {
 		this.input.select();
 
 		if (range) {
@@ -330,11 +445,13 @@ export class InputBox extends Widget {
 		}
 	}
 
-	public isSelectionAtEnd(): boolean {
+		/** Returns `true` if the cursor is at the end of the input value with no selection. */
+		public isSelectionAtEnd(): boolean {
 		return this.input.selectionEnd === this.input.value.length && this.input.selectionStart === this.input.selectionEnd;
 	}
 
-	public getSelection(): IRange | null {
+		/** Returns the current selection range, or `null` if the selection start is unavailable. */
+		public getSelection(): IRange | null {
 		const selectionStart = this.input.selectionStart;
 		if (selectionStart === null) {
 			return null;
@@ -409,7 +526,16 @@ export class InputBox extends Widget {
 		this.scrollableElement.setScrollPosition({ scrollTop });
 	}
 
-	public showMessage(message: IMessage, force?: boolean): void {
+		/**
+		 * Displays a validation message below the input box.
+		 *
+		 * If a message is already shown with the same content, this is a no-op.
+		 * The message is only rendered when the input has focus, unless `force` is `true`.
+		 *
+		 * @param message - The validation message to display.
+		 * @param force - If `true`, show the message even without focus.
+		 */
+		public showMessage(message: IMessage, force?: boolean): void {
 		if (this.state === 'open' && equals(this.message, message)) {
 			// Already showing
 			return;
@@ -447,7 +573,12 @@ export class InputBox extends Widget {
 		return !!this.validation && !this.validation(this.value);
 	}
 
-	public validate(): MessageType | undefined {
+		/**
+		 * Runs the validation function (if configured) and shows/hides the message accordingly.
+		 *
+		 * @returns The `MessageType` of the validation error, or `undefined` if valid.
+		 */
+		public validate(): MessageType | undefined {
 		let errorMsg: IMessage | null = null;
 
 		if (this.validation) {
@@ -466,7 +597,12 @@ export class InputBox extends Widget {
 		return errorMsg?.type;
 	}
 
-	public stylesForType(type: MessageType | undefined): { border: string | undefined; background: string | undefined; foreground: string | undefined } {
+		/**
+		 * Returns the CSS style values (border, background, foreground) for a given message type.
+		 *
+		 * @param type - The message severity type, or `undefined` for error styling.
+		 */
+		public stylesForType(type: MessageType | undefined): { border: string | undefined; background: string | undefined; foreground: string | undefined } {
 		const styles = this.options.inputBoxStyles;
 		switch (type) {
 			case MessageType.INFO: return { border: styles.inputValidationInfoBorder, background: styles.inputValidationInfoBackground, foreground: styles.inputValidationInfoForeground };
@@ -630,7 +766,12 @@ export class InputBox extends Widget {
 		this.layoutMessage();
 	}
 
-	public insertAtCursor(text: string): void {
+		/**
+		 * Inserts text at the current cursor position, replacing any selected text.
+		 *
+		 * @param text - The text to insert.
+		 */
+		public insertAtCursor(text: string): void {
 		const inputElement = this.inputElement;
 		const start = inputElement.selectionStart;
 		const end = inputElement.selectionEnd;
@@ -654,10 +795,23 @@ export class InputBox extends Widget {
 	}
 }
 
+/**
+ * Extended input options for an {@link HistoryInputBox}, adding history hint support.
+ */
 export interface IHistoryInputOptions extends IInputOptions {
+	/** A function that returns `true` if the history navigation hint should be shown in the placeholder. */
 	readonly showHistoryHint?: () => boolean;
 }
 
+/**
+ * An `InputBox` with navigation history support.
+ *
+ * Tracks previously entered values and allows navigating through them with
+ * up/down arrow keys. A history hint suffix (e.g. "or ⇅ for history")
+ * is appended to the placeholder when history entries exist.
+ *
+ * Implements {@link IHistoryNavigationWidget} for integration with history-aware containers.
+ */
 export class HistoryInputBox extends InputBox implements IHistoryNavigationWidget {
 
 	private readonly history: HistoryNavigator<string>;
@@ -738,13 +892,24 @@ export class HistoryInputBox extends InputBox implements IHistoryNavigationWidge
 		}
 	}
 
-	public addToHistory(always?: boolean): void {
+		/**
+		 * Adds the current input value to the navigation history.
+		 *
+		 * @param always - If `true`, adds the value even if it matches the current history entry.
+		 */
+		public addToHistory(always?: boolean): void {
 		if (this.value && (always || this.value !== this.getCurrentValue())) {
 			this.history.add(this.value);
 		}
 	}
 
-	public prependHistory(restoredHistory: string[]): void {
+		/**
+		 * Prepends restored history entries before the existing history.
+		 * Useful for restoring history from persisted storage.
+		 *
+		 * @param restoredHistory - The history entries to prepend.
+		 */
+		public prependHistory(restoredHistory: string[]): void {
 		const newHistory = this.getHistory();
 		this.clearHistory();
 
@@ -773,7 +938,8 @@ export class HistoryInputBox extends InputBox implements IHistoryNavigationWidge
 		return this.history.isNowhere();
 	}
 
-	public showNextValue(): void {
+		/** Navigates to the next value in the history (down arrow). */
+		public showNextValue(): void {
 		if (!this.history.has(this.value)) {
 			this.addToHistory();
 		}
@@ -787,7 +953,8 @@ export class HistoryInputBox extends InputBox implements IHistoryNavigationWidge
 		aria.status(this.value ? this.value : nls.localize('clearedInput', "Cleared Input"));
 	}
 
-	public showPreviousValue(): void {
+		/** Navigates to the previous value in the history (up arrow). */
+		public showPreviousValue(): void {
 		if (!this.history.has(this.value)) {
 			this.addToHistory();
 		}

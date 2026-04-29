@@ -51,6 +51,16 @@ type IListViewItem<TDataItem extends object> = TDataItem & {
 	selected?: boolean;
 };
 
+/**
+ * View model for a list-based setting widget.
+ *
+ * Manages a collection of data items with support for editing, selection,
+ * and navigation. Tracks an optional "new item" template for create operations
+ * and provides a computed `items` property that annotates each data item
+ * with `editing` and `selected` flags based on the current state.
+ *
+ * @typeParam TDataItem - The shape of each data item in the list.
+ */
 export class ListSettingListModel<TDataItem extends object> {
 	protected _dataItems: TDataItem[] = [];
 	private _editKey: EditKey | null = null;
@@ -115,6 +125,7 @@ export class ListSettingListModel<TDataItem extends object> {
 	}
 }
 
+/** Event emitted when an existing item in a settings list is modified. */
 export interface ISettingListChangeEvent<TDataItem extends object> {
 	type: 'change';
 	originalItem: TDataItem;
@@ -122,12 +133,14 @@ export interface ISettingListChangeEvent<TDataItem extends object> {
 	targetIndex: number;
 }
 
+/** Event emitted when a new item is added to a settings list. */
 export interface ISettingListAddEvent<TDataItem extends object> {
 	type: 'add';
 	newItem: TDataItem;
 	targetIndex: number;
 }
 
+/** Event emitted when an item is moved within a settings list. */
 export interface ISettingListMoveEvent<TDataItem extends object> {
 	type: 'move';
 	originalItem: TDataItem;
@@ -136,20 +149,35 @@ export interface ISettingListMoveEvent<TDataItem extends object> {
 	sourceIndex: number;
 }
 
+/** Event emitted when an item is removed from a settings list. */
 export interface ISettingListRemoveEvent<TDataItem extends object> {
 	type: 'remove';
 	originalItem: TDataItem;
 	targetIndex: number;
 }
 
+/** Event emitted when an item in a settings list is reset to its default value. */
 export interface ISettingListResetEvent<TDataItem extends object> {
 	type: 'reset';
 	originalItem: TDataItem;
 	targetIndex: number;
 }
 
+/**
+ * Discriminated union of all settings list item events.
+ * Use the `type` field to determine which event occurred.
+ */
 export type SettingListEvent<TDataItem extends object> = ISettingListChangeEvent<TDataItem> | ISettingListAddEvent<TDataItem> | ISettingListMoveEvent<TDataItem> | ISettingListRemoveEvent<TDataItem> | ISettingListResetEvent<TDataItem>;
 
+/**
+ * Abstract base class for list-based settings widgets.
+ *
+ * Provides the common infrastructure for rendering, editing, and manipulating
+ * a list of settings items (e.g. string arrays, object arrays).
+ * Subclasses must implement the specific rendering and editing logic.
+ *
+ * @typeParam TDataItem - The shape of each data item in the list.
+ */
 export abstract class AbstractListSettingWidget<TDataItem extends object> extends Disposable {
 	private listElement: HTMLElement;
 	private rowElements: HTMLElement[] = [];
@@ -654,7 +682,7 @@ export class ListSettingWidget<TListDataItem extends IListDataItem> extends Abst
 			} as TListDataItem;
 		};
 		const onKeyDown = (e: StandardKeyboardEvent) => {
-			if (e.equals(KeyCode.Enter)) {
+			if (e.equals(KeyCode.Enter) && !e.isComposing) {
 				this.handleItemChange(item, updatedInputBoxItem(), idx);
 			} else if (e.equals(KeyCode.Escape)) {
 				this.cancelEdit();
@@ -1194,7 +1222,7 @@ export class ObjectSettingDropdownWidget extends AbstractListSettingWidget<IObje
 		this.listDisposables.add(inputBox.onDidChange(value => update({ ...keyOrValue, data: value })));
 
 		const onKeyDown = (e: StandardKeyboardEvent) => {
-			if (e.equals(KeyCode.Enter)) {
+			if (e.equals(KeyCode.Enter) && !e.isComposing) {
 				this.handleItemChange(originalItem, changedItem, idx);
 			} else if (e.equals(KeyCode.Escape)) {
 				this.cancelEdit();
