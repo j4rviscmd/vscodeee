@@ -23,8 +23,8 @@ import { registerCustomGetPathForFile } from '../browser/dnd.js';
 import { listen } from '../../tauri/common/tauriApi.js';
 
 interface TauriDropPayload {
-	paths: string[];
-	position: { x: number; y: number };
+  paths: string[];
+  position: { x: number; y: number };
 }
 
 const droppedFilePaths = new Map<string, string>();
@@ -39,31 +39,31 @@ let cleanupTimer: ReturnType<typeof setTimeout> | undefined;
  * OS-level drag-drop events to capture native file paths.
  */
 export async function initTauriDnD(): Promise<void> {
-	// TODO: File.name collisions possible when dropping identically-named files
-	// from different directories. Use a more unique key (e.g., file size + name + lastModified).
-	registerCustomGetPathForFile((file: File): string | undefined => {
-		return droppedFilePaths.get(file.name);
-	});
+  // TODO: File.name collisions possible when dropping identically-named files
+  // from different directories. Use a more unique key (e.g., file size + name + lastModified).
+  registerCustomGetPathForFile((file: File): string | undefined => {
+    return droppedFilePaths.get(file.name);
+  });
 
-	// TODO: The UnlistenFn returned by listen() should be registered with the
-	// caller's DisposableStore for proper lifecycle management.
-	await listen<TauriDropPayload>('tauri://drag-drop', (event) => {
-		droppedFilePaths.clear();
-		if (cleanupTimer) {
-			clearTimeout(cleanupTimer);
-		}
+  // TODO: The UnlistenFn returned by listen() should be registered with the
+  // caller's DisposableStore for proper lifecycle management.
+  await listen<TauriDropPayload>('tauri://drag-drop', (event) => {
+    droppedFilePaths.clear();
+    if (cleanupTimer) {
+      clearTimeout(cleanupTimer);
+    }
 
-		for (const path of event.payload.paths) {
-			// Extract the file name from the path (handles both / and \ separators)
-			const separatorIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-			const fileName = separatorIndex >= 0 ? path.substring(separatorIndex + 1) : path;
-			droppedFilePaths.set(fileName, path);
-		}
+    for (const path of event.payload.paths) {
+      // Extract the file name from the path (handles both / and \ separators)
+      const separatorIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+      const fileName = separatorIndex >= 0 ? path.substring(separatorIndex + 1) : path;
+      droppedFilePaths.set(fileName, path);
+    }
 
-		// Clear after a short delay to avoid stale entries
-		cleanupTimer = setTimeout(() => {
-			droppedFilePaths.clear();
-			cleanupTimer = undefined;
-		}, 1000);
-	});
+    // Clear after a short delay to avoid stale entries
+    cleanupTimer = setTimeout(() => {
+      droppedFilePaths.clear();
+      cleanupTimer = undefined;
+    }, 1000);
+  });
 }
