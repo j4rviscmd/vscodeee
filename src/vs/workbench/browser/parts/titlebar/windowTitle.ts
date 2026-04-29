@@ -33,11 +33,24 @@ import { CodeWindow } from '../../../../base/browser/window.js';
 import { IDecorationsService } from '../../../services/decorations/common/decorations.js';
 import { IAccessibilityService } from '../../../../platform/accessibility/common/accessibility.js';
 
+/** Configuration setting names used by the window title. */
 const enum WindowSettingNames {
 	titleSeparator = 'window.titleSeparator',
 	title = 'window.title',
 }
 
+/**
+ * Default window title template string, computed at module load time.
+ *
+ * The template varies by platform to match native conventions:
+ * - **macOS**: Omits `${dirty}` (the native title bar shows the dot indicator)
+ *   and `${appName}` (the app name is shown by the menu bar).
+ * - **Windows/Linux**: Includes `${dirty}` and `${appName}` in the title.
+ * - **Web**: Appends `${remoteName}` to always indicate remote connections.
+ *
+ * In Tauri, the same per-OS defaults as Electron are used since Tauri
+ * behaves as a native application.
+ */
 export const defaultWindowTitle = (() => {
 	// Tauri behaves as native app — match upstream Electron defaults per OS
 	if (isTauri) {
@@ -58,12 +71,34 @@ export const defaultWindowTitle = (() => {
 
 	return base;
 })();
+/**
+ * Default title separator character(s).
+ *
+ * Uses an em dash on macOS and a hyphen on all other platforms,
+ * matching each OS's native window title conventions.
+ */
 export const defaultWindowTitleSeparator = isMacintosh ? ' \u2014 ' : ' - ';
 
+/**
+ * Manages the window title for a VS Code window.
+ *
+ * Computes and applies the window title by resolving a configurable
+ * template string against the current editor, workspace, and environment
+ * state. Supports template variables such as `${activeEditorShort}`,
+ * `${rootName}`, `${appName}`, `${dirty}`, `${focusedView}`, and
+ * custom context-key-based variables registered by extensions.
+ *
+ * The resolved title is set on `document.title` and, on Tauri, also
+ * forwarded to the native window via `plugin:window|set_title` so that
+ * Cmd+Tab / Mission Control / Alt+Tab displays the correct title.
+ *
+ * @see `window.title` and `window.titleSeparator` settings for customization.
+ */
 export class WindowTitle extends Disposable {
 
 	private static readonly NLS_USER_IS_ADMIN = isWindows ? localize('userIsAdmin', "[Administrator]") : localize('userIsSudo', "[Superuser]");
 	private static readonly NLS_EXTENSION_HOST = localize('devExtensionWindowTitlePrefix', "[Extension Development Host]");
+	private static readonly DEV_BUILD_PREFIX = 'DEV@'; // Intentionally not localized: compact technical prefix for dev/prod differentiation
 	private static readonly TITLE_DIRTY = '\u25cf ';
 
 	private readonly properties: ITitleProperties = { isPure: true, isAdmin: false, prefix: undefined };
@@ -73,10 +108,18 @@ export class WindowTitle extends Disposable {
 	private readonly titleUpdater = this._register(new RunOnceScheduler(() => this.doUpdateTitle(), 0));
 
 	private readonly onDidChangeEmitter = this._register(new Emitter<void>());
+	/** Event that fires when the resolved window title changes. */
 	readonly onDidChange = this.onDidChangeEmitter.event;
 
+	/** The current resolved window title string, or empty string if not yet computed. */
 	get value() { return this.title ?? ''; }
+	/** The human-readable workspace name from the label service. */
 	get workspaceName() { return this.labelService.getWorkspaceLabel(this.contextService.getWorkspace()); }
+	/**
+	 * The file name of the currently active editor with a dirty indicator
+	 * prefix (a bullet character) if the editor has unsaved changes.
+	 * Returns `undefined` when no editor is active.
+	 */
 	get fileName() {
 		const activeEditor = this.editorService.activeEditor;
 		if (!activeEditor) {
@@ -117,6 +160,10 @@ export class WindowTitle extends Disposable {
 		this.registerListeners();
 	}
 
+	/**
+	 * Register event listeners for configuration, editor, workspace, and
+	 * context-key changes that may affect the window title.
+	 */
 	private registerListeners(): void {
 		this._register(this.configurationService.onDidChangeConfiguration(e => this.onConfigurationChanged(e)));
 		this._register(this.editorService.onDidActiveEditorChange(() => this.onActiveEditorChange()));
@@ -138,6 +185,13 @@ export class WindowTitle extends Disposable {
 		this._register(this.accessibilityService.onDidChangeScreenReaderOptimized(() => this.titleUpdater.schedule()));
 	}
 
+	/**
+	 * Handle configuration change events.
+	 *
+	 * Re-checks the title template for `${focusedView}` / `${activeEditorState}`
+	 * variables and schedules a title update if the title or separator settings
+	 * have changed.
+	 */
 	private onConfigurationChanged(event: IConfigurationChangeEvent): void {
 		const affectsTitleConfiguration = event.affectsConfiguration(WindowSettingNames.title);
 		if (affectsTitleConfiguration) {
@@ -149,6 +203,11 @@ export class WindowTitle extends Disposable {
 		}
 	}
 
+	/**
+	 * Scan the current title template for `${focusedView}` and
+	 * `${activeEditorState}` variables to determine which additional
+	 * listeners are needed for change detection.
+	 */
 	private checkTitleVariables(): void {
 		const titleTemplate = this.configurationService.getValue<unknown>(WindowSettingNames.title);
 		if (typeof titleTemplate === 'string') {
@@ -157,6 +216,14 @@ export class WindowTitle extends Disposable {
 		}
 	}
 
+	/**
+	 * Handle active editor changes.
+	 *
+	 * Clears previous editor-specific listeners, schedules a title update,
+	 * and attaches new listeners for dirty state, label changes, focus/blur
+	 * (when `${focusedView}` is in the template), and decoration changes
+	 * (when `${activeEditorState}` is in the template).
+	 */
 	private onActiveEditorChange(): void {
 
 		// Dispose old listeners
@@ -194,6 +261,14 @@ export class WindowTitle extends Disposable {
 		}
 	}
 
+	/**
+	 * Resolve and apply the new window title.
+	 *
+	 * Sets `document.title` on the target window. On Tauri, also invokes
+	 * `plugin:window|set_title` to update the native window title for
+	 * OS-level window switching (Cmd+Tab, Mission Control, Alt+Tab).
+	 * Fires the `onDidChange` event when the title actually changes.
+	 */
 	private doUpdateTitle(): void {
 		const title = this.getFullWindowTitle();
 		if (title !== this.title) {
@@ -232,6 +307,14 @@ export class WindowTitle extends Disposable {
 		}
 	}
 
+	/**
+	 * Build the full window title including prefix/suffix decorations.
+	 *
+	 * Falls back to the product name when the computed title is empty,
+	 * and normalizes any non-space whitespace characters to spaces.
+	 *
+	 * @returns The fully decorated window title string.
+	 */
 	private getFullWindowTitle(): string {
 		const { prefix, suffix } = this.getTitleDecorations();
 
@@ -248,6 +331,15 @@ export class WindowTitle extends Disposable {
 		return title.replace(/[^\S ]/g, ' ');
 	}
 
+	/**
+	 * Compute the prefix and suffix decorations for the window title.
+	 *
+	 * Prefix is composed from (in order of innermost to outermost):
+	 * extension development host label, dev build prefix, and custom prefix.
+	 * Suffix is added when running with elevated privileges (admin/sudo).
+	 *
+	 * @returns An object with optional `prefix` and `suffix` strings.
+	 */
 	getTitleDecorations() {
 		let prefix: string | undefined;
 		let suffix: string | undefined;
@@ -262,6 +354,12 @@ export class WindowTitle extends Disposable {
 				: `${WindowTitle.NLS_EXTENSION_HOST} - ${prefix}`;
 		}
 
+		if (this.environmentService.isDevBuild) {
+			prefix = !prefix
+				? WindowTitle.DEV_BUILD_PREFIX
+				: `${WindowTitle.DEV_BUILD_PREFIX} ${prefix}`;
+		}
+
 		if (this.properties.isAdmin) {
 			suffix = WindowTitle.NLS_USER_IS_ADMIN;
 		}
@@ -269,6 +367,14 @@ export class WindowTitle extends Disposable {
 		return { prefix, suffix };
 	}
 
+	/**
+	 * Update the title properties (admin state, purity, custom prefix).
+	 *
+	 * Only triggers a title update if at least one property has actually changed.
+	 *
+	 * @param properties - The new title properties to apply. Missing fields
+	 *   retain their current values.
+	 */
 	updateProperties(properties: ITitleProperties): void {
 		const isAdmin = typeof properties.isAdmin === 'boolean' ? properties.isAdmin : this.properties.isAdmin;
 		const isPure = typeof properties.isPure === 'boolean' ? properties.isPure : this.properties.isPure;
@@ -283,6 +389,15 @@ export class WindowTitle extends Disposable {
 		}
 	}
 
+	/**
+	 * Register custom title template variables provided by extensions.
+	 *
+	 * Each variable maps a context key (for change detection) to a template
+	 * placeholder name (e.g., `{name: "gitBranch", contextKey: "git.branch"}`).
+	 * Triggers a title update if any new variable is registered.
+	 *
+	 * @param variables - Array of title variable definitions to register.
+	 */
 	registerVariables(variables: ITitleVariable[]): void {
 		let changed = false;
 
@@ -300,6 +415,9 @@ export class WindowTitle extends Disposable {
 	}
 
 	/**
+	 * Compute the full window title by resolving the configured template
+	 * against the current editor, workspace, and environment state.
+	 *
 	 * Possible template values:
 	 *
 	 * {activeEditorLong}: e.g. /Users/Development/myFolder/myFileFolder/myFile.txt
@@ -319,6 +437,8 @@ export class WindowTitle extends Disposable {
 	 * {focusedView}: e.g. Terminal
 	 * {separator}: conditional separator
 	 * {activeEditorState}: e.g. Modified
+	 *
+	 * @returns The resolved window title string.
 	 */
 	getWindowTitle(): string {
 		const editor = this.editorService.activeEditor;
@@ -435,6 +555,16 @@ export class WindowTitle extends Disposable {
 		});
 	}
 
+	/**
+	 * Determine whether the current window title uses a custom format.
+	 *
+	 * Returns `true` if:
+	 * - A screen reader is active (which appends `${activeEditorState}`), or
+	 * - The `window.title` or `window.titleSeparator` settings are explicitly configured, or
+	 * - The default title value has been overridden in the configuration registry.
+	 *
+	 * @returns `true` if the title format deviates from the upstream default.
+	 */
 	isCustomTitleFormat(): boolean {
 		if (this.accessibilityService.isScreenReaderOptimized() || this.titleIncludesEditorState) {
 			return true;
