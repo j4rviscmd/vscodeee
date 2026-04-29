@@ -188,7 +188,7 @@ export class InputBox extends Widget {
 		 *   in a floating context view anchored to the input box.
 		 * @param options - Configuration options for the input box.
 		 */
-		constructor(container: HTMLElement, contextViewProvider: IContextViewProvider | undefined, options: IInputOptions) {
+	constructor(container: HTMLElement, contextViewProvider: IContextViewProvider | undefined, options: IInputOptions) {
 		super();
 
 		this.contextViewProvider = contextViewProvider;
@@ -310,13 +310,13 @@ export class InputBox extends Widget {
 		this.applyStyles();
 	}
 
-		/**
-		 * Sets or replaces the action buttons displayed in the input box.
-		 *
-		 * @param actions - The actions to display, or `undefined` to clear.
-		 * @param actionViewItemProvider - Optional provider for customizing action item rendering.
-		 */
-		public setActions(actions: ReadonlyArray<IAction> | undefined, actionViewItemProvider?: IActionViewItemProvider): void {
+	/**
+	 * Sets or replaces the action buttons displayed in the input box.
+	 *
+	 * @param actions - The actions to display, or `undefined` to clear.
+	 * @param actionViewItemProvider - Optional provider for customizing action item rendering.
+	 */
+	public setActions(actions: ReadonlyArray<IAction> | undefined, actionViewItemProvider?: IActionViewItemProvider): void {
 		if (this.actionbar) {
 			this.actionbar.clear();
 			if (actions) {
@@ -344,14 +344,14 @@ export class InputBox extends Widget {
 		}
 	}
 
-		/** Sets the placeholder text displayed when the input is empty. */
-		public setPlaceHolder(placeHolder: string): void {
+	/** Sets the placeholder text displayed when the input is empty. */
+	public setPlaceHolder(placeHolder: string): void {
 		this.placeholder = placeHolder;
 		this.input.setAttribute('placeholder', placeHolder);
 	}
 
-		/** Sets the tooltip text shown when hovering over the input element. */
-		public setTooltip(tooltip: string): void {
+	/** Sets the tooltip text shown when hovering over the input element. */
+	public setTooltip(tooltip: string): void {
 		this.tooltip = tooltip;
 		if (!this.hover.value) {
 			this.hover.value = this._register(getBaseLayerHoverDelegate().setupDelayedHoverAtMouse(this.input, () => ({
@@ -363,8 +363,8 @@ export class InputBox extends Widget {
 		}
 	}
 
-		/** Sets the ARIA label for accessibility. Pass an empty string to remove it. */
-		public setAriaLabel(label: string): void {
+	/** Sets the ARIA label for accessibility. Pass an empty string to remove it. */
+	public setAriaLabel(label: string): void {
 		this.ariaLabel = label;
 
 		if (label) {
@@ -374,13 +374,13 @@ export class InputBox extends Widget {
 		}
 	}
 
-		/** Returns the current ARIA label. */
-		public getAriaLabel(): string {
+	/** Returns the current ARIA label. */
+	public getAriaLabel(): string {
 		return this.ariaLabel;
 	}
 
-		/** Returns the hidden mirror element used for auto-sizing flexible-height textareas. */
-		public get mirrorElement(): HTMLElement | undefined {
+	/** Returns the hidden mirror element used for auto-sizing flexible-height textareas. */
+	public get mirrorElement(): HTMLElement | undefined {
 		return this.mirror;
 	}
 
@@ -428,13 +428,13 @@ export class InputBox extends Widget {
 		return dom.isActiveElement(this.input);
 	}
 
-		/**
-		 * Selects all text in the input, or a specific range if provided.
-		 *
-		 * @param range - Optional start/end indices for the selection range.
-		 *   If `null` or omitted, all text is selected.
-		 */
-		public select(range: IRange | null = null): void {
+	/**
+	 * Selects all text in the input, or a specific range if provided.
+	 *
+	 * @param range - Optional start/end indices for the selection range.
+	 *   If `null` or omitted, all text is selected.
+	 */
+	public select(range: IRange | null = null): void {
 		this.input.select();
 
 		if (range) {
@@ -445,13 +445,13 @@ export class InputBox extends Widget {
 		}
 	}
 
-		/** Returns `true` if the cursor is at the end of the input value with no selection. */
-		public isSelectionAtEnd(): boolean {
+	/** Returns `true` if the cursor is at the end of the input value with no selection. */
+	public isSelectionAtEnd(): boolean {
 		return this.input.selectionEnd === this.input.value.length && this.input.selectionStart === this.input.selectionEnd;
 	}
 
-		/** Returns the current selection range, or `null` if the selection start is unavailable. */
-		public getSelection(): IRange | null {
+	/** Returns the current selection range, or `null` if the selection start is unavailable. */
+	public getSelection(): IRange | null {
 		const selectionStart = this.input.selectionStart;
 		if (selectionStart === null) {
 			return null;
@@ -526,16 +526,16 @@ export class InputBox extends Widget {
 		this.scrollableElement.setScrollPosition({ scrollTop });
 	}
 
-		/**
-		 * Displays a validation message below the input box.
-		 *
-		 * If a message is already shown with the same content, this is a no-op.
-		 * The message is only rendered when the input has focus, unless `force` is `true`.
-		 *
-		 * @param message - The validation message to display.
-		 * @param force - If `true`, show the message even without focus.
-		 */
-		public showMessage(message: IMessage, force?: boolean): void {
+	/**
+	 * Displays a validation message below the input box.
+	 *
+	 * If a message is already shown with the same content, this is a no-op.
+	 * The message is only rendered when the input has focus, unless `force` is `true`.
+	 *
+	 * @param message - The validation message to display.
+	 * @param force - If `true`, show the message even without focus.
+	 */
+	public showMessage(message: IMessage, force?: boolean): void {
 		if (this.state === 'open' && equals(this.message, message)) {
 			// Already showing
 			return;
@@ -573,12 +573,12 @@ export class InputBox extends Widget {
 		return !!this.validation && !this.validation(this.value);
 	}
 
-		/**
-		 * Runs the validation function (if configured) and shows/hides the message accordingly.
-		 *
-		 * @returns The `MessageType` of the validation error, or `undefined` if valid.
-		 */
-		public validate(): MessageType | undefined {
+	/**
+	 * Runs the validation function (if configured) and shows/hides the message accordingly.
+	 *
+	 * @returns The `MessageType` of the validation error, or `undefined` if valid.
+	 */
+	public validate(): MessageType | undefined {
 		let errorMsg: IMessage | null = null;
 
 		if (this.validation) {
@@ -597,12 +597,12 @@ export class InputBox extends Widget {
 		return errorMsg?.type;
 	}
 
-		/**
-		 * Returns the CSS style values (border, background, foreground) for a given message type.
-		 *
-		 * @param type - The message severity type, or `undefined` for error styling.
-		 */
-		public stylesForType(type: MessageType | undefined): { border: string | undefined; background: string | undefined; foreground: string | undefined } {
+	/**
+	 * Returns the CSS style values (border, background, foreground) for a given message type.
+	 *
+	 * @param type - The message severity type, or `undefined` for error styling.
+	 */
+	public stylesForType(type: MessageType | undefined): { border: string | undefined; background: string | undefined; foreground: string | undefined } {
 		const styles = this.options.inputBoxStyles;
 		switch (type) {
 			case MessageType.INFO: return { border: styles.inputValidationInfoBorder, background: styles.inputValidationInfoBackground, foreground: styles.inputValidationInfoForeground };
@@ -766,12 +766,12 @@ export class InputBox extends Widget {
 		this.layoutMessage();
 	}
 
-		/**
-		 * Inserts text at the current cursor position, replacing any selected text.
-		 *
-		 * @param text - The text to insert.
-		 */
-		public insertAtCursor(text: string): void {
+	/**
+	 * Inserts text at the current cursor position, replacing any selected text.
+	 *
+	 * @param text - The text to insert.
+	 */
+	public insertAtCursor(text: string): void {
 		const inputElement = this.inputElement;
 		const start = inputElement.selectionStart;
 		const end = inputElement.selectionEnd;
@@ -807,8 +807,8 @@ export interface IHistoryInputOptions extends IInputOptions {
  * An `InputBox` with navigation history support.
  *
  * Tracks previously entered values and allows navigating through them with
- * up/down arrow keys. A history hint suffix (e.g. "or ⇅ for history")
  * // allow-any-unicode-next-line
+ * up/down arrow keys. A history hint suffix (e.g. "or ⇅ for history")
  * is appended to the placeholder when history entries exist.
  *
  * Implements {@link IHistoryNavigationWidget} for integration with history-aware containers.
@@ -893,24 +893,24 @@ export class HistoryInputBox extends InputBox implements IHistoryNavigationWidge
 		}
 	}
 
-		/**
-		 * Adds the current input value to the navigation history.
-		 *
-		 * @param always - If `true`, adds the value even if it matches the current history entry.
-		 */
-		public addToHistory(always?: boolean): void {
+	/**
+	 * Adds the current input value to the navigation history.
+	 *
+	 * @param always - If `true`, adds the value even if it matches the current history entry.
+	 */
+	public addToHistory(always?: boolean): void {
 		if (this.value && (always || this.value !== this.getCurrentValue())) {
 			this.history.add(this.value);
 		}
 	}
 
-		/**
-		 * Prepends restored history entries before the existing history.
-		 * Useful for restoring history from persisted storage.
-		 *
-		 * @param restoredHistory - The history entries to prepend.
-		 */
-		public prependHistory(restoredHistory: string[]): void {
+	/**
+	 * Prepends restored history entries before the existing history.
+	 * Useful for restoring history from persisted storage.
+	 *
+	 * @param restoredHistory - The history entries to prepend.
+	 */
+	public prependHistory(restoredHistory: string[]): void {
 		const newHistory = this.getHistory();
 		this.clearHistory();
 
@@ -939,8 +939,8 @@ export class HistoryInputBox extends InputBox implements IHistoryNavigationWidge
 		return this.history.isNowhere();
 	}
 
-		/** Navigates to the next value in the history (down arrow). */
-		public showNextValue(): void {
+	/** Navigates to the next value in the history (down arrow). */
+	public showNextValue(): void {
 		if (!this.history.has(this.value)) {
 			this.addToHistory();
 		}
@@ -954,8 +954,8 @@ export class HistoryInputBox extends InputBox implements IHistoryNavigationWidge
 		aria.status(this.value ? this.value : nls.localize('clearedInput', "Cleared Input"));
 	}
 
-		/** Navigates to the previous value in the history (up arrow). */
-		public showPreviousValue(): void {
+	/** Navigates to the previous value in the history (up arrow). */
+	public showPreviousValue(): void {
 		if (!this.history.has(this.value)) {
 			this.addToHistory();
 		}

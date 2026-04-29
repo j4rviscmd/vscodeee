@@ -204,7 +204,7 @@ export class StandardKeyboardEvent implements IKeyboardEvent {
 		 *
 		 * @param window - The browser window to attach composition listeners to.
 		 */
-		public static initCompositionTracking(window: Window): void {
+	public static initCompositionTracking(window: Window): void {
 		if (StandardKeyboardEvent._compositionInitialized) {
 			return;
 		}
@@ -220,19 +220,19 @@ export class StandardKeyboardEvent implements IKeyboardEvent {
 		});
 	}
 
-		/** Whether an IME composition session is currently active. */
-		public static get isComposingActive(): boolean {
+	/** Whether an IME composition session is currently active. */
+	public static get isComposingActive(): boolean {
 		return StandardKeyboardEvent._compositionState;
 	}
 
-		/**
-		 * Whether an IME composition session ended very recently (within 200ms).
-		 *
-		 * This grace period accounts for the delay between `compositionend`
-		 * and the browser committing the composed text to the input value,
-		 * particularly in WKWebView environments.
-		 */
-		public static get recentlyComposed(): boolean {
+	/**
+	 * Whether an IME composition session ended very recently (within 200ms).
+	 *
+	 * This grace period accounts for the delay between `compositionend`
+	 * and the browser committing the composed text to the input value,
+	 * particularly in WKWebView environments.
+	 */
+	public static get recentlyComposed(): boolean {
 		return (Date.now() - StandardKeyboardEvent._compositionEndTime) < 200;
 	}
 
@@ -261,7 +261,7 @@ export class StandardKeyboardEvent implements IKeyboardEvent {
 		 *
 		 * @param source - The native browser keyboard event.
 		 */
-		constructor(source: KeyboardEvent) {
+	constructor(source: KeyboardEvent) {
 		const e = source;
 
 		this.browserEvent = e;
@@ -301,21 +301,21 @@ export class StandardKeyboardEvent implements IKeyboardEvent {
 		}
 	}
 
-		/**
-		 * Returns this keyboard event as a {@link KeyCodeChord}, combining
-		 * modifier key states with the resolved key code.
-		 */
-		public toKeyCodeChord(): KeyCodeChord {
+	/**
+	 * Returns this keyboard event as a {@link KeyCodeChord}, combining
+	 * modifier key states with the resolved key code.
+	 */
+	public toKeyCodeChord(): KeyCodeChord {
 		return this._asKeyCodeChord;
 	}
 
-		/**
-		 * Tests whether this keyboard event matches the given keybinding number.
-		 *
-		 * @param other - The keybinding number to compare against.
-		 * @returns `true` if the computed keybinding matches.
-		 */
-		public equals(other: number): boolean {
+	/**
+	 * Tests whether this keyboard event matches the given keybinding number.
+	 *
+	 * @param other - The keybinding number to compare against.
+	 * @returns `true` if the computed keybinding matches.
+	 */
+	public equals(other: number): boolean {
 		return this._asKeybinding === other;
 	}
 
@@ -323,7 +323,7 @@ export class StandardKeyboardEvent implements IKeyboardEvent {
 		 * Computes the numeric keybinding representation from modifier keys and the key code.
 		 * Modifier-only key events produce `KeyCode.Unknown`.
 		 */
-		private _computeKeybinding(): number {
+	private _computeKeybinding(): number {
 		let key = KeyCode.Unknown;
 		if (!isModifierKey(this.keyCode)) {
 			key = this.keyCode;
@@ -351,7 +351,7 @@ export class StandardKeyboardEvent implements IKeyboardEvent {
 		 * Computes a {@link KeyCodeChord} from the current modifier keys and key code.
 		 * Modifier-only key events produce `KeyCode.Unknown`.
 		 */
-		private _computeKeyCodeChord(): KeyCodeChord {
+	private _computeKeyCodeChord(): KeyCodeChord {
 		let key = KeyCode.Unknown;
 		if (!isModifierKey(this.keyCode)) {
 			key = this.keyCode;
