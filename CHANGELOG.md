@@ -7,12 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-04-29
+
+### Added
+
+- Add DEV@ prefix to window title in development builds
+
+### Fixed
+
+- Prevent IME composition Enter from triggering unintended actions ([#359](https://github.com/j4rviscmd/vscodeee/pull/359))
+- Restore missing `hasClipboardImage` in `TauriNativeHostService`
+- Handle image-only clipboard gracefully and return PNG from `readImage` ([#354](https://github.com/j4rviscmd/vscodeee/pull/354))
+- Enable HTML5 drag-and-drop for editor pane repositioning ([#342](https://github.com/j4rviscmd/vscodeee/pull/342))
+- Prevent empty editor group creation when focusing non-existent group index ([#351](https://github.com/j4rviscmd/vscodeee/pull/351))
+- Improve empty editor watermark contrast for all color themes ([#350](https://github.com/j4rviscmd/vscodeee/pull/350))
+
 ### Changed
 
 - Rename `workbench.editor.autoMaximizeOnFocus` to `vscodeee.workbench.editor.autoMaximizeOnFocus` (Tauri-specific setting now under `vscodeee` prefix)
 - Rename `vscodeee.editorGroupIndexInTab` to `vscodeee.workbench.editor.editorGroupIndexInTab`
 - Rename `vscodeee.resizeIncrement` to `vscodeee.workbench.editor.resizeIncrement`
 - Rename pane resize command IDs to `vscodeee.workbench.editor` namespace
+- Fix tab-to-space indentation in tauriDnd.ts
 
 ## [0.5.1] - 2026-04-28
 
