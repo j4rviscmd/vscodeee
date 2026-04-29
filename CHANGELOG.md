@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rename `vscodeee.resizeIncrement` to `vscodeee.workbench.editor.resizeIncrement`
 - Rename pane resize command IDs to `vscodeee.workbench.editor` namespace
 - Fix tab-to-space indentation in tauriDnd.ts
+- Regenerate `monaco.d.ts` to fix REH server build ([#361](https://github.com/j4rviscmd/vscodeee/pull/361))
 
 ## [0.5.1] - 2026-04-28
 
