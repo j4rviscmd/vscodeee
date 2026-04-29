@@ -75,6 +75,10 @@ import { CountBadge } from '../../../../../base/browser/ui/countBadge/countBadge
 import { listFilterMatchHighlight, listFilterMatchHighlightBorder } from '../../../../../platform/theme/common/colorRegistry.js';
 import { asCssVariable } from '../../../../../platform/theme/common/colorUtils.js';
 
+/**
+ * Virtual delegate for the explorer file tree list.
+ * Provides a fixed item height and template ID for all `ExplorerItem` nodes.
+ */
 export class ExplorerDelegate implements IListVirtualDelegate<ExplorerItem> {
 
 	static readonly ITEM_HEIGHT = 22;
@@ -88,7 +92,17 @@ export class ExplorerDelegate implements IListVirtualDelegate<ExplorerItem> {
 	}
 }
 
+/** Event emitter that fires when a root folder's error state changes. */
 export const explorerRootErrorEmitter = new Emitter<URI>();
+
+/**
+ * Async data source for the explorer file tree.
+ *
+ * Resolves children of `ExplorerItem` nodes from the file system, handling
+ * errors, root folder decorations, progress indicators, and the find/filter
+ * provider integration. For workspace roots with errors, emits events via
+ * {@link explorerRootErrorEmitter} to update decorations.
+ */
 export class ExplorerDataSource implements IAsyncDataSource<ExplorerItem | ExplorerItem[], ExplorerItem> {
 
 	constructor(
@@ -169,6 +183,10 @@ export class ExplorerDataSource implements IAsyncDataSource<ExplorerItem | Explo
 	}
 }
 
+/**
+ * A placeholder `ExplorerItem` used as a phantom entry in the tree.
+ * Extends `ExplorerItem` without additional behavior.
+ */
 export class PhantomExplorerItem extends ExplorerItem {
 
 }
@@ -1131,7 +1149,7 @@ export class FilesRenderer implements ICompressibleTreeRenderer<ExplorerItem, Fu
 						inputBox.select({ start: 0, end: dotIndex });
 					}
 				} else if (e.equals(KeyCode.Enter)) {
-					if (!inputBox.validate()) {
+					if (!e.isComposing && !inputBox.validate()) {
 						done(true, true);
 					}
 				} else if (e.equals(KeyCode.Escape)) {
@@ -1142,6 +1160,12 @@ export class FilesRenderer implements ICompressibleTreeRenderer<ExplorerItem, Fu
 				showInputBoxNotification();
 			}),
 			DOM.addDisposableListener(inputBox.inputElement, DOM.EventType.BLUR, async () => {
+				if (inputBox.isComposing) {
+					// WKWebView fires BLUR during composition end.
+					// Restore focus after the composition fully settles.
+					setTimeout(() => { inputBox.focus(); }, 50);
+					return;
+				}
 				while (true) {
 					await timeout(0);
 
@@ -1163,6 +1187,9 @@ export class FilesRenderer implements ICompressibleTreeRenderer<ExplorerItem, Fu
 		];
 
 		return toDisposable(() => {
+			if (inputBox.isComposing) {
+				return;
+			}
 			done(false, false);
 		});
 	}

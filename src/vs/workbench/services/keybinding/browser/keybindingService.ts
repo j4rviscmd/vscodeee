@@ -172,6 +172,18 @@ otherMacNumpadMapping.set(ScanCode.Numpad8, KeyCode.Digit8);
 otherMacNumpadMapping.set(ScanCode.Numpad9, KeyCode.Digit9);
 otherMacNumpadMapping.set(ScanCode.Numpad0, KeyCode.Digit0);
 
+/**
+ * The workbench-level keybinding service.
+ *
+ * Extends {@link AbstractKeybindingService} with user keybinding file loading,
+ * extension keybinding registration, keyboard layout handling, and IME
+ * composition awareness. Registers key event listeners on all windows and
+ * resolves keybindings using a cached {@link KeybindingResolver}.
+ *
+ * On macOS, Ctrl/Cmd modifier handling is swapped to match platform conventions.
+ * Browser keyboard conflicts (e.g. Ctrl+Arrow in web) are detected and
+ * filtered from default keybindings.
+ */
 export class WorkbenchKeybindingService extends AbstractKeybindingService {
 
 	private _keyboardMapper: IKeyboardMapper;
@@ -274,13 +286,17 @@ export class WorkbenchKeybindingService extends AbstractKeybindingService {
 	private _registerKeyListeners(window: Window): IDisposable {
 		const disposables = new DisposableStore();
 
+		// Initialize composition tracking on StandardKeyboardEvent to supplement
+		// e.isComposing, which may be unreliable in some WebView environments
+		StandardKeyboardEvent.initCompositionTracking(window);
+
 		// for standard keybindings
 		disposables.add(dom.addDisposableListener(window, dom.EventType.KEY_DOWN, (e: KeyboardEvent) => {
 			if (this._keybindingHoldMode) {
 				return;
 			}
-			this.isComposingGlobalContextKey.set(e.isComposing);
 			const keyEvent = new StandardKeyboardEvent(e);
+			this.isComposingGlobalContextKey.set(keyEvent.isComposing);
 			this._log(`/ Received  keydown event - ${printKeyboardEvent(e)}`);
 			this._log(`| Converted keydown event - ${printStandardKeyboardEvent(keyEvent)}`);
 			const shouldPreventDefault = this._dispatch(keyEvent, keyEvent.target);
@@ -293,8 +309,8 @@ export class WorkbenchKeybindingService extends AbstractKeybindingService {
 		// for single modifier chord keybindings (e.g. shift shift)
 		disposables.add(dom.addDisposableListener(window, dom.EventType.KEY_UP, (e: KeyboardEvent) => {
 			this._resetKeybindingHoldMode();
-			this.isComposingGlobalContextKey.set(e.isComposing);
 			const keyEvent = new StandardKeyboardEvent(e);
+			this.isComposingGlobalContextKey.set(keyEvent.isComposing);
 			const shouldPreventDefault = this._singleModifierDispatch(keyEvent, keyEvent.target);
 			if (shouldPreventDefault) {
 				keyEvent.preventDefault();
@@ -305,6 +321,15 @@ export class WorkbenchKeybindingService extends AbstractKeybindingService {
 		return disposables;
 	}
 
+	/**
+		 * Registers a keybindings schema contribution that provides additional
+		 * command completions for the keybindings JSON schema.
+		 *
+		 * The schema is updated immediately and whenever the contribution changes.
+		 *
+		 * @param contribution - The schema contribution to register.
+		 * @returns A disposable that removes the contribution and updates the schema.
+		 */
 	public registerSchemaContribution(contribution: KeybindingsSchemaContribution): IDisposable {
 		const listener = contribution.onDidChange?.(() => this.updateKeybindingsJsonSchema());
 		const entry = { listener, contribution };
@@ -392,6 +417,11 @@ export class WorkbenchKeybindingService extends AbstractKeybindingService {
 		return result.join('\n');
 	}
 
+	/**
+	 * Returns a formatted string containing debug information about the current
+	 * keyboard layout, resolved keybindings (default and user), the keyboard mapper
+	 * state, and the raw keyboard mapping.
+	 */
 	public _dumpDebugInfo(): string {
 		const layoutInfo = JSON.stringify(this.keyboardLayoutService.getCurrentKeyboardLayout(), null, '\t');
 		const mapperInfo = this._keyboardMapper.dumpDebugInfo();
@@ -400,6 +430,10 @@ export class WorkbenchKeybindingService extends AbstractKeybindingService {
 		return `Layout info:\n${layoutInfo}\n\n${resolvedKeybindings}\n\n${mapperInfo}\n\nRaw mapping:\n${rawMapping}`;
 	}
 
+	/**
+	 * Returns the keyboard layout and raw keyboard mapping as a JSON string.
+	 * Useful for diagnostic purposes when investigating keybinding issues.
+	 */
 	public _dumpDebugInfoJSON(): string {
 		const info = {
 			layout: this.keyboardLayoutService.getCurrentKeyboardLayout(),
@@ -408,6 +442,17 @@ export class WorkbenchKeybindingService extends AbstractKeybindingService {
 		return JSON.stringify(info, null, '\t');
 	}
 
+	/**
+	 * Enables keybinding hold mode for the specified command.
+	 *
+	 * When hold mode is active, subsequent key events are buffered until
+	 * the mode is reset (e.g. on focus loss). This is used for commands
+	 * like "Press and Hold Ctrl+K" where a second keybinding is expected.
+	 *
+	 * @param commandId - The command that triggered hold mode.
+	 * @returns A promise that resolves when hold mode is reset, or `undefined`
+	 *   if the command is not currently being dispatched.
+	 */
 	public override enableKeybindingHoldMode(commandId: string): Promise<void> | undefined {
 		if (this._currentlyDispatchingCommandId !== commandId) {
 			return undefined;
@@ -430,6 +475,7 @@ export class WorkbenchKeybindingService extends AbstractKeybindingService {
 		}
 	}
 
+	/** Returns the number of user-defined custom keybindings. */
 	public override customKeybindingsCount(): number {
 		return this.userKeybindings.keybindings.length;
 	}
@@ -558,15 +604,35 @@ export class WorkbenchKeybindingService extends AbstractKeybindingService {
 		return false;
 	}
 
+	/**
+	 * Resolves a keybinding into platform-specific resolved keybindings.
+	 *
+	 * @param kb - The keybinding to resolve.
+	 * @returns An array of resolved keybindings (may be empty).
+	 */
 	public resolveKeybinding(kb: Keybinding): ResolvedKeybinding[] {
 		return this._keyboardMapper.resolveKeybinding(kb);
 	}
 
+	/**
+	 * Resolves a keyboard event into a platform-specific resolved keybinding.
+	 * Also validates the current keyboard mapping against the event.
+	 *
+	 * @param keyboardEvent - The keyboard event to resolve.
+	 * @returns The resolved keybinding.
+	 */
 	public resolveKeyboardEvent(keyboardEvent: IKeyboardEvent): ResolvedKeybinding {
 		this.keyboardLayoutService.validateCurrentKeyboardMapping(keyboardEvent);
 		return this._keyboardMapper.resolveKeyboardEvent(keyboardEvent);
 	}
 
+	/**
+	 * Resolves a user-facing keybinding string (e.g. "ctrl+shift+p") into
+	 * platform-specific resolved keybindings.
+	 *
+	 * @param userBinding - The user-style keybinding string.
+	 * @returns An array of resolved keybindings, or empty if parsing fails.
+	 */
 	public resolveUserBinding(userBinding: string): ResolvedKeybinding[] {
 		const keybinding = KeybindingParser.parseKeybinding(userBinding);
 		return (keybinding ? this._keyboardMapper.resolveKeybinding(keybinding) : []);
@@ -658,6 +724,10 @@ export class WorkbenchKeybindingService extends AbstractKeybindingService {
 		return desc;
 	}
 
+	/**
+	 * Returns the default keybindings as a JSON-formatted string,
+	 * suitable for display in the keybindings editor or for diagnostics.
+	 */
 	public override getDefaultKeybindingsContent(): string {
 		const resolver = this._getResolver();
 		const defaultKeybindings = resolver.getDefaultKeybindings();
@@ -692,6 +762,16 @@ export class WorkbenchKeybindingService extends AbstractKeybindingService {
 		return '// ' + nls.localize('unboundCommands', "Here are other available commands: ") + '\n// - ' + pretty;
 	}
 
+	/**
+	 * Determines whether a keyboard event might produce a printable character.
+	 *
+	 * Checks modifier keys, numpad scan codes (accounting for NumLock state
+	 * and macOS numpad mappings), and the raw keyboard mapping to decide
+	 * if the key press should be treated as text input rather than a command.
+	 *
+	 * @param event - The keyboard event to evaluate.
+	 * @returns `true` if the event may produce a printable character.
+	 */
 	override mightProducePrintableCharacter(event: IKeyboardEvent): boolean {
 		if (event.ctrlKey || event.metaKey || event.altKey) {
 			// ignore ctrl/cmd/alt-combination but not shift-combinatios

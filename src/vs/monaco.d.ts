@@ -485,17 +485,35 @@ declare namespace monaco {
 		readonly enabledCommands: readonly string[];
 	}
 
+	/**
+	 * Standardized keyboard event interface used throughout the codebase.
+	 *
+	 * Wraps a native browser `KeyboardEvent` and provides a platform-agnostic
+	 * representation of modifier keys, key codes, and IME composition state.
+	 */
 	export interface IKeyboardEvent {
+		/** Branding field for type narrowing. */
 		readonly _standardKeyboardEventBrand: true;
+		/** The underlying native browser keyboard event. */
 		readonly browserEvent: KeyboardEvent;
+		/** The DOM element that was the target of the keyboard event. */
 		readonly target: HTMLElement;
+		/** Whether the Ctrl (or Cmd on macOS) modifier key was pressed. */
 		readonly ctrlKey: boolean;
+		/** Whether the Shift modifier key was pressed. */
 		readonly shiftKey: boolean;
+		/** Whether the Alt modifier key was pressed. */
 		readonly altKey: boolean;
+		/** Whether the Meta (Cmd on macOS, Win on others) modifier key was pressed. */
 		readonly metaKey: boolean;
+		/** Whether the AltGraph modifier key was pressed. */
 		readonly altGraphKey: boolean;
+		/** The resolved {@link KeyCode} for this event. */
 		readonly keyCode: KeyCode;
+		/** The physical key code string from the `KeyboardEvent.code` property. */
 		readonly code: string;
+		/** Whether an IME composition session is active for this event. */
+		readonly isComposing: boolean;
 		equals(keybinding: number): boolean;
 		preventDefault(): void;
 		stopPropagation(): void;

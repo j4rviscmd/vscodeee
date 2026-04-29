@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { StandardKeyboardEvent } from '../../../base/browser/keyboardEvent.js';
 import { KeyCode, KeyMod } from '../../../base/common/keyCodes.js';
 import { isMacintosh } from '../../../base/common/platform.js';
 import { PartialExcept } from '../../../base/common/types.js';
@@ -14,6 +15,15 @@ import { ICommandAndKeybindingRule, KeybindingWeight, KeybindingsRegistry } from
 import { endOfQuickInputBoxContext, inQuickInputContext, quickInputTypeContextKeyValue } from './quickInput.js';
 import { IInputBox, IQuickInputService, IQuickPick, IQuickTree, QuickInputType, QuickPickFocus } from '../common/quickInput.js';
 
+/**
+ * Registers a command and keybinding rule that is active while any quick input is open.
+ *
+ * Automatically generates secondary keybinding variants based on the requested
+ * modifier combinations (Alt, Ctrl/Cmd, Shift).
+ *
+ * @param rule - The command and keybinding rule to register. Must include `id` and `handler`.
+ * @param options - Modifier key combinations to generate as secondary keybindings.
+ */
 function registerQuickInputCommandAndKeybindingRule(rule: PartialExcept<ICommandAndKeybindingRule, 'id' | 'handler'>, options: { withAltMod?: boolean; withCtrlMod?: boolean; withCmdMod?: boolean } = {}) {
 	KeybindingsRegistry.registerCommandAndKeybindingRule({
 		weight: KeybindingWeight.WorkbenchContrib,
@@ -24,6 +34,15 @@ function registerQuickInputCommandAndKeybindingRule(rule: PartialExcept<ICommand
 	});
 }
 
+/**
+ * Registers a command and keybinding rule that is active only in QuickPick or QuickTree contexts.
+ *
+ * More restrictive than {@link registerQuickInputCommandAndKeybindingRule} as it requires
+ * the quick input type to be `QuickPick` or `QuickTree`.
+ *
+ * @param rule - The command and keybinding rule to register. Must include `id` and `handler`.
+ * @param options - Modifier key combinations to generate as secondary keybindings.
+ */
 function registerQuickPickCommandAndKeybindingRule(rule: PartialExcept<ICommandAndKeybindingRule, 'id' | 'handler'>, options: { withAltMod?: boolean; withCtrlMod?: boolean; withCmdMod?: boolean } = {}) {
 	KeybindingsRegistry.registerCommandAndKeybindingRule({
 		weight: KeybindingWeight.WorkbenchContrib,
@@ -43,6 +62,17 @@ function registerQuickPickCommandAndKeybindingRule(rule: PartialExcept<ICommandA
 
 const ctrlKeyMod = isMacintosh ? KeyMod.WinCtrl : KeyMod.CtrlCmd;
 
+/**
+ * Generates all modifier key combination variants for a primary keybinding.
+ *
+ * Produces secondary keybindings by combining the primary key with the requested
+ * modifier keys (Alt, Ctrl/Cmd, Shift, Cmd on macOS) in all relevant permutations.
+ *
+ * @param primary - The primary keybinding number.
+ * @param secondary - The array to append generated secondary keybindings to.
+ * @param options - Which modifier combinations to generate.
+ * @returns The array of secondary keybindings (same reference as `secondary`).
+ */
 // This function will generate all the combinations of keybindings for the given primary keybinding
 function getSecondary(primary: number, secondary: number[], options: { withAltMod?: boolean; withCtrlMod?: boolean; withCmdMod?: boolean; withShiftMod?: boolean } = {}): number[] {
 	if (options.withAltMod) {
@@ -85,6 +115,13 @@ function getSecondary(primary: number, secondary: number[], options: { withAltMo
 
 //#region Navigation
 
+/**
+ * Creates a command handler that changes the focus position in a quick pick or quick tree.
+ *
+ * @param focus - The primary focus target when not in quick navigate mode.
+ * @param focusOnQuickNatigate - The fallback focus target when quick navigate is active.
+ * @returns A command handler function.
+ */
 function focusHandler(focus: QuickPickFocus, focusOnQuickNatigate?: QuickPickFocus): ICommandHandler {
 	return accessor => {
 		// Assuming this is a quick pick due to above when clause
@@ -222,6 +259,9 @@ KeybindingsRegistry.registerCommandAndKeybindingRule({
 	),
 	metadata: { description: localize('nonQuickWidget', "Used while in the context of some quick input. If you change one keybinding for this command, you should change all of the other keybindings (modifier variants) of this command as well.") },
 	handler: (accessor) => {
+		if (StandardKeyboardEvent.isComposingActive || StandardKeyboardEvent.recentlyComposed) {
+			return;
+		}
 		const currentQuickPick = accessor.get(IQuickInputService).currentQuickInput as IQuickPick<any> | IQuickTree<any> | IInputBox;
 		currentQuickPick?.accept();
 	},
