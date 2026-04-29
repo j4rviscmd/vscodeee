@@ -64,4 +64,9 @@ export interface IClipboardService {
 	 * image, an empty buffer is returned.
 	 */
 	readImage(): Promise<Uint8Array>;
+
+	/**
+	 * Returns true if the system clipboard currently contains an image.
+	 */
+	hasClipboardImage?(): Promise<boolean>;
 }

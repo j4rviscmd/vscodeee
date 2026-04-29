@@ -10,12 +10,16 @@ use super::error::NativeHostError;
 // ─── Existing commands (moved from native_host.rs) ──────────────────────
 
 /// Read text from the system clipboard.
+///
+/// Returns an empty string if the clipboard contains no text
+/// (e.g. only an image) instead of propagating the error.
 #[tauri::command]
 pub fn read_clipboard_text(app: tauri::AppHandle) -> Result<String, NativeHostError> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
-    app.clipboard()
-        .read_text()
-        .map_err(|e| NativeHostError::Clipboard(e.to_string()))
+    match app.clipboard().read_text() {
+        Ok(text) => Ok(text),
+        Err(_) => Ok(String::new()),
+    }
 }
 
 /// Write text to the system clipboard.
@@ -108,19 +112,46 @@ pub fn write_clipboard_find_text(text: String) {
 
 /// Read an image from the clipboard as PNG bytes (base64-encoded).
 ///
+/// Converts the raw RGBA pixel data from arboard into a proper PNG
+/// file so that consumers receive format-encoded bytes (matching the
+/// contract of BrowserClipboardService.readImage).
 /// Returns an empty string if no image is available.
 #[tauri::command]
 pub fn read_clipboard_image(app: tauri::AppHandle) -> Result<String, NativeHostError> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
     match app.clipboard().read_image() {
-        Ok(image) => {
-            let bytes = image.rgba().to_vec();
+        Ok(image_data) => {
+            let width = image_data.width();
+            let height = image_data.height();
+            let rgba_bytes = image_data.rgba().to_vec();
+
+            let img_buffer = image::RgbaImage::from_raw(width, height, rgba_bytes)
+                .ok_or_else(|| NativeHostError::Other("Invalid image dimensions".to_string()))?;
+
+            let mut png_bytes = Vec::new();
+            img_buffer
+                .write_to(
+                    &mut std::io::Cursor::new(&mut png_bytes),
+                    image::ImageFormat::Png,
+                )
+                .map_err(|e| NativeHostError::Other(format!("PNG encode failed: {e}")))?;
+
             Ok(base64::Engine::encode(
                 &base64::engine::general_purpose::STANDARD,
-                &bytes,
+                &png_bytes,
             ))
         }
         Err(_) => Ok(String::new()),
+    }
+}
+
+/// Check whether the clipboard currently contains an image.
+#[tauri::command]
+pub fn has_clipboard_image(app: tauri::AppHandle) -> Result<bool, NativeHostError> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    match app.clipboard().read_image() {
+        Ok(_) => Ok(true),
+        Err(_) => Ok(false),
     }
 }
 
