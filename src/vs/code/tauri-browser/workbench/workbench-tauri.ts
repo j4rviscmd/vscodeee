@@ -117,6 +117,7 @@
     appDataDir: string;
     restoredFolderUri?: string;
     restoredWorkspaceUri?: string;
+    isDevBuild?: boolean;
   }
 
   /**
@@ -152,6 +153,7 @@
     homeDir: hostInfo.homeDir,
     tmpDir: hostInfo.tmpDir,
     windowLabel: new URL(document.location.href).searchParams.get('windowLabel') ?? 'main',
+    isDevBuild: windowConfig.isDevBuild,
   };
 
   //#endregion

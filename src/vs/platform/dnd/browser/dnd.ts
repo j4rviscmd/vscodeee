@@ -13,7 +13,7 @@ import { IDisposable, toDisposable } from '../../../base/common/lifecycle.js';
 import { ResourceMap } from '../../../base/common/map.js';
 import { parse } from '../../../base/common/marshalling.js';
 import { Schemas } from '../../../base/common/network.js';
-import { isNative, isWeb } from '../../../base/common/platform.js';
+import { isNative, isNativeDesktop, isWeb } from '../../../base/common/platform.js';
 import { URI, UriComponents } from '../../../base/common/uri.js';
 import { localize } from '../../../nls.js';
 import { IDialogService } from '../../dialogs/common/dialogs.js';
@@ -29,6 +29,12 @@ import { IMarker } from '../../markers/common/markers.js';
 
 //#region Editor / Resources DND
 
+/**
+ * MIME-type keys used for VS Code-specific drag-and-drop data transfers.
+ *
+ * These keys are stored in the `DataTransfer` object during drag operations
+ * and read back on drop to determine the type of content being transferred.
+ */
 export const CodeDataTransfers = {
 	EDITORS: 'CodeEditors',
 	FILES: 'CodeFiles',
@@ -55,6 +61,22 @@ export interface IDraggedResourceEditorInput extends IBaseTextResourceEditorInpu
 	allowWorkspaceOpen?: boolean;
 }
 
+/**
+ * Extracts editor input data from a drag event's data transfer.
+ *
+ * Checks multiple transfer formats in order of priority:
+ * 1. Internal Code editors (`CodeEditors`)
+ * 2. Resource URIs (`Resources`)
+ * 3. Native file objects
+ * 4. CodeFiles transfer
+ * 5. Workbench D&D contributions
+ *
+ * Deduplicates entries by resource URI to avoid opening the same
+ * file multiple times from overlapping transfer formats.
+ *
+ * @param e - The drag event containing the data transfer.
+ * @returns An array of extracted editor inputs, deduplicated by resource URI.
+ */
 export function extractEditorsDropData(e: DragEvent): Array<IDraggedResourceEditorInput> {
 	const editors: IDraggedResourceEditorInput[] = [];
 	if (e.dataTransfer && e.dataTransfer.types.length > 0) {
@@ -138,11 +160,24 @@ export function extractEditorsDropData(e: DragEvent): Array<IDraggedResourceEdit
 	return coalescedEditors;
 }
 
+/**
+ * Extracts editor input data from a drag event, including web file transfers.
+ *
+ * Extends {@link extractEditorsDropData} with additional handling for web
+ * file system access (via `FileSystemHandle` or `FileList`). Skipped on
+ * native desktop platforms (Tauri/Electron) where native file resolution
+ * is handled by `getPathForFile`.
+ *
+ * @param accessor - Service accessor for resolving dependencies.
+ * @param e - The drag event containing the data transfer.
+ * @returns A promise that resolves to an array of extracted editor inputs.
+ */
 export async function extractEditorsAndFilesDropData(accessor: ServicesAccessor, e: DragEvent): Promise<Array<IDraggedResourceEditorInput>> {
 	const editors = extractEditorsDropData(e);
 
-	// Web: Check for file transfer
-	if (e.dataTransfer && isWeb && containsDragType(e, DataTransfers.FILES)) {
+	// Web: Check for file transfer — skip for native desktop (Tauri/Electron)
+	// where getPathForFile() handles native file resolution.
+	if (e.dataTransfer && isWeb && !isNativeDesktop && containsDragType(e, DataTransfers.FILES)) {
 		const files = e.dataTransfer.items;
 		if (files) {
 			const instantiationService = accessor.get(IInstantiationService);
@@ -156,6 +191,16 @@ export async function extractEditorsAndFilesDropData(accessor: ServicesAccessor,
 	return editors;
 }
 
+/**
+ * Parses raw resource URI strings from a data transfer into editor inputs.
+ *
+ * Each resource string is parsed as a URI, and if it contains a `#L` selection
+ * fragment (e.g., `file:///path/to/file.ts#L10,5`), the selection is extracted
+ * and attached to the editor input options.
+ *
+ * @param rawResourcesData - JSON-encoded array of resource URI strings.
+ * @returns An array of dragged editor inputs with optional selection ranges.
+ */
 export function createDraggedEditorInputFromRawResourcesData(rawResourcesData: string | undefined): IDraggedResourceEditorInput[] {
 	const editors: IDraggedResourceEditorInput[] = [];
 
@@ -244,6 +289,17 @@ async function extractFileTransferData(accessor: ServicesAccessor, items: DataTr
 	return coalesce(await Promise.all(results.map(result => result.p)));
 }
 
+/**
+ * Extracts file transfer data from a browser `FileList` (e.g., from drag-and-drop).
+ *
+ * Reads each file's contents into a `VSBuffer` and creates an untitled resource
+ * URI for it. Files larger than 100 MB are skipped with a warning dialog to
+ * avoid unbuffered memory pressure.
+ *
+ * @param accessor - Service accessor for resolving dependencies.
+ * @param files - The `FileList` from the drag event's `dataTransfer.files`.
+ * @returns A promise that resolves to an array of file transfer data.
+ */
 export async function extractFileListData(accessor: ServicesAccessor, files: FileList): Promise<IFileTransferData[]> {
 	const dialogService = accessor.get(IDialogService);
 
@@ -291,6 +347,16 @@ export async function extractFileListData(accessor: ServicesAccessor, files: Fil
 
 //#endregion
 
+/**
+ * Checks whether a drag event's data transfer contains any of the specified MIME types.
+ *
+ * Comparison is case-insensitive because browser implementations vary in
+ * the casing of `dataTransfer.types`.
+ *
+ * @param event - The drag event to inspect.
+ * @param dragTypesToFind - One or more MIME type strings to search for.
+ * @returns `true` if any of the specified types are present, `false` otherwise.
+ */
 export function containsDragType(event: DragEvent, ...dragTypesToFind: string[]): boolean {
 	if (!event.dataTransfer) {
 		return false;
@@ -313,6 +379,9 @@ export function containsDragType(event: DragEvent, ...dragTypesToFind: string[])
 
 //#region DND contributions
 
+/**
+ * Describes a resource with its URI and optional metadata for drag-and-drop operations.
+ */
 export interface IResourceStat {
 	readonly resource: URI;
 	readonly isDirectory?: boolean;
@@ -446,6 +515,9 @@ export class LocalSelectionTransfer<T> {
 	}
 }
 
+/**
+ * Data transferred when dragging a document symbol from the outline/breadcrumb view.
+ */
 export interface DocumentSymbolTransferData {
 	name: string;
 	fsPath: string;
@@ -458,6 +530,9 @@ export interface DocumentSymbolTransferData {
 	kind: number;
 }
 
+/**
+ * Data transferred when dragging a notebook cell output.
+ */
 export interface NotebookCellOutputTransferData {
 	outputId: string;
 }
@@ -479,24 +554,58 @@ function getDataAsJSON<T>(e: DragEvent, kind: string, defaultValue: T): T {
 	return defaultValue;
 }
 
+/**
+ * Extracts document symbol transfer data from a drag event.
+ *
+ * @param e - The drag event containing the data transfer.
+ * @returns An array of {@link DocumentSymbolTransferData}, or an empty array if none found.
+ */
 export function extractSymbolDropData(e: DragEvent): DocumentSymbolTransferData[] {
 	return getDataAsJSON(e, CodeDataTransfers.SYMBOLS, []);
 }
 
+/**
+ * Attaches document symbol data to a drag event's data transfer.
+ *
+ * @param symbolsData - The symbol data to attach.
+ * @param e - The drag event whose data transfer will be populated.
+ */
 export function fillInSymbolsDragData(symbolsData: readonly DocumentSymbolTransferData[], e: DragEvent): void {
 	setDataAsJSON(e, CodeDataTransfers.SYMBOLS, symbolsData);
 }
 
+/**
+ * Data transferred when dragging a problem marker from the Problems panel.
+ * Can be a full marker object or a URI-only reference.
+ */
 export type MarkerTransferData = IMarker | { uri: UriComponents };
 
+/**
+ * Extracts problem marker transfer data from a drag event.
+ *
+ * @param e - The drag event containing the data transfer.
+ * @returns An array of marker data, or `undefined` if none found.
+ */
 export function extractMarkerDropData(e: DragEvent): MarkerTransferData[] | undefined {
 	return getDataAsJSON(e, CodeDataTransfers.MARKERS, undefined);
 }
 
+/**
+ * Attaches problem marker data to a drag event's data transfer.
+ *
+ * @param markerData - The marker data to attach.
+ * @param e - The drag event whose data transfer will be populated.
+ */
 export function fillInMarkersDragData(markerData: MarkerTransferData[], e: DragEvent): void {
 	setDataAsJSON(e, CodeDataTransfers.MARKERS, markerData);
 }
 
+/**
+ * Extracts notebook cell output transfer data from a drag event.
+ *
+ * @param e - The drag event containing the data transfer.
+ * @returns The notebook cell output data, or `undefined` if none found.
+ */
 export function extractNotebookCellOutputDropData(e: DragEvent): NotebookCellOutputTransferData | undefined {
 	return getDataAsJSON(e, CodeDataTransfers.NOTEBOOK_CELL_OUTPUT, undefined);
 }
@@ -509,11 +618,32 @@ interface IElectronWebUtils {
 	};
 }
 
+let _customGetPathForFile: ((file: File) => string | undefined) | undefined;
+
+/**
+ * Register a custom file path resolver for drag-and-drop operations.
+ * Used by platform-specific D&D bridges (e.g., Tauri) to provide
+ * native file paths from OS drop events.
+ */
+export function registerCustomGetPathForFile(resolver: ((file: File) => string | undefined) | undefined): void {
+	_customGetPathForFile = resolver;
+}
+
 /**
  * A helper to get access to Electrons `webUtils.getPathForFile` function
  * in a safe way without crashing the application when running in the web.
+ * Also supports custom resolvers registered by platform D&D bridges.
  */
 export function getPathForFile(file: File): string | undefined {
+	// Try custom resolver first (e.g., Tauri D&D bridge)
+	if (_customGetPathForFile) {
+		const path = _customGetPathForFile(file);
+		if (path) {
+			return path;
+		}
+	}
+
+	// Electron: use the native webUtils API
 	if (isNative && typeof (globalThis as IElectronWebUtils).vscode?.webUtils?.getPathForFile === 'function') {
 		return (globalThis as IElectronWebUtils).vscode?.webUtils?.getPathForFile(file);
 	}

@@ -19,7 +19,7 @@ import { ILogService } from '../../../../platform/log/common/log.js';
 import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { IUserDataProfilesService } from '../../../../platform/userDataProfile/common/userDataProfile.js';
-import { IOpenEmptyWindowOptions, IOpenWindowOptions, IWindowOpenable, isFolderToOpen, isWorkspaceToOpen } from '../../../../platform/window/common/window.js';
+import { IOpenEmptyWindowOptions, IOpenWindowOptions, IWindowOpenable, isFolderToOpen, isWorkspaceToOpen, IPoint, IRectangle } from '../../../../platform/window/common/window.js';
 import { invoke } from '../../../../platform/tauri/common/tauriApi.js';
 import { Schemas } from '../../../../base/common/network.js';
 
@@ -36,6 +36,7 @@ import { Schemas } from '../../../../base/common/network.js';
  * - {@link toggleFullScreen}: uses native window fullscreen instead of the DOM Fullscreen API
  * - {@link moveTop}: brings the window to front via the native API
  * - {@link restart}: relaunches the entire application (not just a WebView reload)
+ * - {@link getCursorScreenPoint}: returns cursor position via native API for D&D positioning
  *
  * Registered as a delayed singleton so that it overrides the browser
  * implementation loaded by `workbench.common.main.js`.
@@ -97,6 +98,22 @@ export class TauriHostService extends BrowserHostService {
   }
 
   /**
+	 * Returns the cursor position in screen coordinates and the display bounds.
+	 *
+	 * Overrides the browser implementation (which returns `undefined`) to delegate
+	 * to the native Tauri API. Required for drag-to-new-window to correctly
+	 * position auxiliary editor windows.
+	 */
+  override async getCursorScreenPoint(): Promise<{ readonly point: IPoint; readonly display: IRectangle } | undefined> {
+    try {
+      return await this.nativeHostService.getCursorScreenPoint();
+    } catch (err) {
+      this._logService.error('[TauriHostService] getCursorScreenPoint failed:', err);
+      return undefined;
+    }
+  }
+
+  /**
 	 * Opens a new window, with special handling for remote authority.
 	 *
 	 * The browser implementation's `doOpenEmptyWindow` drops the
@@ -108,8 +125,16 @@ export class TauriHostService extends BrowserHostService {
 	 *
 	 * For non-empty windows (folder/workspace openables), it also extracts
 	 * `remoteAuthority` from `vscode-remote://` URIs.
+	 *
+	 * @param options - Options for opening an empty window.
 	 */
   override openWindow(options?: IOpenEmptyWindowOptions): Promise<void>;
+  /**
+	 * Opens a new window with the specified openables.
+	 *
+	 * @param toOpen - Array of folders, workspaces, or files to open.
+	 * @param options - Options controlling window reuse, diff/merge modes, etc.
+	 */
   override openWindow(toOpen: IWindowOpenable[], options?: IOpenWindowOptions): Promise<void>;
   override async openWindow(arg1?: IOpenEmptyWindowOptions | IWindowOpenable[], arg2?: IOpenWindowOptions): Promise<void> {
     // Empty window with remoteAuthority — Remote-SSH uses this path

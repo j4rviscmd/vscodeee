@@ -9,7 +9,7 @@ import { $, addDisposableListener, DragAndDropObserver, EventHelper, EventType, 
 import { renderFormattedText } from '../../../../base/browser/formattedTextRenderer.js';
 import { RunOnceScheduler } from '../../../../base/common/async.js';
 import { toDisposable } from '../../../../base/common/lifecycle.js';
-import { isMacintosh, isWeb } from '../../../../base/common/platform.js';
+import { isMacintosh, isNativeDesktop, isWeb } from '../../../../base/common/platform.js';
 import { assertReturnsAllDefined, assertReturnsDefined } from '../../../../base/common/types.js';
 import { localize } from '../../../../nls.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
@@ -40,6 +40,17 @@ function isDragIntoEditorEvent(e: DragEvent): boolean {
 	return e.shiftKey;
 }
 
+/**
+ * Visual overlay that indicates where a dragged editor or editor group will be dropped.
+ *
+ * Renders a semi-transparent rectangle over the target editor group, split into
+ * directional regions (left, right, up, down) when group splitting is enabled.
+ * The overlay position is updated on every `dragover` event to reflect the
+ * current cursor position relative to the editor group boundaries.
+ *
+ * Also shows a "drop into editor" prompt when the feature is enabled and the
+ * user holds Shift during the drag.
+ */
 class DropOverlay extends Themable {
 
 	private static readonly OVERLAY_ID = 'monaco-workbench-editor-drop-overlay';
@@ -80,6 +91,10 @@ class DropOverlay extends Themable {
 		this.create();
 	}
 
+	/**
+	 * Creates the overlay DOM structure: a container div positioned below the
+	 * tab bar and an inner indicator element styled with the current theme colors.
+	 */
 	private create(): void {
 		const overlayOffsetHeight = this.getOverlayOffsetHeight();
 
@@ -140,6 +155,17 @@ class DropOverlay extends Themable {
 		}
 	}
 
+	/**
+	 * Registers drag-and-drop event listeners on the overlay container.
+	 *
+	 * Handles:
+	 * - `dragover`: updates the drop effect, validates copy vs. move operations,
+	 *   and positions the overlay based on cursor location.
+	 * - `dragleave` / `dragend`: disposes the overlay.
+	 * - `drop`: processes the drop by delegating to the appropriate handler
+	 *   (group, editor, tree item, or resource URI).
+	 * - `mouseover`: safety cleanup to prevent stale overlays (known issue in VMs).
+	 */
 	private registerListeners(container: HTMLElement): void {
 		this._register(new DragAndDropObserver(container, {
 			onDragOver: e => {
@@ -223,10 +249,21 @@ class DropOverlay extends Themable {
 		}));
 	}
 
+	/**
+	 * Checks whether the active editor in the target group supports
+	 * drop-into-editor (e.g., text editors with the
+	 * {@link EditorInputCapabilities.CanDropIntoEditor} capability).
+	 */
 	private isDropIntoActiveEditorEnabled(): boolean {
 		return !!this.groupView.activeEditor?.hasCapability(EditorInputCapabilities.CanDropIntoEditor);
 	}
 
+	/**
+	 * Resolves the source editor group from the current drag transfer data.
+	 *
+	 * Checks both group transfers (for entire group drags) and editor
+	 * transfers (for individual editor drags) to find the originating group.
+	 */
 	private findSourceGroupView(): IEditorGroup | undefined {
 
 		// Check for group transfer
@@ -248,6 +285,22 @@ class DropOverlay extends Themable {
 		return undefined;
 	}
 
+	/**
+	 * Processes a drop event by dispatching to the appropriate handler based on
+	 * the transfer data type.
+	 *
+	 * Handles four drop types in order of priority:
+	 * 1. **Editor group transfer** -- moves or copies the entire source group.
+	 * 2. **Editor transfer** -- moves or copies individual editor tabs.
+	 * 3. **Tree items transfer** -- opens tree items (e.g., from the file explorer).
+	 * 4. **URI transfer** -- opens resources via the generic {@link ResourcesDropHandler}.
+	 *
+	 * When `splitDirection` is specified, a new editor group is created in that
+	 * direction; otherwise the drop targets the existing group.
+	 *
+	 * @param event - The native drop event.
+	 * @param splitDirection - Optional direction to split the editor group.
+	 */
 	private async handleDrop(event: DragEvent, splitDirection?: GroupDirection): Promise<void> {
 
 		// Determine target group
@@ -365,11 +418,21 @@ class DropOverlay extends Themable {
 
 		// Check for URI transfer
 		else {
-			const dropHandler = this.instantiationService.createInstance(ResourcesDropHandler, { allowWorkspaceOpen: !isWeb || isTemporaryWorkspace(this.contextService.getWorkspace()) });
+			const dropHandler = this.instantiationService.createInstance(ResourcesDropHandler, { allowWorkspaceOpen: !isWeb || isNativeDesktop || isTemporaryWorkspace(this.contextService.getWorkspace()) });
 			dropHandler.handleDrop(event, getWindow(this.groupView.element), () => ensureTargetGroup(), targetGroup => targetGroup?.focus());
 		}
 	}
 
+	/**
+	 * Determines whether the drag event indicates a copy operation.
+	 *
+	 * On Windows/Linux, Ctrl+drag produces a copy. On macOS, Alt+drag produces a copy.
+	 * Singleton editors cannot be copied.
+	 *
+	 * @param e - The drag event to inspect.
+	 * @param draggedEditor - The editor being dragged, if any.
+	 * @returns `true` if the operation should be a copy.
+	 */
 	private isCopyOperation(e: DragEvent, draggedEditor?: IEditorIdentifier): boolean {
 		if (draggedEditor?.editor.hasCapability(EditorInputCapabilities.Singleton)) {
 			return false; // Singleton editors cannot be split
@@ -378,10 +441,31 @@ class DropOverlay extends Themable {
 		return (e.ctrlKey && !isMacintosh) || (e.altKey && isMacintosh);
 	}
 
+	/**
+	 * Determines whether the user is holding the toggle-split modifier key.
+	 *
+	 * On Windows/Linux, Alt+drag toggles splitting. On macOS, Shift+drag toggles splitting.
+	 *
+	 * @param e - The drag event to inspect.
+	 * @returns `true` if the split direction should be toggled.
+	 */
 	private isToggleSplitOperation(e: DragEvent): boolean {
 		return (e.altKey && !isMacintosh) || (e.shiftKey && isMacintosh);
 	}
 
+	/**
+	 * Positions the overlay indicator based on the cursor location within the editor group.
+	 *
+	 * The editor area is divided into a 3x3 grid. The center region produces a merge
+	 * (no split), while the edge regions produce directional splits. The preferred
+	 * split direction (horizontal or vertical) determines which edges get larger
+	 * hit zones (30% vs 10% threshold) for better UX.
+	 *
+	 * @param mousePosX - The cursor's X position relative to the editor group.
+	 * @param mousePosY - The cursor's Y position relative to the editor group.
+	 * @param isDraggingGroup - Whether a full editor group is being dragged.
+	 * @param enableSplitting - Whether group splitting is allowed (from settings/modifiers).
+	 */
 	private positionOverlay(mousePosX: number, mousePosY: number, isDraggingGroup: boolean, enableSplitting: boolean): void {
 		const preferSplitVertically = this.groupView.groupsView.partOptions.openSideBySideDirection === 'right';
 
@@ -502,6 +586,11 @@ class DropOverlay extends Themable {
 		this.currentDropOperation = { splitDirection };
 	}
 
+	/**
+	 * Applies CSS positioning to the overlay container and indicator element.
+	 *
+	 * @param options - The CSS inset values for the indicator element.
+	 */
 	private doPositionOverlay(options: { top: string; left: string; width: string; height: string }): void {
 		const [container, overlay] = assertReturnsAllDefined(this.container, this.overlay);
 
@@ -520,6 +609,12 @@ class DropOverlay extends Themable {
 		overlay.style.height = options.height;
 	}
 
+	/**
+	 * Calculates the vertical offset for the overlay container.
+	 *
+	 * When tabs are visible and the group is non-empty, the overlay starts
+	 * below the tab bar. Otherwise it covers the entire editor area.
+	 */
 	private getOverlayOffsetHeight(): number {
 
 		// With tabs and opened editors: use the area below tabs as drop target
@@ -531,6 +626,10 @@ class DropOverlay extends Themable {
 		return 0;
 	}
 
+	/**
+	 * Hides the overlay by resetting its position to full coverage and
+	 * setting opacity to 0. Clears the current drop operation state.
+	 */
 	private hideOverlay(): void {
 		const overlay = assertReturnsDefined(this.overlay);
 
@@ -543,6 +642,11 @@ class DropOverlay extends Themable {
 		this.currentDropOperation = undefined;
 	}
 
+	/**
+	 * Shows or hides the "Hold Shift to drop into editor" prompt element.
+	 *
+	 * @param showing - Whether the prompt should be visible.
+	 */
 	private toggleDropIntoPrompt(showing: boolean) {
 		if (!this.dropIntoPromptElement) {
 			return;
@@ -561,6 +665,14 @@ class DropOverlay extends Themable {
 	}
 }
 
+/**
+ * Manages drag-and-drop targeting for the editor area.
+ *
+ * Listens for `dragenter`, `dragleave`, and `dragend` events on the editor
+ * groups container and creates/destroys {@link DropOverlay} instances on the
+ * appropriate editor group views. Uses a reference counter to handle nested
+ * drag events correctly (multiple child elements can fire `dragenter`/`dragleave`).
+ */
 export class EditorDropTarget extends Themable {
 
 	private _overlay?: DropOverlay;
@@ -592,6 +704,11 @@ export class EditorDropTarget extends Themable {
 		return undefined;
 	}
 
+	/**
+	 * Registers DOM event listeners for drag enter, leave, and end events.
+	 * `dragend` is listened on both the container and the window to ensure
+	 * cleanup even if the cursor leaves the window.
+	 */
 	private registerListeners(): void {
 		this._register(addDisposableListener(this.container, EventType.DRAG_ENTER, e => this.onDragEnter(e)));
 		this._register(addDisposableListener(this.container, EventType.DRAG_LEAVE, () => this.onDragLeave()));
@@ -600,6 +717,13 @@ export class EditorDropTarget extends Themable {
 		}
 	}
 
+	/**
+	 * Handles the `dragenter` event on the editor groups container.
+	 *
+	 * Validates the transfer data type, checks the `allowDropIntoGroup` setting,
+	 * increments the reference counter, and creates a {@link DropOverlay} on
+	 * the target editor group.
+	 */
 	private onDragEnter(event: DragEvent): void {
 		if (isDropIntoEditorEnabledGlobally(this.configurationService) && isDragIntoEditorEvent(event)) {
 			return;
@@ -650,6 +774,10 @@ export class EditorDropTarget extends Themable {
 		}
 	}
 
+	/**
+	 * Handles the `dragleave` event. Decrements the reference counter and
+	 * removes the `dragged-over` CSS class when the counter reaches zero.
+	 */
 	private onDragLeave(): void {
 		this.counter--;
 
@@ -658,6 +786,10 @@ export class EditorDropTarget extends Themable {
 		}
 	}
 
+	/**
+	 * Handles the `dragend` event. Resets the reference counter, removes the
+	 * `dragged-over` CSS class, and disposes the overlay.
+	 */
 	private onDragEnd(): void {
 		this.counter = 0;
 
@@ -665,6 +797,10 @@ export class EditorDropTarget extends Themable {
 		this.disposeOverlay();
 	}
 
+	/**
+	 * Finds the editor group view that contains the given DOM element,
+	 * either as a descendant or via the delegate's custom containment check.
+	 */
 	private findTargetGroupView(child: HTMLElement): IEditorGroupView | undefined {
 		const groups = this.editorGroupService.groups as IEditorGroupView[];
 

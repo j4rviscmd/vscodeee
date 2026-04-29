@@ -617,7 +617,12 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
     return invoke<boolean>('has_clipboard', { format });
   }
 
-  /** Reads an image from the clipboard as raw bytes via the Rust backend. */
+  /** Returns whether the clipboard currently contains an image. */
+  async hasClipboardImage(): Promise<boolean> {
+    return invoke<boolean>('has_clipboard_image');
+  }
+
+  /** Reads an image from the clipboard as PNG bytes via the Rust backend. */
   async readImage(): Promise<Uint8Array> {
     const base64 = await invoke<string>('read_clipboard_image');
     if (!base64) {

@@ -31,6 +31,7 @@ export interface ITauriWindowConfiguration {
   readonly homeDir?: string;
   readonly tmpDir?: string;
   readonly windowLabel?: string;
+  readonly isDevBuild?: boolean;
 }
 
 /**
@@ -157,5 +158,16 @@ export class TauriWorkbenchEnvironmentService extends BrowserWorkbenchEnvironmen
   get extensionsPath(): string {
     const dataFolderName = this.tauriProductService.dataFolderName ?? 'vscodeee';
     return URI.joinPath(this.userHome, dataFolderName, 'extensions').fsPath;
+  }
+
+  /**
+   * Whether the application was compiled in debug mode.
+   *
+   * Determined by `cfg!(debug_assertions)` in the Rust backend and
+   * passed via `WindowConfiguration.isDevBuild` at startup.
+   */
+  @memoize
+  override get isDevBuild(): boolean {
+    return this.tauriConfig.isDevBuild === true;
   }
 }

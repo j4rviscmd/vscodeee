@@ -22,6 +22,11 @@ import { ILogService } from '../../log/common/log.js';
  */
 const vscodeResourcesMime = 'application/vnd.code.resources';
 
+/**
+ * Image MIME types supported by the browser clipboard API.
+ */
+const SUPPORTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/tiff', 'image/bmp'];
+
 export class BrowserClipboardService extends Disposable implements IClipboardService {
 
 	declare readonly _serviceBrand: undefined;
@@ -55,8 +60,7 @@ export class BrowserClipboardService extends Disposable implements IClipboardSer
 			const clipboardItems = await navigator.clipboard.read();
 			const clipboardItem = clipboardItems[0];
 
-			const supportedImageTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/tiff', 'image/bmp'];
-			const mimeType = supportedImageTypes.find(type => clipboardItem.types.includes(type));
+			const mimeType = SUPPORTED_IMAGE_TYPES.find(type => clipboardItem.types.includes(type));
 
 			if (mimeType) {
 				const blob = await clipboardItem.getType(mimeType);
@@ -71,6 +75,16 @@ export class BrowserClipboardService extends Disposable implements IClipboardSer
 
 		// Return an empty Uint8Array if no image is found or an error occurs
 		return new Uint8Array(0);
+	}
+
+	async hasClipboardImage(): Promise<boolean> {
+		try {
+			const clipboardItems = await navigator.clipboard.read();
+			const clipboardItem = clipboardItems[0];
+			return SUPPORTED_IMAGE_TYPES.some(type => clipboardItem.types.includes(type));
+		} catch {
+			return false;
+		}
 	}
 
 	private webKitPendingClipboardWritePromise: DeferredPromise<string> | undefined;

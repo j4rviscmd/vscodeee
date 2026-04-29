@@ -188,6 +188,11 @@ export class TauriClipboardService extends Disposable implements IClipboardServi
     return this.nativeHostService.readImage();
   }
 
+  /** @inheritDoc IClipboardService.hasClipboardImage */
+  async hasClipboardImage(): Promise<boolean> {
+    return this.nativeHostService.hasClipboardImage();
+  }
+
   /**
 	 * Computes a hash of the current system clipboard text content,
 	 * truncated to {@link MAX_RESOURCE_STATE_SOURCE_LENGTH} characters.
