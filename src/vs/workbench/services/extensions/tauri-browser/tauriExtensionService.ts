@@ -15,9 +15,12 @@ import { IAutomatedWindow, getLogs } from '../../../../platform/log/browser/log.
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
+import { IProgressService, ProgressLocation } from '../../../../platform/progress/common/progress.js';
 import { PersistentConnectionEventType } from '../../../../platform/remote/common/remoteAgentConnection.js';
 import { IRemoteAuthorityResolverService, RemoteAuthorityResolverError, ResolverResult } from '../../../../platform/remote/common/remoteAuthorityResolver.js';
 import { IRemoteExtensionsScannerService } from '../../../../platform/remote/common/remoteExtensionsScanner.js';
+import { getRemoteName } from '../../../../platform/remote/common/remoteHosts.js';
+import { localize } from '../../../../nls.js';
 import { ITelemetryService } from '../../../../platform/telemetry/common/telemetry.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { IWorkspaceTrustManagementService } from '../../../../platform/workspace/common/workspaceTrust.js';
@@ -47,6 +50,14 @@ import { TauriExtensionHostKindPicker } from './tauriExtensionHostKindPicker.js'
  */
 export class TauriExtensionService extends AbstractExtensionService implements IExtensionService {
 
+  /**
+   * Creates a new {@link TauriExtensionService} instance.
+   *
+   * Configures the extension host factory to route extensions through the Tauri
+   * LocalProcess extension host (Rust WS relay). Registers fetch-based file
+   * system providers for HTTP/HTTPS schemes and schedules initialization on
+   * {@link LifecyclePhase.Ready}.
+   */
   constructor(
     @IInstantiationService instantiationService: IInstantiationService,
     @INotificationService notificationService: INotificationService,
@@ -125,6 +136,13 @@ export class TauriExtensionService extends AbstractExtensionService implements I
     this._register(this._fileService.registerProvider(Schemas.https, provider));
   }
 
+  /**
+   * Initialize the extension service.
+   *
+   * Ensures user-data installed extensions are initialized before delegating
+   * to the base class initialization which starts extension hosts and resolves
+   * extensions.
+   */
   protected override async _initialize(): Promise<void> {
     await this._userDataInitializationService.initializeInstalledExtensions(this._instantiationService);
     await super._initialize();
@@ -181,10 +199,35 @@ export class TauriExtensionService extends AbstractExtensionService implements I
     emitter.emitOne(new LocalExtensions(localExtensions));
   }
 
+  /**
+   * Returns an async iterable that yields {@link ResolvedExtensions} events.
+   *
+   * Delegates to {@link _doResolveExtensions} which handles both the default
+   * resolution path and the resolver-extension path (e.g. Remote-SSH).
+   */
   protected _resolveExtensions(): AsyncIterable<ResolvedExtensions> {
     return new AsyncIterableProducer(emitter => this._doResolveExtensions(emitter));
   }
 
+  /**
+   * Core extension resolution logic.
+   *
+   * Two paths:
+   * 1. **Default** (no resolver extension) -- scans local and remote extensions
+   *    in parallel and emits them directly.
+   * 2. **Resolver extension** -- filters local extensions for resolver candidates,
+   *    resolves the remote authority via the LocalProcess extension host (which
+   *    provides Node.js APIs like `child_process` and `net`), sets up tunnel
+   *    information and connection-loss listeners, then falls through to the
+   *    default path.
+   *
+   * If the authority resolution fails with a handled error, the error is stored
+   * via {@link IRemoteAuthorityResolverService._setResolvedAuthorityError} and
+   * resolution proceeds with the default (local-only) path.
+   *
+   * @param emitter - Emitter used to yield {@link ResolvedExtensions} events to
+   *   the base-class pipeline.
+   */
   private async _doResolveExtensions(emitter: AsyncIterableEmitter<ResolvedExtensions>): Promise<void> {
     if (!this._browserEnvironmentService.expectsResolverExtension) {
       return this._resolveExtensionsDefault(emitter);
@@ -202,7 +245,15 @@ export class TauriExtensionService extends AbstractExtensionService implements I
 
     let resolverResult: ResolverResult;
     try {
-      resolverResult = await this._resolveAuthorityInitial(remoteAuthority);
+      const remoteName = getRemoteName(remoteAuthority) || remoteAuthority;
+      const progressService = this._instantiationService.invokeFunction(accessor => accessor.get(IProgressService));
+      resolverResult = await progressService.withProgress(
+        {
+          location: ProgressLocation.Notification,
+          title: localize('connectingToRemote', 'Connecting to {0}...', remoteName),
+        },
+        () => this._resolveAuthorityInitial(remoteAuthority),
+      );
     } catch (err) {
       if (RemoteAuthorityResolverError.isHandled(err)) {
         console.log('Error handled: Not showing a notification for the error');
@@ -253,4 +304,5 @@ export class TauriExtensionService extends AbstractExtensionService implements I
   }
 }
 
+/** Register {@link TauriExtensionService} as the eager singleton for {@link IExtensionService}. */
 registerSingleton(IExtensionService, TauriExtensionService, InstantiationType.Eager);

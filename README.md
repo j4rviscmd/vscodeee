@@ -1,3 +1,7 @@
+> [!IMPORTANT]
+> If you are using v0.6.0 or below, the auto-update feature is not implemented.
+> Please manually update to v0.7.0 or above.
+
 <div align="center">
 
 # VS Codeee

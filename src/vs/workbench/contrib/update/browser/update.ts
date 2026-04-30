@@ -13,7 +13,7 @@ import { IOpenerService } from '../../../../platform/opener/common/opener.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { IUpdateService, State as UpdateState, StateType } from '../../../../platform/update/common/update.js';
-import { INotificationService, NotificationPriority, Severity } from '../../../../platform/notification/common/notification.js';
+import { INotificationService, INotificationHandle, NotificationPriority, Severity } from '../../../../platform/notification/common/notification.js';
 import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IBrowserWorkbenchEnvironmentService } from '../../../services/environment/browser/environmentService.js';
 import { ReleaseNotesManager } from './releaseNotesEditor.js';
@@ -31,7 +31,8 @@ import { IUserDataSyncWorkbenchService } from '../../../services/userDataSync/co
 import { Event } from '../../../../base/common/event.js';
 import { IDefaultAccountService } from '../../../../platform/defaultAccount/common/defaultAccount.js';
 import { getInternalOrg } from '../../../../platform/assignment/common/assignment.js';
-import { IVersion, tryParseVersion } from '../common/updateUtils.js';
+import { IVersion, tryParseVersion, computeProgressPercent } from '../common/updateUtils.js';
+import { Action } from '../../../../base/common/actions.js';
 
 export const CONTEXT_UPDATE_STATE = new RawContextKey<string>('updateState', StateType.Uninitialized);
 export const MAJOR_MINOR_UPDATE_AVAILABLE = new RawContextKey<boolean>('majorMinorUpdateAvailable', false);
@@ -206,6 +207,8 @@ export class UpdateContribution extends Disposable implements IWorkbenchContribu
 
 	private state: UpdateState;
 	private readonly badgeDisposable = this._register(new MutableDisposable());
+	private downloadNotificationHandle: INotificationHandle | undefined;
+	private downloadNotificationExplicit: boolean = false;
 	private updateStateContextKey: IContextKey<string>;
 	private majorMinorUpdateAvailableContextKey: IContextKey<boolean>;
 
@@ -218,6 +221,7 @@ export class UpdateContribution extends Disposable implements IWorkbenchContribu
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@IProductService private readonly productService: IProductService,
 		@IHostService private readonly hostService: IHostService,
+		@INotificationService private readonly notificationService: INotificationService,
 	) {
 		super();
 		this.state = updateService.state;
@@ -257,6 +261,27 @@ export class UpdateContribution extends Disposable implements IWorkbenchContribu
 				}
 				break;
 
+			case StateType.Downloading: {
+				if (!this.downloadNotificationHandle) {
+					const handle = this.notificationService.notify({
+						severity: Severity.Info,
+						message: nls.localize('downloadingUpdate', "Downloading update..."),
+						progress: { infinite: true },
+					});
+					this.downloadNotificationHandle = handle;
+					this.downloadNotificationExplicit = state.explicit;
+					this._register(handle.onDidClose(() => { this.downloadNotificationHandle = undefined; }));
+				} else {
+					const pct = computeProgressPercent(state.downloadedBytes, state.totalBytes);
+					if (pct !== undefined) {
+						this.downloadNotificationHandle.progress.total(100);
+						this.downloadNotificationHandle.progress.worked(pct);
+						this.downloadNotificationHandle.updateMessage(nls.localize('downloadingUpdateProgress', "Downloading update... {0}%", pct));
+					}
+				}
+				break;
+			}
+
 			case StateType.Ready: {
 				const productVersion = state.update.productVersion;
 				if (productVersion) {
@@ -264,8 +289,39 @@ export class UpdateContribution extends Disposable implements IWorkbenchContribu
 					const nextVersion = tryParseVersion(productVersion);
 					this.majorMinorUpdateAvailableContextKey.set(Boolean(currentVersion && nextVersion && isMajorMinorUpdate(currentVersion, nextVersion)));
 				}
+				if (this.downloadNotificationHandle) {
+					this.downloadNotificationHandle.progress.done();
+					this.downloadNotificationHandle.updateMessage(nls.localize('updateDownloaded', "Update downloaded. Restart to apply."));
+					this.downloadNotificationHandle.updateActions({
+						primary: [new Action('update.restart', nls.localize('restartToUpdateNow', "Restart to Update"), '', true, () => this.updateService.quitAndInstall())]
+					});
+					this.downloadNotificationHandle = undefined;
+				}
 				break;
 			}
+
+			// Reaching AvailableForDownload while a download notification is active
+			// means a download that was in progress has regressed (failed or cancelled).
+			case StateType.AvailableForDownload: {
+				if (this.downloadNotificationHandle) {
+					this.downloadNotificationHandle.progress.done();
+					if (this.downloadNotificationExplicit) {
+						this.downloadNotificationHandle.updateSeverity(Severity.Error);
+						this.downloadNotificationHandle.updateMessage(nls.localize('updateDownloadFailed', "Update download failed. You can retry from the activity bar."));
+					} else {
+						this.downloadNotificationHandle.close();
+					}
+					this.downloadNotificationHandle = undefined;
+				}
+				break;
+			}
+
+			case StateType.Overwriting:
+				if (this.downloadNotificationHandle) {
+					this.downloadNotificationHandle.close();
+					this.downloadNotificationHandle = undefined;
+				}
+				break;
 		}
 
 		let badge: IBadge | undefined = undefined;

@@ -281,8 +281,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.create-release.outputs.release-id }}
-          tagName: v__VERSION__
-          releaseName: 'v__VERSION__'
+          tagName: ${{ needs.preflight.outputs.tag }}
+          releaseName: ${{ needs.preflight.outputs.tag }}
           releaseBody: ${{ needs.generate-notes.outputs.notes }}
           releaseDraft: true
           prerelease: false
