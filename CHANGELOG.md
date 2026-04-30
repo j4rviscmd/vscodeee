@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add IME composition guards to prevent Enter key from triggering actions during Japanese input
 - Add event coalescing and NFC normalization to Tauri file watcher ([#373](https://github.com/j4rviscmd/vscodeee/pull/373))
+- Replace manual event batching with notify-debouncer-full for reliable file watcher coalescing ([#381](https://github.com/j4rviscmd/vscodeee/pull/381))
+- Disable auto-save by default in Tauri desktop environment ([#378](https://github.com/j4rviscmd/vscodeee/pull/378))
+- Use full clone in publish workflow preflight for REH diff detection ([#380](https://github.com/j4rviscmd/vscodeee/pull/380))
 
 ### Changed
 
