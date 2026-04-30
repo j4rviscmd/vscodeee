@@ -453,13 +453,13 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
                 }
             }
 
-            // Open devtools in debug builds for WebView debugging
-            #[cfg(debug_assertions)]
-            {
-                if let Some(window) = app.get_webview_window("main") {
-                    window.open_devtools();
-                }
-            }
+            // DevTools auto-open disabled. Uncomment to re-enable during debugging.
+            // #[cfg(debug_assertions)]
+            // {
+            //     if let Some(window) = app.get_webview_window("main") {
+            //         window.open_devtools();
+            //     }
+            // }
 
             // Initialize protocol state with app root directories.
             let state = protocol::init_protocol_state(app);

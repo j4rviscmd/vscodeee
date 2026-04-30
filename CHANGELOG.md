@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-04-30
+
+### Added
+
+- Add download progress notification for app updates ([#369](https://github.com/j4rviscmd/vscodeee/pull/369))
+
+### Fixed
+
+- Show progress notification during remote authority resolution ([#370](https://github.com/j4rviscmd/vscodeee/pull/370))
+- Pass GITHUB_TOKEN to cross-compile Docker container ([#365](https://github.com/j4rviscmd/vscodeee/pull/365))
+
+### Changed
+
+- Add monaco.d.ts staleness check to prevent REH build failures
+
 ## [0.6.0] - 2026-04-29
 
 ### Added
