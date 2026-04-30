@@ -3,21 +3,24 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-//! File watcher using the `notify` crate.
+//! File watcher using the `notify-debouncer-full` crate.
 //!
 //! Provides real-time file system change notifications to the VS Code workbench
-//! via Tauri events. Each watch request from the TypeScript side gets a unique ID,
-//! and events are batched (100ms debounce) before emission.
+//! via Tauri events. Uses `notify-debouncer-full` for intelligent event coalescing
+//! that handles atomic file replacements (e.g., git checkout), rename tracking,
+//! and deduplication at the Rust level — equivalent to what `@parcel/watcher`
+//! provides in the original Electron-based VS Code.
 
-use notify::{Config, Event as NotifyEvent, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::RecursiveMode;
+use notify_debouncer_full::{new_debouncer, DebounceEventResult, DebouncedEvent};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::time::Duration;
 use tauri::Emitter;
 
 /// File change type matching VS Code's `FileChangeType` enum.
-// TODO(Phase 3): Remove allow(dead_code) when this is wired up
 #[allow(dead_code)]
 #[derive(Serialize, Clone, Debug)]
 pub enum FileChangeType {
@@ -53,13 +56,13 @@ pub struct FileWatcherState {
     watchers: Mutex<HashMap<u64, WatcherHandle>>,
 }
 
+/// Holds the debouncer instance. When dropped, the debouncer is stopped
+/// and the background thread terminates.
 struct WatcherHandle {
-    _watcher: RecommendedWatcher,
-    /// The sender half of the event channel.
-    /// When `WatcherHandle` is dropped, the sender is dropped, causing the
-    /// batching thread's `rx.recv()` to return `Err(Disconnected)` and exit.
-    _event_tx: std::sync::mpsc::Sender<NotifyEvent>,
-    // TODO(Phase 3): Remove allow(dead_code) when this is wired up
+    _debouncer: notify_debouncer_full::Debouncer<
+        notify::RecommendedWatcher,
+        notify_debouncer_full::RecommendedCache,
+    >,
     #[allow(dead_code)]
     correlation_id: Option<i32>,
 }
@@ -87,7 +90,13 @@ impl FileWatcherState {
     }
 }
 
-fn notify_event_to_change_type(kind: &EventKind) -> Option<u8> {
+/// Maps a debounced `notify::EventKind` to VS Code's `FileChangeType`.
+///
+/// The debouncer coalesces rapid DELETE+CREATE sequences (from atomic file
+/// replacements like `git checkout`) into a single event. On macOS, this
+/// typically arrives as `Modify(Name(Both))` or `Modify(Data(_))`.
+fn debounced_event_to_change_type(kind: &notify::EventKind) -> Option<u8> {
+    use notify::EventKind;
     match kind {
         EventKind::Create(_) => Some(1), // Added
         EventKind::Modify(_) => Some(0), // Updated
@@ -108,11 +117,43 @@ fn build_glob_matchers(patterns: &[String]) -> Vec<globset::GlobMatcher> {
         .collect()
 }
 
+/// Converts a batch of debounced events into `FileChange` items, applying
+/// exclude filters and attaching the correlation ID.
+fn process_debounced_events(
+    events: &[DebouncedEvent],
+    excludes: &[globset::GlobMatcher],
+    correlation_id: Option<i32>,
+) -> Vec<FileChange> {
+    let mut changes: Vec<FileChange> = Vec::new();
+
+    for debounced in events {
+        if let Some(change_type) = debounced_event_to_change_type(&debounced.event.kind) {
+            for path in &debounced.event.paths {
+                if should_exclude(path, excludes) {
+                    continue;
+                }
+                changes.push(FileChange {
+                    resource: path.to_string_lossy().to_string(),
+                    r#type: change_type,
+                    c_id: correlation_id,
+                });
+            }
+        }
+    }
+
+    changes
+}
+
 /// Start watching a file path for changes.
 ///
-/// Creates a watcher using the `notify` crate and emits file change events
-/// to the WebView via the `vscode:fs_change` Tauri event.
-/// Events are debounced internally by `notify` (100ms).
+/// Creates a debounced watcher using `notify-debouncer-full` which provides
+/// intelligent event coalescing: DELETE+CREATE pairs (from git operations)
+/// are merged into a single MODIFY event, rapid modifications are deduplicated,
+/// and rename events are properly paired.
+///
+/// The debounce timeout (500ms) ensures that related events from atomic file
+/// replacements are always captured in the same batch, regardless of OS-level
+/// event delivery timing.
 #[tauri::command]
 pub fn fs_watch_start(
     app_handle: tauri::AppHandle,
@@ -159,76 +200,43 @@ pub fn fs_watch_start(
     let excludes = build_glob_matchers(&request.excludes);
 
     let app = app_handle.clone();
+    let cid = correlation_id;
 
-    // Batch events using a channel + spawn
-    let (tx, rx) = std::sync::mpsc::channel::<NotifyEvent>();
-
-    // Clone tx for the closure; the original is stored in WatcherHandle so
-    // that dropping the handle closes the channel and terminates the thread.
-    let tx_for_watcher = tx.clone();
-
-    let mut watcher = RecommendedWatcher::new(
-        move |res: Result<NotifyEvent, notify::Error>| {
-            if let Ok(event) = res {
-                let _ = tx_for_watcher.send(event);
+    // Create a debounced watcher with 500ms timeout.
+    // This timeout is chosen to be long enough to capture DELETE+CREATE pairs
+    // from git operations (which may be split across FSEvents callbacks on macOS),
+    // while still being responsive enough for normal editing workflows.
+    let mut debouncer = new_debouncer(
+        Duration::from_millis(500),
+        None, // tick_rate: auto (1/4 of timeout = 125ms)
+        move |result: DebounceEventResult| match result {
+            Ok(events) => {
+                let changes = process_debounced_events(&events, &excludes, cid);
+                if !changes.is_empty() {
+                    let _ = app.emit("vscode:fs_change", &changes);
+                }
+            }
+            Err(errors) => {
+                for error in &errors {
+                    log::warn!(
+                        target: "vscodeee::file_watcher",
+                        "Watcher error: {error}"
+                    );
+                }
             }
         },
-        Config::default().with_poll_interval(std::time::Duration::from_millis(500)),
     )
-    .map_err(|e| format!("Failed to create watcher: {e}"))?;
+    .map_err(|e| format!("Failed to create debounced watcher: {e}"))?;
 
-    watcher
+    debouncer
         .watch(&watch_path, watch_mode)
         .map_err(|e| format!("Failed to watch path {}: {e}", watch_path.display()))?;
-
-    // Spawn a thread that batches events every 100ms
-    let cid = correlation_id;
-    std::thread::spawn(move || {
-        while let Ok(first) = rx.recv() {
-            // Collect more events for 100ms
-            let mut events = vec![first];
-            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(100);
-            loop {
-                let timeout = deadline.saturating_duration_since(std::time::Instant::now());
-                if timeout.is_zero() {
-                    break;
-                }
-                match rx.recv_timeout(timeout) {
-                    Ok(e) => events.push(e),
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => break,
-                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
-                }
-            }
-
-            // Convert to FileChange events
-            let mut changes: Vec<FileChange> = Vec::new();
-            for event in &events {
-                if let Some(change_type) = notify_event_to_change_type(&event.kind) {
-                    for path in &event.paths {
-                        if should_exclude(path, &excludes) {
-                            continue;
-                        }
-                        changes.push(FileChange {
-                            resource: path.to_string_lossy().to_string(),
-                            r#type: change_type,
-                            c_id: cid,
-                        });
-                    }
-                }
-            }
-
-            if !changes.is_empty() {
-                let _ = app.emit("vscode:fs_change", &changes);
-            }
-        }
-    });
 
     let mut watchers = state.watchers.lock().map_err(|e| e.to_string())?;
     watchers.insert(
         watch_id,
         WatcherHandle {
-            _watcher: watcher,
-            _event_tx: tx,
+            _debouncer: debouncer,
             correlation_id,
         },
     );
