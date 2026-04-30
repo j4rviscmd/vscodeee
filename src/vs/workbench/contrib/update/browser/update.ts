@@ -293,7 +293,7 @@ export class UpdateContribution extends Disposable implements IWorkbenchContribu
 					this.downloadNotificationHandle.progress.done();
 					this.downloadNotificationHandle.updateMessage(nls.localize('updateDownloaded', "Update downloaded. Restart to apply."));
 					this.downloadNotificationHandle.updateActions({
-						primary: [new Action('update.restart', nls.localize('restartToUpdate', "Restart to Update"), '', true, () => this.updateService.quitAndInstall())]
+						primary: [new Action('update.restart', nls.localize('restartToUpdateNow', "Restart to Update"), '', true, () => this.updateService.quitAndInstall())]
 					});
 					this.downloadNotificationHandle = undefined;
 				}
