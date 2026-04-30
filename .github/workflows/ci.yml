@@ -30,6 +30,7 @@ jobs:
     outputs:
       frontend: ${{ steps.filter.outputs.frontend }}
       backend: ${{ steps.filter.outputs.backend }}
+      monaco: ${{ steps.filter.outputs.monaco }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -57,6 +58,11 @@ jobs:
             backend:
               - 'src-tauri/**'
               - '.github/workflows/ci.yml'
+            monaco:
+              - 'src/vs/editor/**'
+              - 'build/monaco/**'
+              - 'build/lib/monaco-api.ts'
+              - 'src/vs/monaco.d.ts'
 
   frontend-lint:
     name: Frontend Lint
@@ -102,6 +108,15 @@ jobs:
 
       - name: Valid layers check
         run: npm run valid-layers-check
+
+      - name: Monaco.d.ts staleness check
+        if: ${{ needs.changes.outputs.monaco == 'true' }}
+        run: |
+          npm run gulp monacodts
+          if ! git diff --exit-code src/vs/monaco.d.ts; then
+            echo "::error::monaco.d.ts is out of date. Run 'npm run gulp monacodts' and commit the result."
+            exit 1
+          fi
 
   csp-hash-check:
     name: CSP Hash Check
