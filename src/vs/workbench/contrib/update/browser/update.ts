@@ -300,8 +300,8 @@ export class UpdateContribution extends Disposable implements IWorkbenchContribu
 				break;
 			}
 
-				// Reaching AvailableForDownload while a download notification is active
-				// means a download that was in progress has regressed (failed or cancelled).
+			// Reaching AvailableForDownload while a download notification is active
+			// means a download that was in progress has regressed (failed or cancelled).
 			case StateType.AvailableForDownload: {
 				if (this.downloadNotificationHandle) {
 					this.downloadNotificationHandle.progress.done();
@@ -322,7 +322,7 @@ export class UpdateContribution extends Disposable implements IWorkbenchContribu
 					this.downloadNotificationHandle = undefined;
 				}
 				break;
-			}
+		}
 
 		let badge: IBadge | undefined = undefined;
 
