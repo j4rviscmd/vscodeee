@@ -203,6 +203,7 @@ export const tsFormattingFilter = Object.freeze<string[]>([
 	'src/**/*.ts',
 	'test/**/*.ts',
 	'extensions/**/*.ts',
+	'!src/vs/monaco.d.ts',
 	'!src/vs/*/**/*.d.ts',
 	'!src/typings/**/*.d.ts',
 	'!extensions/**/*.d.ts',
