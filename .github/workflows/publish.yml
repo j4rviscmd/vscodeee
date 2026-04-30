@@ -420,6 +420,7 @@ jobs:
           # Reinstall for target arch via Docker + QEMU
           docker run --rm \
             --platform "$DOCKER_PLATFORM" \
+            -e GITHUB_TOKEN \
             -v "$PWD/remote:/workspace" \
             -w /workspace \
             node:22 \
