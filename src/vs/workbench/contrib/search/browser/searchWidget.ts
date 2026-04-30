@@ -5,7 +5,7 @@
 
 import * as nls from '../../../../nls.js';
 import * as dom from '../../../../base/browser/dom.js';
-import { IKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
+import { IKeyboardEvent, StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
 import { ActionBar } from '../../../../base/browser/ui/actionbar/actionbar.js';
 import { Button, IButtonOptions } from '../../../../base/browser/ui/button/button.js';
 import { IFindInputOptions } from '../../../../base/browser/ui/findinput/findInput.js';
@@ -43,7 +43,7 @@ import { NotebookEditorInput } from '../../notebook/common/notebookEditorInput.j
 import { GroupModelChangeKind } from '../../../common/editor.js';
 import { SearchFindInput } from './searchFindInput.js';
 import { getDefaultHoverDelegate } from '../../../../base/browser/ui/hover/hoverDelegateFactory.js';
-import { IDisposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
+import { DisposableStore, IDisposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { NotebookFindScopeType } from '../../notebook/common/notebookCommon.js';
 
 /** Specified in searchview.css */
@@ -473,6 +473,10 @@ export class SearchWidget extends Widget {
 		);
 
 		this._register(this.searchInput.onKeyDown((keyboardEvent: IKeyboardEvent) => this.onSearchInputKeyDown(keyboardEvent)));
+		// Native keydown IME guard - intercepts Enter during composition before
+		// the Widget.onkeydown handler can process it. Required because global
+		// composition tracking via window-level events is unreliable in WKWebView/Tauri.
+		this._register(this._createImeGuard(this.searchInput.inputBox.inputElement));
 		this.searchInput.setValue(options.value || '');
 		this.searchInput.setRegex(!!options.isRegex);
 		this.searchInput.setCaseSensitive(!!options.isCaseSensitive);
@@ -576,6 +580,8 @@ export class SearchWidget extends Widget {
 		}));
 
 		this._register(this.replaceInput.onKeyDown((keyboardEvent) => this.onReplaceInputKeyDown(keyboardEvent)));
+		// Native keydown IME guard for replace input
+		this._register(this._createImeGuard(this.replaceInput.inputBox.inputElement));
 		this.replaceInput.setValue(options.replaceValue || '');
 		this._register(this.replaceInput.inputBox.onDidChange(() => this._onReplaceValueChanged.fire()));
 		this._register(this.replaceInput.inputBox.onDidHeightChange(() => this._onDidHeightChange.fire()));
@@ -690,6 +696,10 @@ export class SearchWidget extends Widget {
 		}
 
 		if (keyboardEvent.equals(KeyCode.Enter)) {
+			// Skip during IME composition (e.g. Japanese input confirming with Enter)
+			if (keyboardEvent.isComposing || StandardKeyboardEvent.isComposingActive || StandardKeyboardEvent.recentlyComposed) {
+				return;
+			}
 			this.searchInput?.onSearchSubmit();
 			this.submitSearch();
 			keyboardEvent.preventDefault();
@@ -779,6 +789,10 @@ export class SearchWidget extends Widget {
 		}
 
 		if (keyboardEvent.equals(KeyCode.Enter)) {
+			// Skip during IME composition (e.g. Japanese input confirming with Enter)
+			if (keyboardEvent.isComposing || StandardKeyboardEvent.isComposingActive || StandardKeyboardEvent.recentlyComposed) {
+				return;
+			}
 			this.submitSearch();
 			keyboardEvent.preventDefault();
 		}
@@ -839,6 +853,33 @@ export class SearchWidget extends Widget {
 	toggleContextLines() {
 		this.showContextToggle.checked = !this.showContextToggle.checked;
 		this.onContextLinesChanged();
+	}
+
+	/**
+	 * Creates a native keydown IME guard for an input element.
+	 * Intercepts Enter during IME composition with stopImmediatePropagation
+	 * to prevent any handler from processing it. Uses local composition
+	 * tracking because global window-level tracking is unreliable in WKWebView/Tauri.
+	 */
+	private _createImeGuard(inputElement: HTMLElement): IDisposable {
+		const disposables = new DisposableStore();
+		let localComposing = false;
+		disposables.add(dom.addDisposableListener(inputElement, 'compositionstart', () => {
+			localComposing = true;
+		}));
+		disposables.add(dom.addDisposableListener(inputElement, 'compositionend', () => {
+			setTimeout(() => { localComposing = false; }, 100);
+		}));
+		disposables.add(dom.addDisposableListener(inputElement, 'keydown', (e: KeyboardEvent) => {
+			if (e.key === 'Enter' || e.keyCode === 13) {
+				if (localComposing || e.isComposing || StandardKeyboardEvent.isComposingActive || StandardKeyboardEvent.recentlyComposed) {
+					e.preventDefault();
+					e.stopPropagation();
+					e.stopImmediatePropagation();
+				}
+			}
+		}));
+		return disposables;
 	}
 
 	override dispose(): void {

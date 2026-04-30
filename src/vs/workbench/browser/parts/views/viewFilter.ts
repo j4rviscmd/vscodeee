@@ -220,6 +220,25 @@ export class FilterWidget extends Widget {
 			inputBox.value = this.options.text;
 		}
 		this._register(inputBox.onDidChange(filter => this.delayedFilterUpdate.trigger(() => this.onDidInputChange(inputBox))));
+		// Native keydown IME guard - intercepts Enter during composition before
+		// addStandardDisposableListener handler can process it. Required because
+		// global composition tracking via window-level events is unreliable in WKWebView/Tauri.
+		let localComposing = false;
+		this._register(DOM.addDisposableListener(inputBox.inputElement, 'compositionstart', () => {
+			localComposing = true;
+		}));
+		this._register(DOM.addDisposableListener(inputBox.inputElement, 'compositionend', () => {
+			setTimeout(() => { localComposing = false; }, 100);
+		}));
+		this._register(DOM.addDisposableListener(inputBox.inputElement, DOM.EventType.KEY_DOWN, (e: KeyboardEvent) => {
+			if (e.key === 'Enter' || e.keyCode === 13) {
+				if (localComposing || e.isComposing || StandardKeyboardEvent.isComposingActive || StandardKeyboardEvent.recentlyComposed) {
+					e.preventDefault();
+					e.stopPropagation();
+					e.stopImmediatePropagation();
+				}
+			}
+		}));
 		this._register(DOM.addStandardDisposableListener(inputBox.inputElement, DOM.EventType.KEY_DOWN, (e: StandardKeyboardEvent) => this.onInputKeyDown(e)));
 		this._register(DOM.addStandardDisposableListener(container, DOM.EventType.KEY_DOWN, (e: StandardKeyboardEvent) => this.handleKeyboardEvent(e)));
 		this._register(DOM.addStandardDisposableListener(container, DOM.EventType.KEY_UP, (e: StandardKeyboardEvent) => this.handleKeyboardEvent(e)));
@@ -282,6 +301,10 @@ export class FilterWidget extends Widget {
 	}
 
 	private onInputKeyDown(event: StandardKeyboardEvent) {
+		// Skip during IME composition (e.g. Japanese input confirming with Enter)
+		if (event.isComposing || StandardKeyboardEvent.isComposingActive || StandardKeyboardEvent.recentlyComposed) {
+			return;
+		}
 		let handled = false;
 		if (event.equals(KeyCode.Tab) && !this.toolbar.isEmpty()) {
 			this.toolbar.focus();
