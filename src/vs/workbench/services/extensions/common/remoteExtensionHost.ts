@@ -90,6 +90,7 @@ export class RemoteExtensionHost extends Disposable implements IExtensionHost {
 		const options: IConnectionOptions = {
 			commit: this._productService.commit,
 			quality: this._productService.quality,
+			version: this._productService.version,
 			addressProvider: {
 				getAddress: async () => {
 					const { authority } = await this.remoteAuthorityResolverService.resolveAuthority(this._initDataProvider.remoteAuthority);

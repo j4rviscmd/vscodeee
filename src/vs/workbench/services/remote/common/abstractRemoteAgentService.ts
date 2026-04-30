@@ -39,7 +39,7 @@ export abstract class AbstractRemoteAgentService extends Disposable implements I
 	) {
 		super();
 		if (this._environmentService.remoteAuthority) {
-			this._connection = this._register(new RemoteAgentConnection(this._environmentService.remoteAuthority, productService.commit, productService.quality, this.remoteSocketFactoryService, this._remoteAuthorityResolverService, signService, this._logService));
+			this._connection = this._register(new RemoteAgentConnection(this._environmentService.remoteAuthority, productService.commit, productService.quality, productService.version, this.remoteSocketFactoryService, this._remoteAuthorityResolverService, signService, this._logService));
 		} else {
 			this._connection = null;
 		}
@@ -163,6 +163,7 @@ class RemoteAgentConnection extends Disposable implements IRemoteAgentConnection
 		remoteAuthority: string,
 		private readonly _commit: string | undefined,
 		private readonly _quality: string | undefined,
+		private readonly _version: string | undefined,
 		private readonly _remoteSocketFactoryService: IRemoteSocketFactoryService,
 		private readonly _remoteAuthorityResolverService: IRemoteAuthorityResolverService,
 		private readonly _signService: ISignService,
@@ -221,6 +222,7 @@ class RemoteAgentConnection extends Disposable implements IRemoteAgentConnection
 		const options: IConnectionOptions = {
 			commit: this._commit,
 			quality: this._quality,
+			version: this._version,
 			addressProvider: {
 				getAddress: async () => {
 					if (firstCall) {

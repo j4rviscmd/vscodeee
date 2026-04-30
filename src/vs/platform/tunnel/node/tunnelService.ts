@@ -206,6 +206,7 @@ export class BaseTunnelService extends AbstractTunnelService {
 			const options: IConnectionOptions = {
 				commit: this.productService.commit,
 				quality: this.productService.quality,
+				version: this.productService.version,
 				addressProvider: addressOrTunnelProvider,
 				remoteSocketFactoryService: this.remoteSocketFactoryService,
 				signService: this.signService,

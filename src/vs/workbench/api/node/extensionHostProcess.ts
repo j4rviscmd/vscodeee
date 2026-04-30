@@ -358,13 +358,24 @@ function connectToRenderer(protocol: IMessagePassingProtocol): Promise<IRenderer
 
 			const initData = <IExtensionHostInitData>JSON.parse(raw.toString());
 
-			const rendererCommit = initData.commit;
-			const myCommit = product.commit;
+			const rendererVersion = initData.version;
+			const myVersion = product.version;
 
-			if (rendererCommit && myCommit) {
-				// Running in the built version where commits are defined
-				if (rendererCommit !== myCommit) {
+			if (rendererVersion && myVersion) {
+				// Use semver major.minor comparison when version info is available
+				const rendererMajorMinor = rendererVersion.split('.').slice(0, 2).join('.');
+				const myMajorMinor = myVersion.split('.').slice(0, 2).join('.');
+				if (rendererMajorMinor !== myMajorMinor) {
 					nativeExit(ExtensionHostExitCode.VersionMismatch);
+				}
+			} else {
+				// Fallback to commit comparison for older clients
+				const rendererCommit = initData.commit;
+				const myCommit = product.commit;
+				if (rendererCommit && myCommit) {
+					if (rendererCommit !== myCommit) {
+						nativeExit(ExtensionHostExitCode.VersionMismatch);
+					}
 				}
 			}
 
