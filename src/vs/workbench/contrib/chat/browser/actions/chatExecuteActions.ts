@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { StandardKeyboardEvent } from '../../../../../base/browser/keyboardEvent.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { KeyCode, KeyMod } from '../../../../../base/common/keyCodes.js';
 import { basename } from '../../../../../base/common/resources.js';
@@ -52,6 +53,11 @@ export interface IChatExecuteActionContext {
 
 abstract class SubmitAction extends Action2 {
 	async run(accessor: ServicesAccessor, ...args: unknown[]) {
+		// IME guard: prevent submit during/immediately after IME composition
+		if (StandardKeyboardEvent.isComposingActive || StandardKeyboardEvent.recentlyComposed) {
+			return;
+		}
+
 		const context = args[0] as IChatExecuteActionContext | undefined;
 		const telemetryService = accessor.get(ITelemetryService);
 		const widgetService = accessor.get(IChatWidgetService);
@@ -211,6 +217,7 @@ export class ChatSubmitAction extends SubmitAction {
 				when: ContextKeyExpr.and(
 					ChatContextKeys.inChatInput,
 					ChatContextKeys.withinEditSessionDiff.negate(),
+					EditorContextKeys.isComposing.negate(),
 				),
 				primary: KeyCode.Enter,
 				weight: KeybindingWeight.EditorContrib

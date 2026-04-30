@@ -2139,6 +2139,10 @@ export class ChatInputPart extends Disposable implements IHistoryNavigationWidge
 		// Only prevent default behavior if ChatSubmitAction is bound to Enter AND its precondition is met
 		this._register(this._inputEditor.onKeyDown((e) => {
 			if (e.keyCode === KeyCode.Enter && !hasModifierKeys(e)) {
+				// Skip during IME composition (e.g. Japanese input confirming with Enter)
+				if (e.isComposing || StandardKeyboardEvent.isComposingActive || StandardKeyboardEvent.recentlyComposed) {
+					return;
+				}
 				// Check if ChatSubmitAction has a keybinding for plain Enter in the current context
 				// This respects user's custom keybindings that disable the submit action
 				for (const keybinding of this.keybindingService.lookupKeybindings(ChatSubmitAction.ID)) {
