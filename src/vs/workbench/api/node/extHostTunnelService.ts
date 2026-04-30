@@ -325,6 +325,7 @@ export class NodeExtHostTunnelService extends ExtHostTunnelService {
 				{
 					commit: this.initData.commit,
 					quality: this.initData.quality,
+					version: this.initData.version,
 					logService: this.logService,
 					ipcLogger: null,
 					// services and address providers have stubs since we don't need
