@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-05-01
+
+### Added
+
+- Relax REH version check from commit hash to semver major.minor ([#375](https://github.com/j4rviscmd/vscodeee/pull/375))
+
+### Fixed
+
+- Add IME composition guards to prevent Enter key from triggering actions during Japanese input
+- Add event coalescing and NFC normalization to Tauri file watcher ([#373](https://github.com/j4rviscmd/vscodeee/pull/373))
+
+### Changed
+
+- Disable auto-opening DevTools on debug startup ([#371](https://github.com/j4rviscmd/vscodeee/pull/371))
+
 ## [0.7.0] - 2026-04-30
 
 ### Added
