@@ -250,9 +250,9 @@ export class TauriExtensionService extends AbstractExtensionService implements I
       resolverResult = await progressService.withProgress(
         {
           location: ProgressLocation.Notification,
-          title: localize('connectingToRemote', "Connecting to {0}...", remoteName),
+          title: localize('connectingToRemote', 'Connecting to {0}...', remoteName),
         },
-        () => this._resolveAuthorityInitial(remoteAuthority)
+        () => this._resolveAuthorityInitial(remoteAuthority),
       );
     } catch (err) {
       if (RemoteAuthorityResolverError.isHandled(err)) {
