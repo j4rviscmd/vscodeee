@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-05-01
+
+### Added
+
+- Implement multi-window quit with proper ShutdownReason handling ([#382](https://github.com/j4rviscmd/vscodeee/pull/382))
+
+### Fixed
+
+- Resolve startup freeze by offloading file I/O and watcher init from main thread
+- Correct update download progress bar accumulation bug ([#383](https://github.com/j4rviscmd/vscodeee/pull/383))
+
 ## [0.8.0] - 2026-05-01
 
 ### Added
