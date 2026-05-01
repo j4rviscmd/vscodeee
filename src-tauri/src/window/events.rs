@@ -325,7 +325,7 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
             .to_string();
 
             // Register a cancel channel for the safety-net timeout.
-            let cancel_rx = pending.register(&label_c);
+            let cancel_rx = pending_closes.register(&label_c);
 
             tauri::async_runtime::spawn(async move {
                 if let Some(id) = wm.id_for_label(&label_c).await {
