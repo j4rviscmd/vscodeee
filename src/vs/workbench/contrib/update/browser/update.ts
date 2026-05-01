@@ -209,6 +209,7 @@ export class UpdateContribution extends Disposable implements IWorkbenchContribu
 	private readonly badgeDisposable = this._register(new MutableDisposable());
 	private downloadNotificationHandle: INotificationHandle | undefined;
 	private downloadNotificationExplicit: boolean = false;
+	private lastDownloadPct: number | undefined = undefined;
 	private updateStateContextKey: IContextKey<string>;
 	private majorMinorUpdateAvailableContextKey: IContextKey<boolean>;
 
@@ -270,12 +271,14 @@ export class UpdateContribution extends Disposable implements IWorkbenchContribu
 					});
 					this.downloadNotificationHandle = handle;
 					this.downloadNotificationExplicit = state.explicit;
-					this._register(handle.onDidClose(() => { this.downloadNotificationHandle = undefined; }));
+					this._register(handle.onDidClose(() => { this.downloadNotificationHandle = undefined; this.lastDownloadPct = undefined; }));
 				} else {
 					const pct = computeProgressPercent(state.downloadedBytes, state.totalBytes);
 					if (pct !== undefined) {
+						const delta = pct - (this.lastDownloadPct ?? 0);
 						this.downloadNotificationHandle.progress.total(100);
-						this.downloadNotificationHandle.progress.worked(pct);
+						this.downloadNotificationHandle.progress.worked(delta);
+						this.lastDownloadPct = pct;
 						this.downloadNotificationHandle.updateMessage(nls.localize('downloadingUpdateProgress', "Downloading update... {0}%", pct));
 					}
 				}
@@ -296,6 +299,7 @@ export class UpdateContribution extends Disposable implements IWorkbenchContribu
 						primary: [new Action('update.restart', nls.localize('restartToUpdateNow', "Restart to Update"), '', true, () => this.updateService.quitAndInstall())]
 					});
 					this.downloadNotificationHandle = undefined;
+					this.lastDownloadPct = undefined;
 				}
 				break;
 			}
@@ -312,6 +316,7 @@ export class UpdateContribution extends Disposable implements IWorkbenchContribu
 						this.downloadNotificationHandle.close();
 					}
 					this.downloadNotificationHandle = undefined;
+					this.lastDownloadPct = undefined;
 				}
 				break;
 			}
