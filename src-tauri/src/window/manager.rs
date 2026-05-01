@@ -78,7 +78,7 @@ impl WindowManager {
 
     /// Create and register a new window. Returns the window ID and label.
     ///
-    /// If `options.workspace_uri` or `options.folder_uri` is set and `force_new_window`
+    /// If `options.workspace_uri` or `options.folder_uri` is set and `skip_dedup`
     /// is false, returns an existing window that already has that workspace open.
     pub async fn open_window(
         &self,
@@ -87,8 +87,8 @@ impl WindowManager {
     ) -> Result<(WindowId, String), String> {
         use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
-        // Workspace deduplication: if not forcing, find existing window with same workspace
-        if !options.force_new_window {
+        // Workspace deduplication: unless explicitly bypassed (CLI -n), find existing
+        if !options.skip_dedup {
             let workspace_key = options
                 .folder_uri
                 .as_deref()
