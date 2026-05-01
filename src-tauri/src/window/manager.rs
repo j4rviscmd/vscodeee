@@ -29,6 +29,7 @@ pub struct WindowManager {
     last_active: RwLock<Option<WindowId>>,
 }
 
+/// Default implementation delegates to [`WindowManager::new`].
 impl Default for WindowManager {
     fn default() -> Self {
         Self::new()
@@ -216,6 +217,16 @@ impl WindowManager {
     /// Get all registered windows.
     pub async fn get_all(&self) -> Vec<WindowInfo> {
         self.windows.read().await.values().cloned().collect()
+    }
+
+    /// Get all registered window labels.
+    pub async fn all_labels(&self) -> Vec<String> {
+        self.windows
+            .read()
+            .await
+            .values()
+            .map(|w| w.label.clone())
+            .collect()
     }
 
     /// Get the total number of registered windows.

@@ -175,6 +175,9 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
     #[cfg(debug_assertions)]
     let builder = builder.plugin(tauri_plugin_mcp_bridge::init());
 
+    // Quit coordination — tracks whether a multi-window quit is in progress
+    let quit_state = Arc::new(window::quit_state::QuitState::new());
+
     builder
         .manage(pty::manager::PtyManager::new())
         .manage(commands::file_watcher::FileWatcherState::new())
@@ -183,6 +186,7 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
         .manage(Arc::clone(&window_manager))
         .manage(Arc::clone(&pending_closes))
         .manage(Arc::clone(&pending_shows))
+        .manage(Arc::clone(&quit_state))
         .manage(commands::updater::UpdaterState::default())
         .manage(shutdown::ShutdownCoordinator::new())
         .on_window_event(window::events::handle_window_event)
@@ -278,6 +282,7 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
             commands::native_host::lifecycle_close_confirmed,
             commands::native_host::lifecycle_close_vetoed,
             commands::native_host::quit_app,
+            commands::native_host::quit_all_windows,
             commands::native_host::exit_app,
             commands::native_host::save_session,
             commands::native_host::relaunch_app,

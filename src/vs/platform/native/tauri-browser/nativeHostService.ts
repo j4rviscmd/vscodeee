@@ -365,30 +365,37 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
     return invoke<boolean>('is_always_on_top');
   }
 
+  /** Toggles the window's always-on-top (pinned) state via the Rust backend. */
   async toggleWindowAlwaysOnTop(_options?: INativeHostOptions): Promise<void> {
     return invoke('toggle_always_on_top');
   }
 
+  /** Sets the window's always-on-top (pinned) state via the Rust backend. */
   async setWindowAlwaysOnTop(alwaysOnTop: boolean, _options?: INativeHostOptions): Promise<void> {
     return invoke('set_always_on_top', { alwaysOnTop });
   }
 
+  /** Updates the native window control overlay. No-op in Tauri (Phase 1). */
   async updateWindowControls(_options: INativeHostOptions & { height?: number; backgroundColor?: string; foregroundColor?: string; dimmed?: boolean }): Promise<void> {
     // No-op for Phase 1
   }
 
+  /** Updates the native window accent color. No-op in Tauri (Phase 1). */
   async updateWindowAccentColor(_color: 'default' | 'off' | string, _inactiveColor: string | undefined): Promise<void> {
     // No-op for Phase 1
   }
 
+  /** Sets the minimum inner size of the window via the Rust backend. */
   async setMinimumSize(width: number | undefined, height: number | undefined): Promise<void> {
     await invoke('set_minimum_size', { width: width ?? 0, height: height ?? 0 });
   }
 
+  /** Saves the window splash screen configuration. No-op in Tauri (Phase 1). */
   async saveWindowSplash(_splash: IPartsSplash): Promise<void> {
     // No-op for Phase 1
   }
 
+  /** Controls whether background rendering is throttled. No-op in Tauri (Phase 1). */
   async setBackgroundThrottling(_allowed: boolean): Promise<void> {
     // No-op for Phase 1
   }
@@ -537,6 +544,7 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
     return { dark, highContrast };
   }
 
+  /** Returns whether the Windows Subsystem for Linux (WSL) feature is installed via the Rust backend. */
   async hasWSLFeatureInstalled(): Promise<boolean> {
     return invoke<boolean>('has_wsl_feature_installed');
   }
@@ -545,6 +553,12 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 
   // #region Screenshots
 
+  /**
+   * Captures a screenshot of the specified screen rectangle via the Rust backend.
+   *
+   * @param _rect - The screen rectangle to capture. If omitted, captures the full screen.
+   * @returns The screenshot as a `VSBuffer`, or `undefined` if capture fails.
+   */
   async getScreenshot(_rect?: IRectangle): Promise<VSBuffer | undefined> {
     const result = await invoke<Uint8Array | null>('capture_screenshot', {
       rect: _rect ? { x: _rect.x, y: _rect.y, width: _rect.width, height: _rect.height } : null,
@@ -559,6 +573,7 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 
   // #region Process
 
+  /** Returns the operating system process ID (PID) of the current application via the Rust backend. */
   async getProcessId(): Promise<number | undefined> {
     return invoke<number>('get_process_id');
   }
@@ -686,9 +701,15 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
     return invoke('close_window');
   }
 
-  /** Quits the application via the Tauri backend. */
+  /**
+   * Quits the application through the proper lifecycle handshake.
+   *
+   * Triggers `quit_all_windows` which closes all windows with
+   * `ShutdownReason.QUIT`, allowing each to veto (e.g., save dirty files).
+   * After all windows confirm, the Rust backend exits the process.
+   */
   async quit(): Promise<void> {
-    return invoke('quit_app');
+    return invoke('quit_all_windows');
   }
 
   /** Exits the application with the given exit code, saving the session first. */
@@ -700,6 +721,11 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
 
   // #region Development
 
+  /**
+   * Opens the browser DevTools for the current window via the Rust backend.
+   *
+   * Silently ignores errors in release builds where DevTools are unavailable.
+   */
   async openDevTools(_options?: Partial<OpenDevToolsOptions> & INativeHostOptions): Promise<void> {
     try {
       await invoke('open_devtools');
@@ -708,6 +734,11 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
     }
   }
 
+  /**
+   * Toggles the browser DevTools for the current window via the Rust backend.
+   *
+   * Silently ignores errors in release builds where DevTools are unavailable.
+   */
   async toggleDevTools(_options?: INativeHostOptions): Promise<void> {
     try {
       await invoke('toggle_devtools');
@@ -716,19 +747,25 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
     }
   }
 
+  /** Opens a window showing GPU information. No-op in Tauri (Phase 1). */
   async openGPUInfoWindow(): Promise<void> { }
+  /** Opens DevTools in a separate window with the given URL. No-op in Tauri (Phase 1). */
   async openDevToolsWindow(_url: string): Promise<void> { }
+  /** Opens a window for content tracing. No-op in Tauri (Phase 1). */
   async openContentTracingWindow(): Promise<void> { }
+  /** Stops performance tracing. No-op in Tauri (Phase 1). */
   async stopTracing(): Promise<void> { }
 
   // #endregion
 
   // #region Perf Introspection
 
+  /** Profiles the renderer process for the given session and duration. Returns an empty profile stub in Tauri (Phase 1). */
   async profileRenderer(_session: string, _duration: number): Promise<IV8Profile> {
     return { nodes: [], startTime: 0, endTime: 0, samples: [], timeDeltas: [] };
   }
 
+  /** Starts performance tracing with the given categories. No-op in Tauri (Phase 1). */
   async startTracing(_categories: string): Promise<void> { }
 
   // #endregion
@@ -760,6 +797,7 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
     }
   }
 
+  /** Looks up Kerberos authorization for the given URL. Not implemented in Tauri — always returns `undefined`. */
   async lookupKerberosAuthorization(_url: string): Promise<string | undefined> {
     return undefined;
   }
