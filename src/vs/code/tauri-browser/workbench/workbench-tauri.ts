@@ -77,7 +77,7 @@
 		 * transition completes (300ms).
 		 */
   function hideSplash(): void {
-    const splash = document.getElementById('splash');
+    const splash = window.document.getElementById('splash');
     if (splash) {
       splash.classList.add('fade-out');
       setTimeout(() => splash.remove(), 300);
@@ -161,7 +161,7 @@
   // Apply cached theme colors to the splash overlay so it matches
   // the user's active theme instead of the hardcoded default.
   if (windowConfig.themeBackground) {
-    const splash = document.getElementById('splash');
+    const splash = window.document.getElementById('splash');
     if (splash) {
       splash.style.backgroundColor = windowConfig.themeBackground + 'BF'; // 0.75 alpha
     }
@@ -342,7 +342,7 @@
 
     // Cache current theme colors for next startup's splash screen.
     try {
-      const style = getComputedStyle(document.body);
+      const style = getComputedStyle(window.document.body);
       const bg = style.getPropertyValue('--vscode-editor-background').trim() || '#1E1E1E';
       const fg = style.getPropertyValue('--vscode-editor-foreground').trim() || '#CCCCCC';
       await tauri.core.invoke('cache_theme_colors', { background: bg, foreground: fg });
