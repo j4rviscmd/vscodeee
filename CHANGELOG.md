@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-05-01
+
+### Fixed
+
+- Prevent duplicate workspace windows from UI open actions ([#388](https://github.com/j4rviscmd/vscodeee/pull/388))
+
+### Changed
+
+- Skip unchanged file writes to prevent unnecessary Cargo rebuilds ([#387](https://github.com/j4rviscmd/vscodeee/pull/387))
+
 ## [0.9.0] - 2026-05-01
 
 ### Added
