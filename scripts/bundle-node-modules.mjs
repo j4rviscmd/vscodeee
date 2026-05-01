@@ -347,10 +347,31 @@ function collectExtensionDependencies() {
 }
 
 /**
- * Recursively copy a directory.
+ * Copy a file only if the destination content differs from the source.
+ * Avoids updating mtime on unchanged files so Cargo's rerun-if-changed
+ * does not trigger unnecessary rebuilds.
  * @param {string} src
  * @param {string} dest
- * @returns {number} number of files copied
+ * @returns {boolean} true if the file was actually written
+ */
+function copyFileIfChanged(src, dest) {
+	const srcContent = fs.readFileSync(src);
+	try {
+		const destContent = fs.readFileSync(dest);
+		if (srcContent.equals(destContent)) {
+			return false;
+		}
+	} catch { /* dest doesn't exist */ }
+	fs.mkdirSync(path.dirname(dest), { recursive: true });
+	fs.writeFileSync(dest, srcContent);
+	return true;
+}
+
+/**
+ * Recursively copy a directory, skipping files whose content is unchanged.
+ * @param {string} src
+ * @param {string} dest
+ * @returns {number} number of files written (changed or new)
  */
 function copyDirRecursive(src, dest) {
 	if (!fs.existsSync(src)) {
@@ -364,8 +385,9 @@ function copyDirRecursive(src, dest) {
 		if (entry.isDirectory()) {
 			count += copyDirRecursive(srcPath, destPath);
 		} else {
-			fs.copyFileSync(srcPath, destPath);
-			count++;
+			if (copyFileIfChanged(srcPath, destPath)) {
+				count++;
+			}
 		}
 	}
 	return count;
@@ -373,12 +395,12 @@ function copyDirRecursive(src, dest) {
 
 /**
  * Copy a single file, creating parent directories as needed.
+ * Only writes if the content differs from the destination.
  * @param {string} src
  * @param {string} dest
  */
 function copyFile(src, dest) {
-	fs.mkdirSync(path.dirname(dest), { recursive: true });
-	fs.copyFileSync(src, dest);
+	copyFileIfChanged(src, dest);
 }
 
 /**
