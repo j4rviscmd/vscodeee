@@ -316,7 +316,7 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
             // Check if a coordinated quit is in progress to set the correct reason.
             let reason = if handle
                 .try_state::<Arc<super::quit_state::QuitState>>()
-                .map_or(false, |qs| qs.is_active())
+                .is_some_and(|qs| qs.is_active())
             {
                 "quit"
             } else {
