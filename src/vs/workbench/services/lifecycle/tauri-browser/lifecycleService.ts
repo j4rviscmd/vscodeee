@@ -85,12 +85,13 @@ export class TauriLifecycleService extends AbstractLifecycleService {
     // close request (e.g., closing an SSH window must not cascade to
     // the main window).
     const currentLabel = new URL(document.location.href).searchParams.get('windowLabel') ?? 'main';
-    listen<{ window_id: number; label: string }>('vscodeee:lifecycle:close-requested', (event) => {
+    listen<{ window_id: number; label: string; reason?: string }>('vscodeee:lifecycle:close-requested', (event) => {
       if (event.payload.label !== currentLabel) {
         return; // Not our window — ignore
       }
-      this.logService.info(`[lifecycle] Tauri close-requested received (window_id: ${event.payload.window_id}, label: ${event.payload.label})`);
-      this.handleCloseRequested();
+      const reason = event.payload.reason === 'quit' ? ShutdownReason.QUIT : ShutdownReason.CLOSE;
+      this.logService.info(`[lifecycle] Tauri close-requested received (window_id: ${event.payload.window_id}, label: ${event.payload.label}, reason: ${event.payload.reason ?? 'close'})`);
+      this.handleCloseRequested(reason);
     }).then(unlisten => {
       this.tauriCloseListener = unlisten;
     });
@@ -138,13 +139,14 @@ export class TauriLifecycleService extends AbstractLifecycleService {
 	 *    shutdown sequence.
 	 *
 	 * Errors during the veto phase are treated as vetoes to prevent data loss.
+	 *
+	 * @param reason - The shutdown reason: CLOSE for individual window close,
+	 *   QUIT for application-wide quit (affects dialog messages and Hot Exit).
 	 */
-  private async handleCloseRequested(): Promise<void> {
+  private async handleCloseRequested(reason: ShutdownReason = ShutdownReason.CLOSE): Promise<void> {
     if (this._willShutdown) {
       return; // already shutting down
     }
-
-    const reason = ShutdownReason.CLOSE;
 
     try {
       const veto = await this.fireBeforeShutdown(reason);

@@ -14,13 +14,15 @@ import { ServicesAccessor } from '../../../platform/instantiation/common/instant
 // #region Quit
 
 /**
- * Quits the application by closing the current window through the lifecycle handshake.
+ * Quits the application by closing ALL windows through the lifecycle handshake.
  *
- * IMPORTANT: Must use `closeWindow()` instead of `quit()`.
- * `quit()` calls Rust `quit_app` which bypasses the TypeScript lifecycle
- * (handleShutdown → flush(SHUTDOWN) → CommandsHistory.saveState()), causing
- * storage data that is only written during shutdown to be lost.
- * `closeWindow()` triggers `CloseRequested` → lifecycle handshake → proper flush.
+ * Calls `quit()` which invokes Rust `quit_all_windows`:
+ * 1. Sets QuitState.in_progress in Rust
+ * 2. Triggers `window.close()` on each window
+ * 3. Each window receives CloseRequested with reason="quit"
+ * 4. TypeScript lifecycle runs with ShutdownReason.QUIT (correct dialog text, Hot Exit)
+ * 5. After all windows confirm → app.exit(0)
+ * 6. If any window vetoes → quit cancelled, that window stays
  */
 class QuitAction extends Action2 {
   constructor() {
@@ -44,12 +46,9 @@ class QuitAction extends Action2 {
   async run(accessor: ServicesAccessor): Promise<void> {
     const nativeHostService = accessor.get(INativeHostService);
 
-    // Use closeWindow() to trigger the full lifecycle handshake:
-    // CloseRequested → handleCloseRequested() → handleShutdown()
-    // → flush(SHUTDOWN) → onDidShutdown → lifecycle_close_confirmed.
-    // Do NOT use quit() — it calls Rust quit_app which skips the
-    // TypeScript lifecycle and loses shutdown-only storage data.
-    await nativeHostService.closeWindow();
+    // quit() now calls quit_all_windows which goes through the full
+    // lifecycle handshake for each window with ShutdownReason.QUIT.
+    await nativeHostService.quit();
   }
 }
 
@@ -59,7 +58,12 @@ registerAction2(QuitAction);
 
 // #region Close Window
 
-/** Closes the current window via the Tauri backend. */
+/**
+ * Action that closes the current window via the Tauri backend.
+ *
+ * Registered with keybinding `CmdOrCtrl+W` and accessible from the command palette.
+ * Delegates to `INativeHostService.closeWindow()` which invokes the Rust `close_window` command.
+ */
 class CloseWindowAction extends Action2 {
   constructor() {
     super({
@@ -86,7 +90,12 @@ registerAction2(CloseWindowAction);
 
 // #region Window Management
 
-/** Minimizes the current window. */
+/**
+ * Action that minimizes the current window.
+ *
+ * Accessible from the command palette under the View category.
+ * Delegates to `INativeHostService.minimizeWindow()`.
+ */
 class MinimizeWindowAction extends Action2 {
   constructor() {
     super({
@@ -105,7 +114,12 @@ class MinimizeWindowAction extends Action2 {
 
 registerAction2(MinimizeWindowAction);
 
-/** Maximizes the current window. */
+/**
+ * Action that maximizes the current window.
+ *
+ * Accessible from the command palette under the View category.
+ * Delegates to `INativeHostService.maximizeWindow()`.
+ */
 class MaximizeWindowAction extends Action2 {
   constructor() {
     super({
@@ -124,7 +138,13 @@ class MaximizeWindowAction extends Action2 {
 
 registerAction2(MaximizeWindowAction);
 
-/** Toggles the maximized state of the current window. */
+/**
+ * Action that toggles the maximized state of the current window.
+ *
+ * Queries `INativeHostService.isMaximized()` and calls either
+ * `unmaximizeWindow()` or `maximizeWindow()` depending on the current state.
+ * Accessible from the command palette under the View category.
+ */
 class ToggleMaximizedWindowAction extends Action2 {
   constructor() {
     super({
@@ -154,7 +174,12 @@ registerAction2(ToggleMaximizedWindowAction);
 
 import { IWindowZoomService } from '../../services/zoom/common/zoom.js';
 
-/** Increases the workbench zoom level by 1. */
+/**
+ * Action that increases the workbench zoom level by 1.
+ *
+ * Registered with keybinding `CmdOrCtrl+=`.
+ * Delegates to `IWindowZoomService.applyZoomDelta(1)`.
+ */
 class ZoomInAction extends Action2 {
   constructor() {
     super({
@@ -177,7 +202,12 @@ class ZoomInAction extends Action2 {
 
 registerAction2(ZoomInAction);
 
-/** Decreases the workbench zoom level by 1. */
+/**
+ * Action that decreases the workbench zoom level by 1.
+ *
+ * Registered with keybinding `CmdOrCtrl+-`.
+ * Delegates to `IWindowZoomService.applyZoomDelta(-1)`.
+ */
 class ZoomOutAction extends Action2 {
   constructor() {
     super({
@@ -200,7 +230,12 @@ class ZoomOutAction extends Action2 {
 
 registerAction2(ZoomOutAction);
 
-/** Resets the workbench zoom level to the default. */
+/**
+ * Action that resets the workbench zoom level to the default.
+ *
+ * Registered with keybindings `CmdOrCtrl+Numpad0` (primary) and `CmdOrCtrl+Digit0` (secondary).
+ * Delegates to `IWindowZoomService.resetZoom()`.
+ */
 class ZoomResetAction extends Action2 {
   constructor() {
     super({
@@ -228,7 +263,12 @@ registerAction2(ZoomResetAction);
 
 // #region Relaunch
 
-/** Relaunches the application via the Tauri backend. */
+/**
+ * Action that relaunches the application via the Tauri backend.
+ *
+ * Accessible from the command palette under the View category.
+ * Delegates to `INativeHostService.relaunch()` which invokes the Rust `relaunch_app` command.
+ */
 class RelaunchAction extends Action2 {
   constructor() {
     super({

@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { isStandalone } from '../../base/browser/browser.js';
-import { isLinux, isMacintosh, isNative, isWeb, isWindows } from '../../base/common/platform.js';
+import { isLinux, isMacintosh, isNative, isTauri, isWeb, isWindows } from '../../base/common/platform.js';
 import { localize } from '../../nls.js';
 import { Extensions as ConfigurationExtensions, ConfigurationScope, IConfigurationRegistry } from '../../platform/configuration/common/configurationRegistry.js';
 import product from '../../platform/product/common/product.js';
@@ -925,7 +925,7 @@ const registry = Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Con
 						localize('window.confirmBeforeClose.never.web', "Never explicitly ask for confirmation unless data loss is imminent.") :
 						localize('window.confirmBeforeClose.never', "Never explicitly ask for confirmation.")
 				],
-				'default': (isWeb && !isStandalone()) ? 'keyboardOnly' : 'never', // on by default in web, unless PWA, never on desktop
+				'default': (isWeb && !isStandalone() && !isTauri) ? 'keyboardOnly' : 'never', // on by default in web (not Tauri), unless PWA, never on desktop
 				'markdownDescription': isWeb ?
 					localize('confirmBeforeCloseWeb', "Controls whether to show a confirmation dialog before closing the browser tab or window. Note that even if enabled, browsers may still decide to close a tab or window without confirmation and that this setting is only a hint that may not work in all cases.") :
 					localize('confirmBeforeClose', "Controls whether to show a confirmation dialog before closing a window or quitting the application."),
@@ -1100,6 +1100,13 @@ Registry.as<IConfigurationMigrationRegistry>(Extensions.ConfigurationMigration)
 		}
 	}]);
 
+/**
+ * VSCodeEE-specific workbench editor settings.
+ *
+ * These settings extend the standard VS Code configuration with behaviors
+ * specific to the Tauri-based VSCodeEE fork. Settings are scoped under the
+ * `vscodeee` prefix to distinguish them from upstream VS Code settings.
+ */
 // VSCodeEE: Workbench editor settings
 registry.registerConfiguration({
 	'id': 'vscodeee',
