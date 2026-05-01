@@ -77,6 +77,11 @@ pub struct OpenWindowOptions {
     /// When `true`, reuse the current window instead of opening a new one.
     #[serde(default)]
     pub force_reuse_window: bool,
+    /// When `true`, skip workspace deduplication and always create a new window.
+    /// Only set by the CLI router when `-n` / `--new-window` is passed.
+    /// The TypeScript UI never sets this, so dedup always runs from the workbench.
+    #[serde(default)]
+    pub skip_dedup: bool,
 }
 
 /// The `window.restoreWindows` setting values from VS Code's settings.json.
