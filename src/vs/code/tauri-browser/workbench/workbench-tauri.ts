@@ -77,6 +77,7 @@
 		 * transition completes (300ms).
 		 */
   function hideSplash(): void {
+    // eslint-disable-next-line no-restricted-syntax
     const splash = window.document.getElementById('splash');
     if (splash) {
       splash.classList.add('fade-out');
@@ -161,6 +162,7 @@
   // Apply cached theme colors to the splash overlay so it matches
   // the user's active theme instead of the hardcoded default.
   if (windowConfig.themeBackground) {
+    // eslint-disable-next-line no-restricted-syntax
     const splash = window.document.getElementById('splash');
     if (splash) {
       splash.style.backgroundColor = windowConfig.themeBackground + 'BF'; // 0.75 alpha
