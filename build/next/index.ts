@@ -667,7 +667,15 @@ async function transpileFile(srcPath: string, destPath: string): Promise<void> {
 	});
 
 	await fs.promises.mkdir(path.dirname(destPath), { recursive: true });
-	await fs.promises.writeFile(destPath, result.code);
+	// Skip write when content is unchanged to avoid updating mtime,
+	// which would trigger Cargo's rerun-if-changed and cause full rebuilds.
+	let existing: string | null = null;
+	try {
+		existing = await fs.promises.readFile(destPath, 'utf-8');
+	} catch { /* file doesn't exist yet */ }
+	if (existing !== result.code) {
+		await fs.promises.writeFile(destPath, result.code);
+	}
 }
 
 async function transpile(outDir: string, excludeTests: boolean): Promise<void> {
