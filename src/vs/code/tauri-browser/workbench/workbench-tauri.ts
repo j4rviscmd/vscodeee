@@ -67,6 +67,25 @@
 
   //#endregion
 
+  //#region Hide Splash
+
+  /**
+		 * Remove the splash overlay with a fade-out transition.
+		 *
+		 * Called after the workbench finishes loading but before `notify_ready`.
+		 * The splash div is removed from the DOM after the CSS opacity
+		 * transition completes (300ms).
+		 */
+  function hideSplash(): void {
+    const splash = document.getElementById('splash');
+    if (splash) {
+      splash.classList.add('fade-out');
+      setTimeout(() => splash.remove(), 300);
+    }
+  }
+
+  //#endregion
+
   //#region Tauri API — use window.__TAURI__ directly (no npm imports)
 
   /**
@@ -118,6 +137,8 @@
     restoredFolderUri?: string;
     restoredWorkspaceUri?: string;
     isDevBuild?: boolean;
+    themeBackground?: string;
+    themeForeground?: string;
   }
 
   /**
@@ -136,6 +157,15 @@
 
   const windowConfig = await tauri.core.invoke<ITauriWindowConfig>('get_window_configuration');
   const hostInfo = await tauri.core.invoke<ITauriHostInfo>('get_native_host_info');
+
+  // Apply cached theme colors to the splash overlay so it matches
+  // the user's active theme instead of the hardcoded default.
+  if (windowConfig.themeBackground) {
+    const splash = document.getElementById('splash');
+    if (splash) {
+      splash.style.backgroundColor = windowConfig.themeBackground + 'BF'; // 0.75 alpha
+    }
+  }
 
   /**
  * Merged configuration object passed to `TauriDesktopMain`.
@@ -310,15 +340,26 @@
     const main = new desktopModule.TauriDesktopMain(tauriConfig, folderParam ?? undefined, workspaceParam ?? undefined, remoteAuthorityParam ?? undefined);
     await main.open();
 
+    // Cache current theme colors for next startup's splash screen.
+    try {
+      const style = getComputedStyle(document.body);
+      const bg = style.getPropertyValue('--vscode-editor-background').trim() || '#1E1E1E';
+      const fg = style.getPropertyValue('--vscode-editor-foreground').trim() || '#CCCCCC';
+      await tauri.core.invoke('cache_theme_colors', { background: bg, foreground: fg });
+    } catch { /* best-effort */ }
+
     // Notify the Rust backend that the workbench is ready to be shown.
-    // The window is created hidden (visible: false) and only becomes
-    // visible after this call, preventing the "stretching on restore"
-    // effect where the window resizes from default to saved geometry.
+    // The splash overlay is hidden first so the workbench is fully
+    // visible when the geometry validation in notify_ready runs.
+    hideSplash();
     await tauri.core.invoke('notify_ready');
 
     performance.mark('code/didStartWorkbench');
   } catch (error) {
     console.error('[Tauri Bootstrap] Failed to load workbench:', error);
+
+    // Hide splash so the error message is visible
+    hideSplash();
 
     // Show error in the body so the user sees something
     // eslint-disable-next-line no-restricted-syntax
