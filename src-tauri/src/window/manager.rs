@@ -142,6 +142,17 @@ impl WindowManager {
             let _ = _window.set_decorations(true);
         }
 
+        // Defer showing the window to allow tauri-plugin-window-state to
+        // restore the saved geometry first. Without this delay the window
+        // appears at the builder default (1200×800) and then "stretches"
+        // when the plugin applies the restored size.
+        let win = _window.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            let _ = win.show();
+            let _ = win.set_focus();
+        });
+
         // Register in state
         let workspace_uri = options
             .folder_uri
@@ -387,6 +398,14 @@ impl WindowManager {
         {
             let _ = _window.set_decorations(true);
         }
+
+        // Defer showing the window to allow tauri-plugin-window-state to
+        // restore the saved geometry first (same reason as open_window).
+        let win = _window.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            let _ = win.show();
+        });
 
         let effective_uri = folder_uri
             .map(String::from)

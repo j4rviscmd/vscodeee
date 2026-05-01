@@ -229,6 +229,7 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
             commands::get_native_host_info,
             commands::get_window_configuration,
             commands::list_css_modules,
+            commands::cache_theme_colors,
             commands::get_product_json,
             commands::extensions::list_builtin_extensions,
             commands::ipc_channel::ipc_message,
@@ -475,6 +476,12 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
                 let chrome = window::chrome::WindowChromeConfig::for_platform();
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.set_decorations(chrome.decorations);
+                    // Show the window immediately so the user sees the splash
+                    // overlay (spinner + watermark) rendered by inline HTML/CSS.
+                    // hideSplash() in workbench-tauri.ts removes the overlay
+                    // after the workbench finishes loading.
+                    let _ = window.show();
+                    let _ = window.set_focus();
                 }
             }
 
