@@ -33,20 +33,20 @@ pub type Header = (String, String);
 ///
 /// Returns the origin string to use in `Access-Control-Allow-Origin` if allowed,
 /// or the default `tauri://localhost` if the origin is absent or not recognized.
-fn resolve_cors_origin(request_origin: Option<&str>) -> &str {
-    match request_origin {
-        Some(origin) => {
-            for prefix in ALLOWED_ORIGIN_PREFIXES {
-                if origin == *prefix || origin.starts_with(&format!("{prefix}:")) {
-                    return origin;
-                }
-            }
-            // Unknown origin — fall back to default (won't match, effectively denying CORS)
-            "tauri://localhost"
+pub(crate) fn resolve_cors_origin(request_origin: Option<&str>) -> &str {
+    let origin = match request_origin {
+        Some(origin) => origin,
+        None => return "tauri://localhost",
+    };
+
+    for prefix in ALLOWED_ORIGIN_PREFIXES {
+        if origin == *prefix || origin.starts_with(&format!("{prefix}:")) {
+            return origin;
         }
-        // No Origin header — use default (same-origin requests from Tauri WebView)
-        None => "tauri://localhost",
     }
+
+    // Unknown origin — fall back to default (won't match, effectively denying CORS)
+    "tauri://localhost"
 }
 
 /// Compute the security headers for a given file path.
@@ -57,11 +57,7 @@ fn resolve_cors_origin(request_origin: Option<&str>) -> &str {
 /// - Whether this is a development build (gets Cache-Control: no-cache)
 ///
 /// All responses get CORS headers allowing validated origins.
-pub fn headers_for_path(
-    path: &Path,
-    is_dev_build: bool,
-    request_origin: Option<&str>,
-) -> Vec<Header> {
+pub fn headers_for_path(path: &Path, request_origin: Option<&str>) -> Vec<Header> {
     let mut headers = Vec::with_capacity(6);
 
     // Always add CORS with the resolved origin
@@ -95,12 +91,17 @@ pub fn headers_for_path(
         ));
     }
 
-    // Cache-Control for dev builds
-    if is_dev_build {
+    // Cache-Control: static assets (JS/CSS/etc.) are immutable per build
+    // and MUST be cached to avoid flooding WKWebView's main thread with
+    // hundreds of response deliveries through the custom protocol handler.
+    // HTML entry points use no-cache to ensure the latest workbench is loaded.
+    if is_workbench_html {
         headers.push((
             "Cache-Control".to_string(),
             "no-cache, no-store".to_string(),
         ));
+    } else {
+        headers.push(("Cache-Control".to_string(), "max-age=604800".to_string()));
     }
 
     headers
@@ -122,7 +123,7 @@ mod tests {
     #[test]
     fn always_includes_cors() {
         let path = PathBuf::from("/app/out/vs/base/style.css");
-        let headers = headers_for_path(&path, false, None);
+        let headers = headers_for_path(&path, None);
         let map = header_map(&headers);
         assert_eq!(
             map.get("Access-Control-Allow-Origin"),
@@ -133,7 +134,7 @@ mod tests {
     #[test]
     fn cors_echoes_allowed_dev_origin() {
         let path = PathBuf::from("/app/out/vs/base/style.css");
-        let headers = headers_for_path(&path, false, Some("http://127.0.0.1:1430"));
+        let headers = headers_for_path(&path, Some("http://127.0.0.1:1430"));
         let map = header_map(&headers);
         assert_eq!(
             map.get("Access-Control-Allow-Origin"),
@@ -144,7 +145,7 @@ mod tests {
     #[test]
     fn cors_echoes_localhost_dev_origin() {
         let path = PathBuf::from("/app/out/vs/base/style.css");
-        let headers = headers_for_path(&path, false, Some("http://localhost:5173"));
+        let headers = headers_for_path(&path, Some("http://localhost:5173"));
         let map = header_map(&headers);
         assert_eq!(
             map.get("Access-Control-Allow-Origin"),
@@ -155,7 +156,7 @@ mod tests {
     #[test]
     fn cors_rejects_unknown_origin() {
         let path = PathBuf::from("/app/out/vs/base/style.css");
-        let headers = headers_for_path(&path, false, Some("https://evil.example.com"));
+        let headers = headers_for_path(&path, Some("https://evil.example.com"));
         let map = header_map(&headers);
         // Falls back to tauri://localhost (won't match the attacker's origin)
         assert_eq!(
@@ -167,7 +168,7 @@ mod tests {
     #[test]
     fn cors_echoes_tauri_origin() {
         let path = PathBuf::from("/app/out/vs/base/style.css");
-        let headers = headers_for_path(&path, false, Some("tauri://localhost"));
+        let headers = headers_for_path(&path, Some("tauri://localhost"));
         let map = header_map(&headers);
         assert_eq!(
             map.get("Access-Control-Allow-Origin"),
@@ -178,7 +179,7 @@ mod tests {
     #[test]
     fn workbench_html_gets_coop_coep() {
         let path = PathBuf::from("/app/out/vs/workbench/workbench.html");
-        let headers = headers_for_path(&path, false, None);
+        let headers = headers_for_path(&path, None);
         let map = header_map(&headers);
 
         assert_eq!(map.get("Cross-Origin-Opener-Policy"), Some(&"same-origin"));
@@ -195,7 +196,7 @@ mod tests {
     #[test]
     fn non_workbench_file_no_coop_coep() {
         let path = PathBuf::from("/app/out/vs/editor/editor.main.js");
-        let headers = headers_for_path(&path, false, None);
+        let headers = headers_for_path(&path, None);
         let map = header_map(&headers);
 
         assert!(!map.contains_key("Cross-Origin-Opener-Policy"));
@@ -204,25 +205,25 @@ mod tests {
     }
 
     #[test]
-    fn dev_build_gets_cache_control() {
+    fn js_gets_long_cache() {
         let path = PathBuf::from("/app/out/vs/base/common/network.js");
-        let headers = headers_for_path(&path, true, None);
+        let headers = headers_for_path(&path, None);
+        let map = header_map(&headers);
+        assert_eq!(map.get("Cache-Control"), Some(&"max-age=604800"));
+    }
+
+    #[test]
+    fn html_gets_no_cache() {
+        let path = PathBuf::from("/app/out/vs/code/browser/workbench/workbench.html");
+        let headers = headers_for_path(&path, None);
         let map = header_map(&headers);
         assert_eq!(map.get("Cache-Control"), Some(&"no-cache, no-store"));
     }
 
     #[test]
-    fn production_build_no_cache_control() {
-        let path = PathBuf::from("/app/out/vs/base/common/network.js");
-        let headers = headers_for_path(&path, false, None);
-        let map = header_map(&headers);
-        assert!(!map.contains_key("Cache-Control"));
-    }
-
-    #[test]
     fn index_html_treated_as_workbench() {
         let path = PathBuf::from("/app/workbench/index.html");
-        let headers = headers_for_path(&path, false, None);
+        let headers = headers_for_path(&path, None);
         let map = header_map(&headers);
         assert!(map.contains_key("Cross-Origin-Opener-Policy"));
     }
