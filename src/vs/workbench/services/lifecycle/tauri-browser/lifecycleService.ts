@@ -164,12 +164,13 @@ export class TauriLifecycleService extends AbstractLifecycleService {
     `;
     doc.head.appendChild(style);
 
-    const bg = getComputedStyle(doc.body).getPropertyValue('--vscode-editor-background').trim() || '#1E1E1E';
+    const bg = mainWindow.getComputedStyle(doc.body).getPropertyValue('--vscode-editor-background').trim() || '#1E1E1E';
 
     const overlay = doc.createElement('div');
     overlay.id = 'shutdown-overlay';
     overlay.style.backgroundColor = bg + 'BF';
     overlay.style.backdropFilter = 'blur(20px)';
+    // eslint-disable-next-line local/code-no-any-casts
     (overlay.style as any).webkitBackdropFilter = 'blur(20px)';
 
     const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -185,7 +186,7 @@ export class TauriLifecycleService extends AbstractLifecycleService {
     text.setAttribute('x', '130');
     text.setAttribute('y', '148');
     text.setAttribute('text-anchor', 'middle');
-    text.setAttribute('font-family', "'SF Mono','Menlo','Consolas','Courier New',monospace");
+    text.setAttribute('font-family', 'SF Mono, Menlo, Consolas, Courier New, monospace');
     text.setAttribute('font-size', '52');
     text.setAttribute('font-weight', '600');
     text.setAttribute('fill', '#808080');
@@ -205,7 +206,7 @@ export class TauriLifecycleService extends AbstractLifecycleService {
     doc.body.appendChild(overlay);
 
     // Trigger fade-in on next frame
-    requestAnimationFrame(() => overlay.classList.add('visible'));
+    mainWindow.requestAnimationFrame(() => overlay.classList.add('visible'));
   }
 
   // --- Two-phase close handshake ---
