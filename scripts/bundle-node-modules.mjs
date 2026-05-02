@@ -16,13 +16,11 @@
  * pattern `/node_modules/...` that VS Code expects.
  *
  * This script copies a curated subset of node_modules into a staging
- * directory (`src-tauri/target/debug/node_modules`) that Tauri then bundles
+ * directory (`src-tauri/node_modules`) that Tauri then bundles
  * via `tauri.conf.json > bundle > resources`.
  *
- * The staging directory is placed inside `src-tauri/target/` so that `cargo
- * clean` automatically removes stale artifacts. The directory is NOT a
- * symlink — it is a real directory containing only the packages that VS Code
- * actually needs at runtime.
+ * The directory is NOT a symlink — it is a real directory containing only
+ * the packages that VS Code actually needs at runtime.
  *
  * ## Packages are copied in phases
  *
@@ -46,13 +44,23 @@ import fs from 'fs';
 import crypto from 'crypto';
 import path from 'path';
 
+/** @type {string} Absolute path to the repository root directory. */
 const REPO_ROOT = path.resolve(import.meta.dirname, '..');
-const TARGET_DIR = path.join(REPO_ROOT, 'src-tauri', 'target', 'debug', 'node_modules');
+
+/** @type {string} Staging directory where curated node_modules are copied for Tauri bundling. */
+const TARGET_DIR = path.join(REPO_ROOT, 'src-tauri', 'node_modules');
 
 // ---------------------------------------------------------------------
 // Phase 1: Core modules that VS Code directly requires at runtime
 // ---------------------------------------------------------------------
 
+/**
+ * @type {(string | PackageEntry)[]}
+ * Packages that VS Code directly `require()`s at runtime.
+ * String entries represent the entire package directory;
+ * object entries may specify a `sub` path for individual files
+ * or `optional: true` to suppress missing-package warnings.
+ */
 const CORE_MODULES = [
 	{ name: 'vscode-oniguruma', sub: 'release/main.js' },
 	{ name: 'vscode-oniguruma', sub: 'release/onig.wasm' },
@@ -101,6 +109,14 @@ const CORE_MODULES = [
 // but whose code is never executed (Tauri strips all metrics).
 // ---------------------------------------------------------------------
 
+/**
+ * @type {string[]}
+ * Telemetry and analytics packages that must exist on disk for VS Code's
+ * require graph to resolve, but whose code is never executed because
+ * all metrics-sending paths are stripped in the Tauri build.
+ * Each entry is replaced with a minimal stub (empty `module.exports`)
+ * via {@link createStubPackage}.
+ */
 const STUB_PACKAGES = [
 	'@vscode/extension-telemetry',
 	'@microsoft/1ds-core-js',
@@ -114,6 +130,13 @@ const STUB_PACKAGES = [
 // (only the ones not already covered above)
 // ---------------------------------------------------------------------
 
+/**
+ * @type {Record<string, string[]>}
+ * Mapping from core module names to their additional transitive
+ * dependencies that are not already listed in {@link CORE_MODULES}.
+ * Entries whose parent is inlined by a BUNDLED extension (see
+ * {@link BUNDLED_EXTENSIONS}) are skipped at copy time.
+ */
 const TRANSITIVE_DEPS = {
 	'@xterm/addon-clipboard': ['js-base64'],
 	katex: ['commander'],
@@ -129,6 +152,14 @@ const TRANSITIVE_DEPS = {
 // Extensions that use esbuild to bundle ALL their deps are listed here.
 // Their transitive dependency trees are fully inlined and do NOT need
 // to be copied to node_modules.
+
+/**
+ * @type {Set<string>}
+ * Extensions whose dependencies are fully inlined by esbuild (they have
+ * an `esbuild.mts` build script). These extensions are skipped during
+ * Phase 2 dependency scanning because all their runtime deps are already
+ * bundled into the extension output.
+ */
 const BUNDLED_EXTENSIONS = new Set([
 	'markdown-language-features',
 	'markdown-math',
@@ -151,6 +182,13 @@ const BUNDLED_EXTENSIONS = new Set([
 
 // NOTE: These are also excluded by the BUNDLED extension skip in Phase 2, but
 // are listed explicitly so we can warn if they're unexpectedly missing.
+
+/**
+ * @type {string[]}
+ * Packages required by non-BUNDLED built-in extensions. These are copied
+ * from the extension's own `node_modules/` directory into the staging
+ * target during Phase 2.
+ */
 const EXTENSION_DEPS = [
 	'@vscode/fs-copyfile',
 	'vscode-markdown-languageserver',
@@ -341,14 +379,57 @@ function createStubPackage(destDir, pkgName) {
  * SHA-256 hash of `package-lock.json` matches the current hash, the
  * entire step is skipped. This avoids redundant bundling when
  * dependencies haven't changed (even if `npm install` touched mtime).
+ *
+ * @type {string}
+ * Directory containing stamp files used for incremental build skipping.
+ * The stamp file for this script is `bundle-node-modules.stamp`.
  */
 const SKIP_MARKERS_DIR = path.join(REPO_ROOT, '.build', 'skip-markers');
 
+/**
+ * Entry point for the node_modules bundling script.
+ *
+ * Orchestrates the full bundling process:
+ * 1. Removes any stale symlink at the target directory.
+ * 2. Checks a stamp file to skip bundling when dependencies haven't changed
+ *    (unless `--force` is passed).
+ * 3. Builds the package list via {@link buildPackageList}.
+ * 4. Copies core modules, stubs, transitive deps, and extension deps
+ *    into `src-tauri/node_modules/`.
+ * 5. Writes a stamp file with a truncated SHA-256 hash of `package-lock.json`
+ *    so the next invocation can detect whether dependencies changed.
+ *
+ * CLI flags:
+ * - `--force`  — Remove the target directory before bundling and ignore the stamp file.
+ */
 function main() {
 	const force = process.argv.includes('--force');
 	const stampPath = path.join(SKIP_MARKERS_DIR, 'bundle-node-modules.stamp');
 
-	if (!force && fs.existsSync(stampPath)) {
+	// Guard: If TARGET_DIR is a symlink (e.g. -> ../node_modules created by
+	// npm install), remove it so we can create a real directory with only the
+	// curated subset of packages. Without this, Tauri would follow the symlink
+	// and bundle the entire root node_modules (~960MB) into the production app.
+	// See: https://github.com/j4rviscmd/vscodeee/issues/312
+	// NOTE: This check runs before the skip logic so that a stale symlink is
+	// always removed, even when the bundle content itself hasn't changed.
+	let symlinkRemoved = false;
+	try {
+		const stat = fs.lstatSync(TARGET_DIR);
+		if (stat.isSymbolicLink()) {
+			const linkTarget = fs.readlinkSync(TARGET_DIR);
+			console.log(`[bundle-node-modules] Removing symlink: ${TARGET_DIR} -> ${linkTarget}`);
+			fs.unlinkSync(TARGET_DIR);
+			symlinkRemoved = true;
+		}
+	} catch {
+		// TARGET_DIR doesn't exist yet — that's fine
+	}
+
+	// Skip bundling only when dependencies haven't changed AND the staging
+	// directory exists (removing a symlink may have deleted it) AND the
+	// symlink wasn't just removed (which requires a full rebuild).
+	if (!force && !symlinkRemoved && fs.existsSync(TARGET_DIR) && fs.existsSync(stampPath)) {
 		const lockfile = path.join(REPO_ROOT, 'package-lock.json');
 		if (fs.existsSync(lockfile)) {
 			const savedHash = fs.readFileSync(stampPath, 'utf8').trim();
@@ -362,22 +443,6 @@ function main() {
 	}
 
 	console.log('[bundle-node-modules] Bundling required node_modules for Tauri build...');
-
-	// Guard: If TARGET_DIR is a symlink (e.g. -> ../node_modules created by
-	// npm install), remove it so we can create a real directory with only the
-	// curated subset of packages. Without this, Tauri would follow the symlink
-	// and bundle the entire root node_modules (~960MB) into the production app.
-	// See: https://github.com/j4rviscmd/vscodeee/issues/312
-	try {
-		const stat = fs.lstatSync(TARGET_DIR);
-		if (stat.isSymbolicLink()) {
-			const linkTarget = fs.readlinkSync(TARGET_DIR);
-			console.log(`[bundle-node-modules] Removing symlink: ${TARGET_DIR} -> ${linkTarget}`);
-			fs.unlinkSync(TARGET_DIR);
-		}
-	} catch {
-		// TARGET_DIR doesn't exist yet — that's fine
-	}
 
 	// Clean if requested
 	if (force) {
