@@ -196,14 +196,14 @@ jobs:
       # Create empty out/ directory so tauri::generate_context!() can resolve frontendDist: "../out"
       # Create empty css-modules.json so bundle.resources validation passes
       # Create empty node sidecar stub so externalBin validation passes
-      # Create empty node_modules/ stub so bundle.resources "node_modules/" validation passes
+      # Create empty node_modules/ stub so bundle.resources "target/debug/node_modules/" validation passes
       - name: Create build stubs
         run: |
           mkdir -p out
           echo '[]' > src-tauri/css-modules.json
           mkdir -p src-tauri/binaries
           touch src-tauri/binaries/node-x86_64-unknown-linux-gnu
-          mkdir -p src-tauri/node_modules
+          mkdir -p src-tauri/target/debug/node_modules
 
       - name: Install system dependencies
         run: |
