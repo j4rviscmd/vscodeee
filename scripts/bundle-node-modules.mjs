@@ -422,7 +422,11 @@ function copyPackage(pkgName) {
 /**
  * Main entry point for the node_modules bundling script.
  *
- * Executes two phases:
+ * Skip logic: if `--force` is not set and a stamp file exists that is newer
+ * than `package-lock.json`, the entire step is skipped. This avoids redundant
+ * copies when neither dependencies nor the bundling logic have changed.
+ *
+ * Executes two phases when a rebuild is needed:
  * 1. Copies core modules (specific files/directories) listed in `CORE_MODULES`
  *    from `node_modules/` to `src-tauri/node_modules/`.
  * 2. Auto-discovers all extension dependencies (including transitive ones) via
@@ -432,7 +436,21 @@ function copyPackage(pkgName) {
  * Supports a `--clean` flag to remove the staging directory before bundling.
  * Logs progress, skipped modules, and final statistics (file count, total size).
  */
+const SKIP_MARKERS_DIR = path.join(REPO_ROOT, '.build', 'skip-markers');
+
 function main() {
+	const force = process.argv.includes('--force');
+	const stampPath = path.join(SKIP_MARKERS_DIR, 'bundle-node-modules.stamp');
+
+	if (!force && fs.existsSync(stampPath)) {
+		const stampTime = fs.statSync(stampPath).mtimeMs;
+		const lockfile = path.join(REPO_ROOT, 'package-lock.json');
+		if (!fs.existsSync(lockfile) || fs.statSync(lockfile).mtimeMs <= stampTime) {
+			console.log('✅ [bundle-node-modules] Skipped (no changes)');
+			return;
+		}
+	}
+
 	console.log('[bundle-node-modules] Bundling required node_modules for Tauri build...');
 
 	// Guard: If TARGET_DIR is a symlink (e.g. -> ../node_modules created by
@@ -607,6 +625,10 @@ function main() {
 	if (skipped > 0) {
 		console.log(`[bundle-node-modules] ${skipped} module(s) not found (may be optional)`);
 	}
+
+	// Mark as complete for skip detection on next run
+	fs.mkdirSync(SKIP_MARKERS_DIR, { recursive: true });
+	fs.writeFileSync(stampPath, new Date().toISOString());
 }
 
 main();

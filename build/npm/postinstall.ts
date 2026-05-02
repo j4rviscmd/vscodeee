@@ -442,7 +442,7 @@ function configureGitSettings() {
  */
 async function main() {
 	if (!process.env['VSCODE_FORCE_INSTALL'] && isUpToDate()) {
-		log('.', 'All dependencies up to date, skipping postinstall.');
+		console.log('✅ [postinstall] Dependencies up to date');
 		configureGitSettings();
 		return;
 	}

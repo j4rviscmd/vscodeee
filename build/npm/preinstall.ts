@@ -56,7 +56,7 @@ if (npmVersionMatch) {
 // Fast path: if nothing changed since last successful install, skip everything.
 // This makes `npm i` near-instant when dependencies haven't changed.
 if (!process.env['VSCODE_FORCE_INSTALL'] && isUpToDate()) {
-	console.log(`\x1b[32mAll dependencies up to date.\x1b[0m ${forceInstallMessage}`);
+	console.log('✅ [preinstall] Dependencies up to date');
 	process.exit(0);
 }
 

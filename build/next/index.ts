@@ -48,6 +48,7 @@ const options = {
 	nls: process.argv.includes('--nls'),
 	manglePrivates: process.argv.includes('--mangle-privates'),
 	excludeTests: process.argv.includes('--exclude-tests'),
+	force: process.argv.includes('--force'),
 	out: getArgValue('--out'),
 	target: getArgValue('--target') ?? 'desktop', // 'desktop' | 'server'
 	sourceMapBaseUrl: getArgValue('--source-map-base-url'),
@@ -300,6 +301,83 @@ async function cleanDir(dir: string): Promise<void> {
 	console.log(`[clean] ${dir}`);
 	await fs.promises.rm(fullPath, { recursive: true, force: true });
 	await fs.promises.mkdir(fullPath, { recursive: true });
+}
+
+// ============================================================================
+// Skip Logic (mtime-based incremental build)
+// ============================================================================
+
+const SKIP_MARKERS_DIR = path.join(REPO_ROOT, '.build', 'skip-markers');
+
+/** Escape special regex characters in a string for use in a RegExp constructor. */
+function escapeRegExp(s: string): string {
+	return s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+}
+
+/**
+ * Check if any file under `sourceDir` has been modified after the marker's mtime.
+ * Returns true if a source file is newer than the stamp (rebuild needed).
+ *
+ * @param sourceDir - Directory to scan for changes
+ * @param stampPath - Path to the timestamp marker file
+ * @param ignorePatterns - Glob-like patterns to exclude from the check
+ */
+async function hasSourceChanged(sourceDir: string, stampPath: string, ignorePatterns?: string[]): Promise<boolean> {
+	let stampTime: number;
+	try {
+		stampTime = fs.statSync(stampPath).mtimeMs;
+	} catch {
+		return true; // no stamp → must build
+	}
+
+	const ignoreRe = ignorePatterns?.length
+		? new RegExp(ignorePatterns.map(escapeRegExp).join('|'))
+		: undefined;
+	const files = await globAsync('**/*', { cwd: sourceDir, nodir: true });
+	for (const file of files) {
+		if (ignoreRe && ignoreRe.test(file)) {
+			continue;
+		}
+		const filePath = path.join(sourceDir, file);
+		try {
+			const stat = fs.statSync(filePath);
+			if (stat.mtimeMs > stampTime) {
+				return true;
+			}
+		} catch {
+			// file may have been removed between glob and stat
+		}
+	}
+	return false;
+}
+
+/**
+ * Determine whether a build step can be skipped based on source file mtimes.
+ * Returns true when `--force` is not set, a stamp file exists, and no source
+ * file in any of `sourceDirs` has been modified since the stamp was written.
+ *
+ * @param stepName - Identifier used for the stamp file name (e.g. 'transpile')
+ * @param sourceDirs - Directories whose mtime is checked against the stamp
+ * @param ignorePatterns - Glob-like patterns to exclude from the mtime check
+ */
+async function canSkip(stepName: string, sourceDirs: string[], ignorePatterns?: string[]): Promise<boolean> {
+	if (options.force) {
+		return false;
+	}
+	const stampPath = path.join(SKIP_MARKERS_DIR, `${stepName}.stamp`);
+	if (!fs.existsSync(stampPath)) {
+		return false;
+	}
+	const results = await Promise.all(sourceDirs.map(d => hasSourceChanged(d, stampPath, ignorePatterns)));
+	return !results.some(Boolean);
+}
+
+/** Write a timestamp stamp file so future runs can skip this step via `canSkip()`. */
+function markComplete(stepName: string): void {
+	fs.mkdirSync(SKIP_MARKERS_DIR, { recursive: true });
+	const stampPath = path.join(SKIP_MARKERS_DIR, `${stepName}.stamp`);
+	fs.writeFileSync(stampPath, new Date().toISOString());
+	console.log(`[skip] ${stepName} marked complete`);
 }
 
 /**
@@ -1716,12 +1794,16 @@ Examples:
 
 async function main(): Promise<void> {
 	const t1 = Date.now();
+	let skipped = false;
 
 	try {
 		switch (command) {
 			case 'transpile':
 				if (options.watch) {
 					await watch();
+				} else if (await canSkip('transpile', [path.join(REPO_ROOT, SRC_DIR)])) {
+					console.log('✅ [transpile] Skipped (no source changes)');
+					skipped = true;
 				} else {
 					const outDir = options.out ?? OUT_DIR;
 					await cleanDir(outDir);
@@ -1738,14 +1820,21 @@ async function main(): Promise<void> {
 					await copyCodiconFont(outDir);
 					await buildConsoleInterceptor(outDir);
 					console.log(`[transpile] Done in ${Date.now() - t1}ms`);
+					markComplete('transpile');
 				}
 				break;
 
 		case 'transpile-extensions': {
-				console.log(`[transpile-extensions] Transpiling built-in extensions...`);
-				const t1 = Date.now();
-				await transpileExtensions();
-				console.log(`[transpile-extensions] Done in ${Date.now() - t1}ms`);
+				if (await canSkip('transpile-extensions', [path.join(REPO_ROOT, 'extensions')], ['dist/', '/out/', 'node_modules/'])) {
+					console.log('✅ [transpile-extensions] Skipped (no source changes)');
+					skipped = true;
+				} else {
+					console.log(`[transpile-extensions] Transpiling built-in extensions...`);
+					const t1 = Date.now();
+					await transpileExtensions();
+					console.log(`[transpile-extensions] Done in ${Date.now() - t1}ms`);
+					markComplete('transpile-extensions');
+				}
 				break;
 			}
 
@@ -1758,10 +1847,16 @@ async function main(): Promise<void> {
 			}
 
 			case 'package-extensions': {
-				console.log(`[package-extensions] Packaging built-in extensions for Tauri...`);
-				const t1 = Date.now();
-				await packageExtensions();
-				console.log(`[package-extensions] Done in ${Date.now() - t1}ms`);
+				if (await canSkip('package-extensions', [path.join(REPO_ROOT, 'extensions')], ['dist/', '/out/', 'node_modules/'])) {
+					console.log('✅ [package-extensions] Skipped (no source changes)');
+					skipped = true;
+				} else {
+					console.log(`[package-extensions] Packaging built-in extensions for Tauri...`);
+					const t1 = Date.now();
+					await packageExtensions();
+					console.log(`[package-extensions] Done in ${Date.now() - t1}ms`);
+					markComplete('package-extensions');
+				}
 				break;
 			}
 
@@ -1774,7 +1869,7 @@ async function main(): Promise<void> {
 				process.exit(command ? 1 : 0);
 		}
 
-		if (!options.watch) {
+		if (!options.watch && !skipped) {
 			console.log(`\n✓ Total: ${Date.now() - t1}ms`);
 		}
 	} catch (err) {
