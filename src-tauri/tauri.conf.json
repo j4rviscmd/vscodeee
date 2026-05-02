@@ -52,14 +52,7 @@
     "createUpdaterArtifacts": true,
     "targets": "all",
     "externalBin": ["binaries/node"],
-    "resources": {
-      "css-modules.json": "css-modules.json",
-      "../product.json": "product.json",
-      "../package.json": "package.json",
-      "../out": "out",
-      "../.build/extensions": ".build/extensions",
-      "target/debug/node_modules/": "node_modules/"
-    },
+    "resources": ["css-modules.json", "../product.json", "../package.json", "../out", "../.build/extensions", "node_modules/"],
     "icon": [
       "icons/icon.icns",
       "icons/icon.ico",
