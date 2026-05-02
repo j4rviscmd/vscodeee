@@ -635,7 +635,7 @@ function spreadGlobComponents(globComponent: string): string[] {
 }
 
 /**
- * Converts JavaScript-style Unicode escape sequences (`ሴ` and `\u{1234}`) in a regex
+ * Converts JavaScript-style Unicode escape sequences (`\u1234` and `\u{1234}`) in a regex
  * pattern to PCRE2-compatible hex escapes (`\x{1234}`).
  *
  * Handles escaped backslashes correctly so that `\\u1234` is not mistakenly converted.

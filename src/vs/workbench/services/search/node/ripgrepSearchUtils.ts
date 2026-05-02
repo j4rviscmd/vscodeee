@@ -49,8 +49,8 @@ export type Maybe<T> = T | null | undefined;
  * @returns The anchored glob pattern.
  *
  * @example
- * anchorGlob('*.ts')      // returns '/​**​/*.ts'
- * anchorGlob('/src/*.ts') // returns '/src/*.ts' (unchanged)
+ * anchorGlob('*.ts')      // prepends leading slash
+ * anchorGlob('/src/*.ts') // unchanged, already anchored
  */
 export function anchorGlob(glob: string): string {
 	return glob.startsWith('**') || glob.startsWith('/') ? glob : `/${glob}`;
