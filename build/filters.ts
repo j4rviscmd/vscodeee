@@ -28,6 +28,7 @@ export const all = Object.freeze<string[]>([
 	'!test/**/out/**',
 	'!**/node_modules/**',
 	'!**/*.js.map',
+	'!**/*.log',
 ]);
 
 export const unicodeFilter = Object.freeze<string[]>([
@@ -66,6 +67,7 @@ export const unicodeFilter = Object.freeze<string[]>([
 	'!src/vs/workbench/contrib/terminal/common/scripts/psreadline/**',
 	// Tauri workbench HTML uses intentional unicode in UI elements and debug logs
 	'!src/vs/code/tauri-browser/workbench/index.html',
+	'!src/vs/code/tauri-browser/workbench/pty-poc/**',
 ]);
 
 export const indentationFilter = Object.freeze<string[]>([
@@ -148,7 +150,7 @@ export const indentationFilter = Object.freeze<string[]>([
 	'!**/*.tiff',
 
 	// except for built files
-	'!extensions/mermaid-chat-features/chat-webview-out/*.js',
+	'!extensions/mermaid-chat-features/chat-webview-out/**',
 	'!extensions/markdown-language-features/media/*.js',
 	'!extensions/markdown-language-features/notebook-out/*.js',
 	'!extensions/markdown-math/notebook-out/*.js',
@@ -192,6 +194,8 @@ export const copyrightFilter = Object.freeze<string[]>([
 	'!extensions/markdown-math/notebook-out/**',
 	'!extensions/ipynb/notebook-out/**',
 	'!extensions/simple-browser/media/codicon.css',
+	'!extensions/mermaid-chat-features/chat-webview-out/**',
+	'!src/vs/code/tauri-browser/workbench/pty-poc/**',
 	'!extensions/terminal-suggest/src/completions/upstream/**',
 	'!extensions/typescript-language-features/node-maintainer/**',
 	'!extensions/html-language-features/server/src/modes/typescript/*',
