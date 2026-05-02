@@ -72,7 +72,7 @@ print(match.group(1))
 
 # Compare
 if [ "$COMPUTED_HASH" = "$CSP_HASH" ]; then
-// allow-any-unicode-next-line
+# allow-any-unicode-next-line
     echo "✅ [check-csp-hash] Hash matches"
     exit 0
 else
