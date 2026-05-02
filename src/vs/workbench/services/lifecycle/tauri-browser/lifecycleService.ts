@@ -127,6 +127,87 @@ export class TauriLifecycleService extends AbstractLifecycleService {
     }
   }
 
+  // --- Shutdown overlay ---
+
+  /**
+   * Shows a full-screen overlay during shutdown, identical in design to the
+   * startup splash screen (spinner + `<eee/>` watermark + blurred backdrop).
+   *
+   * The overlay blocks user interaction with the workbench while shutdown
+   * joiners run (backup, storage flush, etc.). No cleanup is needed — the
+   * window is destroyed by Rust after `lifecycle_close_confirmed`, or the
+   * page reloads during an expected shutdown.
+   */
+  private showShutdownOverlay(): void {
+    const doc = mainWindow.document;
+
+    // Inject the spinner keyframe animation
+    const style = doc.createElement('style');
+    style.textContent = `
+      @keyframes shutdown-spin {
+        to { transform: rotate(360deg); }
+      }
+      #shutdown-overlay {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 99999;
+        transition: opacity 0.2s ease-out;
+        opacity: 0;
+      }
+      #shutdown-overlay.visible {
+        opacity: 1;
+      }
+    `;
+    doc.head.appendChild(style);
+
+    const bg = getComputedStyle(doc.body).getPropertyValue('--vscode-editor-background').trim() || '#1E1E1E';
+
+    const overlay = doc.createElement('div');
+    overlay.id = 'shutdown-overlay';
+    overlay.style.backgroundColor = bg + 'BF';
+    overlay.style.backdropFilter = 'blur(20px)';
+    (overlay.style as any).webkitBackdropFilter = 'blur(20px)';
+
+    const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', '120');
+    svg.setAttribute('height', '120');
+    svg.setAttribute('viewBox', '0 0 260 260');
+    svg.style.opacity = '0.4';
+    svg.style.marginBottom = '24px';
+    svg.style.userSelect = 'none';
+    svg.style.webkitUserSelect = 'none';
+    svg.style.pointerEvents = 'none';
+    const text = doc.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', '130');
+    text.setAttribute('y', '148');
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('font-family', "'SF Mono','Menlo','Consolas','Courier New',monospace");
+    text.setAttribute('font-size', '52');
+    text.setAttribute('font-weight', '600');
+    text.setAttribute('fill', '#808080');
+    text.textContent = '<eee/>';
+    svg.appendChild(text);
+
+    const spinner = doc.createElement('div');
+    spinner.style.width = '28px';
+    spinner.style.height = '28px';
+    spinner.style.border = '2px solid rgba(204, 204, 204, 0.2)';
+    spinner.style.borderTopColor = '#CCCCCC';
+    spinner.style.borderRadius = '50%';
+    spinner.style.animation = 'shutdown-spin 0.8s linear infinite';
+
+    overlay.appendChild(svg);
+    overlay.appendChild(spinner);
+    doc.body.appendChild(overlay);
+
+    // Trigger fade-in on next frame
+    requestAnimationFrame(() => overlay.classList.add('visible'));
+  }
+
   // --- Two-phase close handshake ---
 
   /**
@@ -255,8 +336,12 @@ export class TauriLifecycleService extends AbstractLifecycleService {
 	 *
 	 * @param reason - The shutdown reason propagated to event listeners.
 	 */
-  private async handleShutdown(reason: ShutdownReason, options?: { skipRustClose?: boolean }): Promise<void> {
+  private async handleShutdown(reason: ShutdownReason, options?: { skipRustClose?: boolean; skipOverlay?: boolean }): Promise<void> {
     this.logService.info('[lifecycle] Proceeding with shutdown');
+
+    if (!options?.skipOverlay) {
+      this.showShutdownOverlay();
+    }
 
     this._willShutdown = true;
     this.shutdownReason = reason;
@@ -398,7 +483,7 @@ export class TauriLifecycleService extends AbstractLifecycleService {
       return;
     }
 
-    await this.handleShutdown(reason, { skipRustClose: true });
+    await this.handleShutdown(reason, { skipRustClose: true, skipOverlay: true });
   }
 
   /**
