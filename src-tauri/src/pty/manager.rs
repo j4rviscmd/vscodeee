@@ -24,7 +24,7 @@ use super::state::TerminalStateStore;
 /// This is registered as Tauri managed state and accessed via
 /// `app_handle.state::<PtyManager>()` in command handlers.
 pub struct PtyManager {
-    instances: Mutex<HashMap<u32, PtyInstance>>,
+    instances: Arc<Mutex<HashMap<u32, PtyInstance>>>,
     next_id: AtomicU32,
     /// Shared auto-reply interceptor for all PTY instances.
     auto_reply: Arc<AutoReplyInterceptor>,
@@ -36,7 +36,7 @@ impl PtyManager {
     /// Create a new, empty PTY manager.
     pub fn new() -> Self {
         Self {
-            instances: Mutex::new(HashMap::new()),
+            instances: Arc::new(Mutex::new(HashMap::new())),
             next_id: AtomicU32::new(1),
             auto_reply: Arc::new(AutoReplyInterceptor::new()),
             state_store: Mutex::new(None),
@@ -84,7 +84,24 @@ impl PtyManager {
             env,
         };
 
-        let instance = PtyInstance::spawn(config, app_handle, Some(Arc::clone(&self.auto_reply)))?;
+        // Clone the Arc so the cleanup closure can remove the instance from the map
+        // when the reader thread detects shell exit.
+        let instances_ref = Arc::clone(&self.instances);
+        let cleanup_id = id;
+        let on_exit: Box<dyn FnOnce() + Send> = Box::new(move || {
+            if let Ok(mut instances) = instances_ref.lock() {
+                if instances.remove(&cleanup_id).is_some() {
+                    log::info!(target: "vscodeee::pty::manager", "Auto-cleaned PTY instance {cleanup_id}");
+                }
+            }
+        });
+
+        let instance = PtyInstance::spawn(
+            config,
+            app_handle,
+            Some(Arc::clone(&self.auto_reply)),
+            Some(on_exit),
+        )?;
 
         let mut instances = self
             .instances

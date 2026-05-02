@@ -130,10 +130,12 @@ impl PtyInstance {
     /// * `config` — Shell, working directory, and terminal dimensions
     /// * `app_handle` — Tauri app handle for emitting events
     /// * `auto_reply` — Shared auto-reply interceptor (optional, pass None to disable)
+    /// * `on_exit` — Callback invoked once when the reader thread detects shell exit
     pub fn spawn(
         config: PtyConfig,
         app_handle: tauri::AppHandle,
         auto_reply: Option<Arc<AutoReplyInterceptor>>,
+        on_exit: Option<Box<dyn FnOnce() + Send>>,
     ) -> Result<Self, String> {
         let pty_system = native_pty_system();
 
@@ -264,6 +266,11 @@ impl PtyInstance {
                         break;
                     }
                 }
+            }
+
+            // Notify the manager that this PTY has exited so it can clean up.
+            if let Some(callback) = on_exit {
+                callback();
             }
         });
 
