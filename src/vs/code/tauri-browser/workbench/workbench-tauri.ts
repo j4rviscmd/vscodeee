@@ -289,7 +289,8 @@
   // When a folder/workspace is opened, the page is reloaded with ?folder=<uri>
   // or ?workspace=<uri> in the URL. Parse these to pass to the workbench.
   // Fall back to restored URIs from the session if no URL params are present.
-  const query = new URL(document.location.href).searchParams;
+  const currentUrl = new URL(document.location.href);
+  const query = currentUrl.searchParams;
   const folderParam = query.get('folder') ?? windowConfig.restoredFolderUri ?? null;
   const workspaceParam = query.get('workspace') ?? windowConfig.restoredWorkspaceUri ?? null;
 
@@ -310,6 +311,17 @@
   // persisted in sessions.json when the app quits.
   const effectiveUri = folderParam ?? workspaceParam ?? null;
   tauri.core.invoke('set_workspace_uri', { uri: effectiveUri }).catch(() => { /* best-effort */ });
+
+  // If workspace was resolved from session restore (not URL params), update
+  // the browser URL so that location.reload() preserves the workspace info.
+  if (!query.has('folder') && !query.has('workspace') && effectiveUri) {
+    if (folderParam) {
+      currentUrl.searchParams.set('folder', folderParam);
+    } else if (workspaceParam) {
+      currentUrl.searchParams.set('workspace', workspaceParam);
+    }
+    history.replaceState(null, '', currentUrl.toString());
+  }
 
   //#endregion
 
