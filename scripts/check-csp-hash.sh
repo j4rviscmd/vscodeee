@@ -72,7 +72,8 @@ print(match.group(1))
 
 # Compare
 if [ "$COMPUTED_HASH" = "$CSP_HASH" ]; then
-    echo "[OK] CSP hash matches: sha256-$CSP_HASH"
+// allow-any-unicode-next-line
+    echo "✅ [check-csp-hash] Hash matches"
     exit 0
 else
     echo "ERROR: CSP hash mismatch in webWorkerExtensionHostIframe.html" >&2

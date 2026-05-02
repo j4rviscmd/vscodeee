@@ -222,8 +222,8 @@ async function main() {
 		const sizeMB = stat.size / 1024 / 1024;
 
 		if (stat.size >= MIN_VALID_SIZE) {
-			console.log(`[download-node] Node.js binary already exists: ${destPath} (${sizeMB.toFixed(1)} MB)`);
-			console.log(`[download-node] Delete it to re-download.`);
+// allow-any-unicode-next-line
+			console.log(`✅ [download-node] Already exists (${sizeMB.toFixed(1)} MB)`);
 			return;
 		}
 
