@@ -255,7 +255,7 @@ export class TauriLifecycleService extends AbstractLifecycleService {
 	 *
 	 * @param reason - The shutdown reason propagated to event listeners.
 	 */
-  private async handleShutdown(reason: ShutdownReason): Promise<void> {
+  private async handleShutdown(reason: ShutdownReason, options?: { skipRustClose?: boolean }): Promise<void> {
     this.logService.info('[lifecycle] Proceeding with shutdown');
 
     this._willShutdown = true;
@@ -316,12 +316,16 @@ export class TauriLifecycleService extends AbstractLifecycleService {
     // Fire final event
     this._onDidShutdown.fire();
 
-    // Tell Rust to save session, unregister, and destroy the window
-    this.logService.info('[lifecycle] Invoking lifecycle_close_confirmed');
-    try {
-      await invoke('lifecycle_close_confirmed');
-    } catch (error) {
-      this.logService.error('[lifecycle] Error invoking lifecycle_close_confirmed', error);
+    // Tell Rust to save session, unregister, and destroy the window.
+    // Skipped for expected shutdowns (e.g., reload) where the Tauri window
+    // stays alive and only the webview reloads.
+    if (!options?.skipRustClose) {
+      this.logService.info('[lifecycle] Invoking lifecycle_close_confirmed');
+      try {
+        await invoke('lifecycle_close_confirmed');
+      } catch (error) {
+        this.logService.error('[lifecycle] Error invoking lifecycle_close_confirmed', error);
+      }
     }
   }
 
@@ -351,13 +355,17 @@ export class TauriLifecycleService extends AbstractLifecycleService {
   /**
 	 * Compatibility with `BrowserHostService` which casts `ILifecycleService`
 	 * to `BrowserLifecycleService` and calls this method directly.
+	 *
+	 * For numeric reasons (RELOAD, LOAD, etc.), runs the full shutdown
+	 * lifecycle so that the backup tracker can persist unsaved changes
+	 * before the page is reloaded.
 	 */
   withExpectedShutdown(reason: ShutdownReason): Promise<void>;
   withExpectedShutdown(reason: { disableShutdownHandling: true }, callback: Function): void;
   withExpectedShutdown(reason: ShutdownReason | { disableShutdownHandling: true }, callback?: Function): Promise<void> | void {
     if (typeof reason === 'number') {
       this.shutdownReason = reason;
-      return this.storageService.flush(WillSaveStateReason.SHUTDOWN);
+      return this.performExpectedShutdown(reason);
     } else {
       this.ignoreBeforeUnload = true;
       try {
@@ -366,6 +374,31 @@ export class TauriLifecycleService extends AbstractLifecycleService {
         this.ignoreBeforeUnload = false;
       }
     }
+  }
+
+  /**
+	 * Runs the full shutdown lifecycle for expected shutdowns (reload, workspace switch).
+	 *
+	 * Unlike the Rust close-requested path, this does NOT invoke
+	 * `lifecycle_close_confirmed` because the Tauri window stays alive.
+	 * Only the webview reloads.
+	 *
+	 * Flow:
+	 * 1. {@link fireBeforeShutdown} — triggers backup tracker to create backups
+	 * 2. If vetoed, returns early (the subsequent `beforeunload` event will
+	 *    block the page reload since `_willShutdown` remains `false`).
+	 * 3. {@link handleShutdown} with `skipRustClose` — full shutdown sequence
+	 *    without destroying the Rust window.
+	 */
+  private async performExpectedShutdown(reason: ShutdownReason): Promise<void> {
+    const veto = await this.fireBeforeShutdown(reason);
+    if (veto) {
+      this.logService.info('[lifecycle] Expected shutdown was vetoed');
+      this._onShutdownVeto.fire();
+      return;
+    }
+
+    await this.handleShutdown(reason, { skipRustClose: true });
   }
 
   /**
