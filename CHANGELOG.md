@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-05-03
+
+### Fixed
+
+- Revert `bundle.resources` to array notation and restore node_modules staging path to fix broken built-in extension resolution in production builds ([#416](https://github.com/j4rviscmd/vscodeee/pull/416))
+
+### Changed
+
+- Move symlink guard before skip-logic in `bundle-node-modules.mjs` so stale npm symlinks are always removed
+
 ## [0.11.0] - 2026-05-02
 
 ### Added
