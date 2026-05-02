@@ -36,7 +36,7 @@
  *
  * Packages are read from the `node_modules/` directories of:
  *   - Root project (`./node_modules`)
- *   - Each built-in extension (`extensions/*/node_modules`)
+ *   - Each built-in extension (extensions/.../node_modules)
  *
  * Supports a `--clean` flag to remove the staging directory before bundling.
  * Logs progress, skipped modules, and final statistics (file count, total size).
@@ -422,11 +422,12 @@ function main() {
 		if (pkg.sub) {
 			// Copy a single file
 			const srcFile = path.join(srcPath, pkg.sub);
-			fs.mkdirSync(path.dirname(destPath), { recursive: true });
+			const destFile = path.join(TARGET_DIR, pkg.name, pkg.sub);
+			fs.mkdirSync(path.dirname(destFile), { recursive: true });
 			if (fs.existsSync(srcFile)) {
-				fs.copyFileSync(srcFile, destPath);
+				fs.copyFileSync(srcFile, destFile);
 				totalFiles++;
-				totalSize += fs.statSync(destPath).size;
+				totalSize += fs.statSync(destFile).size;
 				console.log(`[bundle-node-modules]   ${pkg.name}/${pkg.sub}`);
 			} else {
 				console.warn(`[bundle-node-modules] WARN: ${pkg.name}/${pkg.sub} not found, skipping`);
