@@ -7,8 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Removed
+## [0.11.0] - 2026-05-02
 
+### Added
+
+- Show shutdown overlay during app closing for better UX feedback
+
+### Fixed
+
+- Preserve workspace on Reload Window ([#410](https://github.com/j4rviscmd/vscodeee/issues/410))
+- Resolve syntax error and EISDIR in bundle-node-modules.mjs ([#407](https://github.com/j4rviscmd/vscodeee/issues/407))
+- Use hash-based skip detection in bundle-node-modules ([#406](https://github.com/j4rviscmd/vscodeee/issues/406))
+- Use shell comment syntax for unicode suppression in check-csp-hash.sh ([#405](https://github.com/j4rviscmd/vscodeee/issues/405))
+- Resolve hygiene check failures by adding filter exclusions
+
+### Changed
+
+- Fix progressive performance degradation
+- Skip unnecessary build steps in tauri:dev ([#404](https://github.com/j4rviscmd/vscodeee/issues/404))
 - Remove pty-poc standalone terminal PoC (Phase 0-4 artifact no longer needed) ([#401](https://github.com/j4rviscmd/vscodeee/issues/401))
 
 ## [0.10.1] - 2026-05-02
