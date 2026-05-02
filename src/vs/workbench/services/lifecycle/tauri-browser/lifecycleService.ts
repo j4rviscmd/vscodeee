@@ -170,7 +170,7 @@ export class TauriLifecycleService extends AbstractLifecycleService {
     overlay.id = 'shutdown-overlay';
     overlay.style.backgroundColor = bg + 'BF';
     overlay.style.backdropFilter = 'blur(20px)';
-    // eslint-disable-next-line local/code-no-any-casts
+    // eslint-disable-next-line local/code-no-any-casts, @typescript-eslint/no-explicit-any
     (overlay.style as any).webkitBackdropFilter = 'blur(20px)';
 
     const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
