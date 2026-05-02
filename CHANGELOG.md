@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- Remove pty-poc standalone terminal PoC (Phase 0-4 artifact no longer needed) ([#401](https://github.com/j4rviscmd/vscodeee/issues/401))
+
 ## [0.10.1] - 2026-05-02
 
 ### Fixed

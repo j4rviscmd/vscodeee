@@ -34,6 +34,5 @@
 	],
 	"exclude": [
 		"vs/workbench/contrib/webview/browser/pre/service-worker.js",
-		"vs/code/tauri-browser/workbench/pty-poc/**/*"
 	]
 }

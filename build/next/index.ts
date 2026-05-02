@@ -513,8 +513,6 @@ async function copyAllNonTsFiles(outDir: string, excludeTests: boolean): Promise
 	const ignorePatterns = [
 		// Exclude .ts files but keep .d.ts files (they're needed at runtime for type references)
 		'**/*.ts',
-		// Exclude pty-poc entirely — it's a standalone PoC not used by the production workbench
-		'**/pty-poc/**',
 	];
 	if (excludeTests) {
 		ignorePatterns.push('**/test/**');
@@ -527,7 +525,7 @@ async function copyAllNonTsFiles(outDir: string, excludeTests: boolean): Promise
 	});
 
 	// Re-include .d.ts files that were excluded by the *.ts ignore
-	const dtsIgnore = ['**/pty-poc/**'];
+	const dtsIgnore: string[] = [];
 	if (excludeTests) {
 		dtsIgnore.push('**/test/**');
 	}
@@ -760,8 +758,6 @@ async function transpile(outDir: string, excludeTests: boolean): Promise<void> {
 	// Find all .ts files
 	const ignorePatterns = [
 		'**/*.d.ts',
-		// Exclude pty-poc entirely — it's a standalone PoC not used by the production workbench
-		'**/pty-poc/**',
 	];
 	if (excludeTests) {
 		ignorePatterns.push('**/test/**');
