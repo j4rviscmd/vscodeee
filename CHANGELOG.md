@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-05-02
+
+### Fixed
+
+- Prevent watermark text selection on splash screen ([00ebdcd](https://github.com/j4rviscmd/vscodeee/commit/00ebdcd))
+- Resolve hot exit backup and empty file save issues on reload ([#398](https://github.com/j4rviscmd/vscodeee/pull/398))
+- Restore rg binary execute permission stripped by Tauri bundler ([#395](https://github.com/j4rviscmd/vscodeee/pull/395))
+
 ## [0.10.0] - 2026-05-02
 
 ### Added
