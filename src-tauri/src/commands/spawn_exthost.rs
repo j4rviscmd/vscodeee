@@ -68,6 +68,8 @@ struct ExtHostInstance {
     sidecar: crate::exthost::sidecar::ExtHostSidecar,
     /// Handle to the WebSocket relay task.
     relay_task: tokio::task::JoinHandle<()>,
+    /// Handle to the background watchdog task that polls the child process.
+    watchdog_task: tokio::task::JoinHandle<()>,
 }
 
 /// Managed state for tracking multiple running Extension Host instances.
@@ -109,6 +111,7 @@ impl ExtHostState {
                 target: "vscodeee::commands::spawn_exthost",
                 "Killing ExtHost instance {id} (shutdown)"
             );
+            inst.watchdog_task.abort();
             inst.relay_task.abort();
             let _ = inst.sidecar.child.kill().await;
             let _ = inst.sidecar.child.wait().await;
@@ -236,54 +239,61 @@ async fn spawn_exthost_with_relay_unix(
     let ws_port = relay_handle.port;
 
     // Store instance for later cleanup
-    {
-        let mut instances = exthost_state.instances.lock().await;
-        instances.insert(
-            instance_id,
-            ExtHostInstance {
-                sidecar,
-                relay_task: relay_handle.task,
-            },
-        );
-    }
+    let state_arc = Arc::clone(&exthost_state);
 
     // Spawn a background watchdog that polls the ExtHost process every 500ms.
     // If the child exits unexpectedly (e.g. crash, OOM), an error is logged
     // and the instance is removed from state. The watchdog terminates when
     // the process exits or the instance is cleaned up.
-    let state_clone = Arc::clone(&exthost_state);
-    tokio::spawn(async move {
-        // Give the process a moment to start, then check periodically
-        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-        loop {
-            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-            let mut instances = state_clone.instances.lock().await;
-            if let Some(ref mut inst) = instances.get_mut(&instance_id) {
-                match inst.sidecar.child.try_wait() {
-                    Ok(Some(status)) => {
-                        log::error!(
-                            target: "vscodeee::commands::spawn_exthost",
-                            "ExtHost instance {instance_id} (PID={pid}) EXITED with status: {status}"
-                        );
-                        if let Some(dead) = instances.remove(&instance_id) {
-                            dead.relay_task.abort();
+    let watchdog_task = {
+        let state_clone = Arc::clone(&exthost_state);
+        tokio::spawn(async move {
+            // Give the process a moment to start, then check periodically
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                let mut instances = state_clone.instances.lock().await;
+                if let Some(ref mut inst) = instances.get_mut(&instance_id) {
+                    match inst.sidecar.child.try_wait() {
+                        Ok(Some(status)) => {
+                            log::error!(
+                                target: "vscodeee::commands::spawn_exthost",
+                                "ExtHost instance {instance_id} (PID={pid}) EXITED with status: {status}"
+                            );
+                            if let Some(dead) = instances.remove(&instance_id) {
+                                dead.watchdog_task.abort();
+                                dead.relay_task.abort();
+                            }
+                            break;
                         }
-                        break;
+                        Ok(None) => {}
+                        Err(e) => {
+                            log::error!(
+                                target: "vscodeee::commands::spawn_exthost",
+                                "Failed to check ExtHost instance {instance_id} status: {e}"
+                            );
+                            break;
+                        }
                     }
-                    Ok(None) => {}
-                    Err(e) => {
-                        log::error!(
-                            target: "vscodeee::commands::spawn_exthost",
-                            "Failed to check ExtHost instance {instance_id} status: {e}"
-                        );
-                        break;
-                    }
+                } else {
+                    break;
                 }
-            } else {
-                break;
             }
-        }
-    });
+        })
+    };
+
+    // Store instance for later cleanup
+    {
+        let mut instances = state_arc.instances.lock().await;
+        instances.insert(
+            instance_id,
+            ExtHostInstance {
+                sidecar,
+                relay_task: relay_handle.task,
+                watchdog_task,
+            },
+        );
+    }
 
     log::info!(
         target: "vscodeee::commands::spawn_exthost",
@@ -326,6 +336,7 @@ pub async fn kill_exthost(
                 target: "vscodeee::commands::spawn_exthost",
                 "Killing ExtHost instance {instance_id}"
             );
+            inst.watchdog_task.abort();
             inst.relay_task.abort();
             let _ = inst.sidecar.child.kill().await;
             let _ = inst.sidecar.child.wait().await;
@@ -366,6 +377,7 @@ pub async fn kill_all_exthosts(
                 target: "vscodeee::commands::spawn_exthost",
                 "Killing ExtHost instance {id} (shutdown)"
             );
+            inst.watchdog_task.abort();
             inst.relay_task.abort();
             let _ = inst.sidecar.child.kill().await;
             let _ = inst.sidecar.child.wait().await;
