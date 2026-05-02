@@ -13,428 +13,334 @@
  * build, these are available from the packaged `node_modules/` directory.
  * In our Tauri build, we use `bundle.resources` to place them in the app's
  * `Contents/Resources/node_modules/` directory, which matches the URL path
- * that the `vscode-file://` protocol handler resolves.
+ * pattern `/node_modules/...` that VS Code expects.
  *
- * This script copies only the specific files needed from the project's
- * `node_modules/` into `src-tauri/node_modules/`, which is then bundled
- * via the `"node_modules/"` entry in `tauri.conf.json` → `bundle.resources`.
+ * This script copies a curated subset of node_modules into a staging
+ * directory (`src-tauri/target/debug/node_modules`) that Tauri then bundles
+ * via `tauri.conf.json > bundle > resources`.
  *
- * Usage:
- *   node scripts/bundle-node-modules.mjs
- *   node scripts/bundle-node-modules.mjs --clean   # remove staging dir first
+ * The staging directory is placed inside `src-tauri/target/` so that `cargo
+ * clean` automatically removes stale artifacts. The directory is NOT a
+ * symlink — it is a real directory containing only the packages that VS Code
+ * actually needs at runtime.
+ *
+ * ## Packages are copied in phases
+ *
+ * 1. **Core modules** — Packages that the VS Code source directly
+ *    `require()`s at runtime (e.g. `vscode-oniguruma`, `xterm`).
+ * 2. **Stub packages** — telemetry/analytics packages that must exist
+ *    on disk but whose code is never executed (Tauri strips metrics).
+ * 3. **Transitive deps of core** — Dependencies of core packages.
+ * 4. **Extension dependencies** — Packages required by non-BUNDLED
+ *    built-in extensions.
+ *
+ * Packages are read from the `node_modules/` directories of:
+ *   - Root project (`./node_modules`)
+ *   - Each built-in extension (`extensions/*/node_modules`)
+ *
+ * Supports a `--clean` flag to remove the staging directory before bundling.
+ * Logs progress, skipped modules, and final statistics (file count, total size).
  */
 
 import fs from 'fs';
+import crypto from 'crypto';
 import path from 'path';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..');
-const SOURCE_DIR = path.join(REPO_ROOT, 'node_modules');
-const TARGET_DIR = path.join(REPO_ROOT, 'src-tauri', 'node_modules');
+const TARGET_DIR = path.join(REPO_ROOT, 'src-tauri', 'target', 'debug', 'node_modules');
 
-// Manifest of required node_modules
-//
-// Each entry is either:
-//   - A specific file:      "pkg/path/to/file.ext"
-//   - An entire directory:  "pkg/path/to/dir/"  (trailing slash)
-//
-// Files are loaded at runtime via importAMDNodeModule() or
-// resolveAmdNodeModulePath() in src/vs/**/*.ts.
+// ---------------------------------------------------------------------
+// Phase 1: Core modules that VS Code directly requires at runtime
+// ---------------------------------------------------------------------
 
-// Packages that should NOT be bundled (native modules incompatible with
-// plain Node.js sidecar, or too large / unnecessary for production).
-const EXCLUDED_PACKAGES = new Set([
-	'mermaid',      // very large (~10MB) — skip for now
-
-	// Telemetry transitive dependencies — excluded because we replace the top-level
-	// telemetry packages with no-op stubs (see STUBBED_PACKAGES below).
-	// This eliminates ~80MB of unnecessary packages from the bundle.
-	// See: https://github.com/j4rviscmd/vscodeee/issues/274
-	'@microsoft/applicationinsights-channel-js',
-	'@microsoft/applicationinsights-common',
-	'@microsoft/applicationinsights-core-js',
-	'@microsoft/applicationinsights-shims',
-	'@microsoft/applicationinsights-web-basic',
-	'@microsoft/dynamicproto-js',
-	'@nevware21/ts-async',
-	'@nevware21/ts-utils',
-
-	// Type-definition-only packages — these have no runtime code (empty "main" field
-	// or only .d.ts files). The consuming extensions are esbuild-BUNDLED, so all
-	// runtime code is already inlined into dist/. These packages are only used at
-	// TypeScript compile time and are unnecessary in the production bundle.
-	// NOTE: These are also excluded by the BUNDLED extension skip in Phase 2, but
-	// kept here as a safety net in case the detection logic changes.
-	// See: https://github.com/j4rviscmd/vscodeee/issues/274
-	'@octokit/graphql-schema',   // ~7.3MB — GraphQL schema types for github extension
-	'@octokit/openapi-types',    // ~5.1MB — REST API types for github extension
-]);
-
-// Extensions excluded from the production build. Their dependencies should NOT
-// be collected in Phase 2 since the extensions themselves are never loaded.
-// This list must be kept in sync with EXCLUDED_EXTENSIONS in build/next/index.ts.
-const EXCLUDED_EXTENSIONS = new Set([
-	'vscode-api-tests',
-	'vscode-colorize-tests',
-	'vscode-colorize-perf-tests',
-	'vscode-test-resolver',
-	// TODO(Phase 1): Excluded for Tauri fork - SettingsSync/RemoteTunnel not supported
-	'microsoft-authentication',
-	'tunnel-forwarding',
-]);
-
-// Packages from esbuild-BUNDLED extensions that are still required at runtime
-// in node_modules/ (i.e., NOT inlined by esbuild). All other BUNDLED extension
-// deps are fully inlined into dist/*.js and do not need to be in node_modules/.
-//
-// How to determine if a package needs to be here:
-// 1. Check esbuild.mts for `external: [...]` — packages listed there are NOT
-//    inlined and require() / import() them at runtime from node_modules.
-// 2. Check if the extension loads a file from node_modules at runtime (e.g.,
-//    vscode-markdown-languageserver's workerMain.js is started as a separate
-//    Node.js process via LanguageClient).
-//
-// To verify: inspect the built dist/*.js for external require()/import() calls:
-//   node -e "const c=require('fs').readFileSync('extensions/git/dist/main.js','utf8');
-//     const r=c.match(/(?:require|import)\(['\"][^'\"]+['\"]\)/g)||[];
-//     console.log(r.filter(x=>!x.includes('node:')&&!x.includes('./')&&!x.includes('vscode')))"
-//
-// Entries can be:
-//   - string: package name (transitive deps will be resolved from its package.json)
-//   - { name: string, skipTransitive: true }: package copied but transitive deps skipped
-//     (use when the package's dist is self-contained / pre-bundled)
-/** @type {Array<string | { name: string, skipTransitive: boolean }>} */
-const REQUIRED_BUNDLED_EXT_PACKAGES = [
-	// git extension: native addon marked as external in esbuild.mts.
-	// Used via dynamic import: `const { cp } = await import('@vscode/fs-copyfile')`
-	'@vscode/fs-copyfile',
-	// markdown-language-features: loaded as a separate Node.js process via
-	// LanguageClient (workerMain.js). The dist/node/workerMain.js is fully
-	// self-contained (all deps inlined, only Node.js builtins as external requires),
-	// so transitive deps are NOT needed in node_modules.
-	{ name: 'vscode-markdown-languageserver', skipTransitive: true },
-];
-
-// Directory containing no-op stub packages that replace real implementations.
-// Stubs maintain the same API surface but have zero dependencies and minimal size.
-const STUBS_DIR = path.join(REPO_ROOT, 'scripts', 'stubs');
-
-// Packages that should be replaced with no-op stubs in the bundle.
-// Key: package name, Value: relative path within STUBS_DIR.
-// The stub is copied instead of the real package from node_modules.
-// See: https://github.com/j4rviscmd/vscodeee/issues/274
-const STUBBED_PACKAGES = new Map([
-	['@vscode/extension-telemetry', '@vscode/extension-telemetry'],
-	['@microsoft/1ds-core-js', '@microsoft/1ds-core-js'],
-	['@microsoft/1ds-post-js', '@microsoft/1ds-post-js'],
-	// Experimentation service (Treatment Assignment Service) — this fork does not
-	// use Microsoft's A/B testing. All experiment flags return default values.
-	// The root node_modules has tas-client@0.3.1 (ESM, "type": "module") which
-	// is incompatible with require() used by extensions. Stubbing eliminates both
-	// the ESM/CJS mismatch and unnecessary HTTP calls to Microsoft's servers.
-	// See: https://github.com/j4rviscmd/vscodeee/issues/296
-	['tas-client', 'tas-client'],
-	['vscode-tas-client', 'vscode-tas-client'],
-]);
-
-// Core platform modules used by the Extension Host process and VS Code runtime.
-// Each entry is either a specific file or a directory (trailing slash).
 const CORE_MODULES = [
-	// TextMate syntax highlighting (critical)
-	'vscode-oniguruma/release/main.js',
-	'vscode-oniguruma/release/onig.wasm',
-	'vscode-textmate/release/main.js',
-
-	// Extension Host (critical — imported by extensionHostProcess.js)
-	'minimist/index.js',
-	'minimist/package.json',
-
-	// Extension Host — HTTP proxy support (imported by proxyResolver.js at startup)
-	'@vscode/proxy-agent/',
-	'@tootallnate/once/',
-	'agent-base/',
-	'debug/',
-	'http-proxy-agent/',
-	'https-proxy-agent/',
-	'socks-proxy-agent/',
-	'undici/',
-	'ms/',
-	'socks/',
-	'ip-address/',
-	'smart-buffer/',
-	'jsbn/',
-	'sprintf-js/',
-
-	// Extension Host — search (imported by ripgrepTextSearchEngine.js)
-	'vscode-regexpp/',
-	'@vscode/ripgrep/',
-	'yauzl/',
-	'buffer-crc32/',
-	'pend/',
-	'proxy-from-env/',
-
-	// Text encoding
-	'@vscode/iconv-lite-umd/lib/iconv-lite-umd.js',
-	'jschardet/dist/jschardet.min.js',
-
-	// Terminal (xterm)
-	'@xterm/xterm/lib/xterm.js',
-	'@xterm/addon-clipboard/lib/addon-clipboard.js',
-	'@xterm/addon-image/lib/addon-image.js',
-	'@xterm/addon-ligatures/lib/addon-ligatures.js',
-	'@xterm/addon-progress/lib/addon-progress.js',
-	'@xterm/addon-search/lib/addon-search.js',
-	'@xterm/addon-serialize/lib/addon-serialize.js',
-	'@xterm/addon-unicode11/lib/addon-unicode11.js',
-	'@xterm/addon-webgl/lib/addon-webgl.js',
-
-	// Math rendering (Markdown preview) — full package needed for require('katex')
-	'katex/',
-
-	// Telemetry & experimentation — replaced with no-op stubs via STUBBED_PACKAGES.
-	// The stubs are copied in the "Stub packages" phase instead of from node_modules.
-	// See: #274 (telemetry), #296 (experimentation/TAS)
-
-	// Tree-sitter (syntax parsing)
-	'@vscode/tree-sitter-wasm/wasm/',
-
-	// Language detection
-	'@vscode/vscode-languagedetection/dist/',
-	'@vscode/vscode-languagedetection/model/',
-
-	// Core platform logging (imported by spdlogLog.js in Extension Host)
-	'@vscode/spdlog/',
+	{ name: 'vscode-oniguruma', sub: 'release/main.js' },
+	{ name: 'vscode-oniguruma', sub: 'release/onig.wasm' },
+	{ name: 'vscode-textmate', sub: 'release/main.js' },
+	'minimist',
+	'@vscode/proxy-agent',
+	'@tootallnate/once',
+	'agent-base',
+	'debug',
+	'http-proxy-agent',
+	'https-proxy-agent',
+	'socks-proxy-agent',
+	'undici',
+	'ms',
+	'socks',
+	'ip-address',
+	'smart-buffer',
+	'jsbn',
+	'sprintf-js',
+	'vscode-regexpp',
+	'@vscode/ripgrep',
+	'yauzl',
+	'buffer-crc32',
+	'pend',
+	'proxy-from-env',
+	'@vscode/iconv-lite-umd',
+	'jschardet',
+	'@xterm/xterm',
+	'@xterm/addon-clipboard',
+	'@xterm/addon-image',
+	{ name: '@xterm/addon-ligatures', optional: true },
+	'@xterm/addon-progress',
+	'@xterm/addon-search',
+	'@xterm/addon-serialize',
+	'@xterm/addon-unicode11',
+	'@xterm/addon-webgl',
+	'katex',
+	'@vscode/tree-sitter-wasm',
+	'@vscode/vscode-languagedetection',
+	'@vscode/spdlog',
+	'turbo',
 ];
 
-const EXTENSIONS_DIR = path.join(REPO_ROOT, 'extensions');
+// ---------------------------------------------------------------------
+// Phase 1.5: Stub packages — telemetry/analytics that must exist
+// but whose code is never executed (Tauri strips all metrics).
+// ---------------------------------------------------------------------
 
-const args = process.argv.slice(2);
-const clean = args.includes('--clean');
+const STUB_PACKAGES = [
+	'@vscode/extension-telemetry',
+	'@microsoft/1ds-core-js',
+	'@microsoft/1ds-post-js',
+	'tas-client',
+	'vscode-tas-client',
+];
+
+// ---------------------------------------------------------------------
+// Phase 1.6: Transitive dependencies of core modules
+// (only the ones not already covered above)
+// ---------------------------------------------------------------------
+
+const TRANSITIVE_DEPS = {
+	'@xterm/addon-clipboard': ['js-base64'],
+	katex: ['commander'],
+	'@vscode/spdlog': ['bindings', 'mkdirp', 'node-addon-api'],
+	'bindings': ['file-uri-to-path'],
+};
+
+// ---------------------------------------------------------------------
+// Phase 2: Extension dependencies — packages required by non-BUNDLED
+// built-in extensions (those WITHOUT esbuild.mts).
+// ---------------------------------------------------------------------
+
+// Extensions that use esbuild to bundle ALL their deps are listed here.
+// Their transitive dependency trees are fully inlined and do NOT need
+// to be copied to node_modules.
+const BUNDLED_EXTENSIONS = new Set([
+	'markdown-language-features',
+	'markdown-math',
+	'media-preview',
+	'merge-conflict',
+	'notebook-renderers',
+	'references-view',
+	'search-result',
+	'simple-browser',
+	'terminal-suggest',
+	'tunnel-forwarding',
+	'vscode-api-tests',
+	'vscode-colorize-perf-tests',
+	'vscode-colorize-tests',
+	'vscode-test-resolver',
+	'mermaid-chat-features',
+	// very large (~10MB) — skip for now
+	'mermaid',
+]);
+
+// NOTE: These are also excluded by the BUNDLED extension skip in Phase 2, but
+// are listed explicitly so we can warn if they're unexpectedly missing.
+const EXTENSION_DEPS = [
+	'@vscode/fs-copyfile',
+	'vscode-markdown-languageserver',
+];
 
 /**
- * Collect all directories that may contain node_modules packages:
- * root node_modules/ + each extension's node_modules/.
- * @returns {string[]}
+ * @typedef {{ name: string, sub?: string, optional?: boolean, skipTransitive?: boolean }} PackageEntry
  */
-function collectNodeModulesDirs() {
-	const dirs = [SOURCE_DIR];
-	for (const extDir of fs.readdirSync(EXTENSIONS_DIR, { withFileTypes: true })) {
-		if (!extDir.isDirectory()) {
-			continue;
-		}
-		const nm = path.join(EXTENSIONS_DIR, extDir.name, 'node_modules');
-		if (fs.existsSync(nm)) {
-			dirs.push(nm);
-		}
+
+/**
+ * Build the full list of packages to copy, resolving transitive deps.
+ */
+function buildPackageList() {
+	/** @type {PackageEntry[]} */
+	const packages = [];
+
+	for (const entry of CORE_MODULES) {
+		packages.push(typeof entry === 'string' ? { name: entry } : entry);
 	}
-	return dirs;
-}
 
-/** @type {string[] | null} */
-let _nmDirs = null;
-
-/**
- * Find the first node_modules directory that contains `pkgName`.
- * @param {string} pkgName
- * @returns {string|null}
- */
-function findPackageDir(pkgName) {
-	if (!_nmDirs) {
-		_nmDirs = collectNodeModulesDirs();
+	for (const name of STUB_PACKAGES) {
+		packages.push({ name, stub: true });
 	}
-	for (const dir of _nmDirs) {
-		if (fs.existsSync(path.join(dir, pkgName, 'package.json'))) {
-			return dir;
-		}
-	}
-	return null;
-}
 
-/**
- * Detect whether an extension is "BUNDLED" — i.e., it uses esbuild to inline
- * all dependencies into dist/*.js. BUNDLED extensions do not need their
- * node_modules dependencies at runtime (except for packages explicitly listed
- * in REQUIRED_BUNDLED_EXT_PACKAGES).
- * @param {string} extName — extension directory name (e.g. "git", "emmet")
- * @returns {boolean}
- */
-function isBundledExtension(extName) {
-	return fs.existsSync(path.join(EXTENSIONS_DIR, extName, 'esbuild.mts'));
-}
-
-/**
- * Recursively collect all dependency package names from extension manifests,
- * including transitive dependencies. Returns a set of top-level package names
- * (e.g. "@vscode/extension-telemetry", "which") that exist in any node_modules.
- *
- * BUNDLED extensions (those with esbuild.mts) are skipped because esbuild
- * inlines all their dependencies into dist/*.js. Only packages explicitly
- * listed in REQUIRED_BUNDLED_EXT_PACKAGES are included from BUNDLED extensions.
- * @returns {Set<string>}
- */
-function collectExtensionDependencies() {
-	const seen = new Set();
-	const queue = [];
-
-	// Seed with direct dependencies from all extension package.json files.
-	// Skip extensions in EXCLUDED_EXTENSIONS — they are never loaded in production,
-	// so their dependencies (e.g. @azure/* from microsoft-authentication) are unnecessary.
-	// Skip BUNDLED extensions — their deps are inlined by esbuild.
-	for (const extDir of fs.readdirSync(EXTENSIONS_DIR, { withFileTypes: true })) {
-		if (!extDir.isDirectory()) {
-			continue;
-		}
-		if (EXCLUDED_EXTENSIONS.has(extDir.name)) {
-			continue;
-		}
-		// BUNDLED extensions inline all deps via esbuild — skip their dependency trees.
-		// Only REQUIRED_BUNDLED_EXT_PACKAGES are needed at runtime from node_modules.
-		if (isBundledExtension(extDir.name)) {
-			continue;
-		}
-		const pkgPath = path.join(EXTENSIONS_DIR, extDir.name, 'package.json');
-		if (!fs.existsSync(pkgPath)) {
-			continue;
-		}
-		const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-		for (const dep of Object.keys(pkg.dependencies || {})) {
-			if (!seen.has(dep)) {
-				seen.add(dep);
-				queue.push(dep);
-			}
+	// BUNDLED extensions (those with esbuild.mts) are skipped because esbuild
+	// inlines all their deps. We still scan them to find transitive deps of
+	// core modules that aren't already covered.
+	const bundledTransitive = new Set();
+	for (const [parent, deps] of Object.entries(TRANSITIVE_DEPS)) {
+		for (const dep of deps) {
+			bundledTransitive.add(dep);
 		}
 	}
 
-	// Add packages from BUNDLED extensions that are still required at runtime
+	// Check extension dependency manifests
+	const extensionsDir = path.join(REPO_ROOT, 'extensions');
+	const extensionEntries = fs.readdirSync(extensionsDir, { withFileTypes: true })
+		.filter(d => d.isDirectory())
+		.filter(d => !BUNDLED_EXTENSIONS.has(d.name))
+		.filter(d => fs.existsSync(path.join(extensionsDir, d.name, 'package.json')));
+
 	const skipTransitiveSet = new Set();
-	for (const entry of REQUIRED_BUNDLED_EXT_PACKAGES) {
-		const name = typeof entry === 'string' ? entry : entry.name;
-		const skip = typeof entry === 'object' && entry.skipTransitive;
-		if (!seen.has(name)) {
-			seen.add(name);
+	for (const ext of extensionEntries) {
+		const pkgJsonPath = path.join(extensionsDir, ext.name, 'package.json');
+		try {
+			/** @type {Record<string, string>} */
+			const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
+			const deps = pkg.dependencies || {};
+			const allDeps = Object.keys(deps);
+
+			// Collect transitive deps to skip (already inlined by esbuild)
+			for (const dep of allDeps) {
+				if (bundledTransitive.has(dep)) {
+					skipTransitiveSet.add(dep);
+				}
+			}
+
+			for (const dep of EXTENSION_DEPS) {
+				if (allDeps.includes(dep)) {
+					packages.push({ name: dep, extension: ext.name });
+				}
+			}
+		} catch {
+			// Ignore unreadable package.json
+		}
+	}
+
+	// Add transitive deps of core modules, skipping those covered by BUNDLED
+	for (const [parent, deps] of Object.entries(TRANSITIVE_DEPS)) {
+		const skip = skipTransitiveSet.has(parent);
+		for (const dep of deps) {
 			if (!skip) {
-				queue.push(name);
-			} else {
-				skipTransitiveSet.add(name);
+				packages.push({ name: dep, transitiveOf: parent });
 			}
 		}
 	}
 
-	// Resolve transitive dependencies (BFS)
-	while (queue.length > 0) {
-		const dep = queue.shift();
-		// Skip transitive resolution for excluded packages
-		if (EXCLUDED_PACKAGES.has(dep)) {
-			continue;
-		}
-		const srcDir = findPackageDir(dep);
-		if (!srcDir) {
-			continue;
-		}
-		const depPkgPath = path.join(srcDir, dep, 'package.json');
-		if (!fs.existsSync(depPkgPath)) {
-			continue;
-		}
-		const depPkg = JSON.parse(fs.readFileSync(depPkgPath, 'utf8'));
-		for (const sub of Object.keys(depPkg.dependencies || {})) {
-			if (!seen.has(sub) && !EXCLUDED_PACKAGES.has(sub)) {
-				seen.add(sub);
-				queue.push(sub);
-			}
-		}
-	}
-
-	return seen;
-}
-
-/**
- * Copy a file only if the destination content differs from the source.
- * Avoids updating mtime on unchanged files so Cargo's rerun-if-changed
- * does not trigger unnecessary rebuilds.
- * @param {string} src
- * @param {string} dest
- * @returns {boolean} true if the file was actually written
- */
-function copyFileIfChanged(src, dest) {
-	const srcContent = fs.readFileSync(src);
-	try {
-		const destContent = fs.readFileSync(dest);
-		if (srcContent.equals(destContent)) {
-			return false;
-		}
-	} catch { /* dest doesn't exist */ }
-	fs.mkdirSync(path.dirname(dest), { recursive: true });
-	fs.writeFileSync(dest, srcContent);
-	return true;
+	return packages;
 }
 
 /**
  * Recursively copy a directory, skipping files whose content is unchanged.
  * @param {string} src
  * @param {string} dest
- * @returns {number} number of files written (changed or new)
+ * @returns {{ files: number, size: number, skipped: number }}
  */
-function copyDirRecursive(src, dest) {
-	if (!fs.existsSync(src)) {
-		return 0;
-	}
-	let count = 0;
-	fs.mkdirSync(dest, { recursive: true });
-	for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+function copyDir(src, dest) {
+	let files = 0;
+	let size = 0;
+	let skipped = 0;
+
+	const entries = fs.readdirSync(src, { withFileTypes: true });
+	for (const entry of entries) {
 		const srcPath = path.join(src, entry.name);
 		const destPath = path.join(dest, entry.name);
+
 		if (entry.isDirectory()) {
-			count += copyDirRecursive(srcPath, destPath);
+			fs.mkdirSync(destPath, { recursive: true });
+			const result = copyDir(srcPath, destPath);
+			files += result.files;
+			size += result.size;
+			skipped += result.skipped;
 		} else {
-			if (copyFileIfChanged(srcPath, destPath)) {
-				count++;
+			fs.mkdirSync(path.dirname(destPath), { recursive: true });
+			try {
+				// Skip if the file content is identical
+				if (fs.existsSync(destPath)) {
+					const srcStat = fs.statSync(srcPath);
+					const destStat = fs.statSync(destPath);
+					if (srcStat.size === destStat.size) {
+						// Quick size check before reading content
+						const srcContent = fs.readFileSync(srcPath);
+						const destContent = fs.readFileSync(destPath);
+						if (srcContent.equals(destContent)) {
+							skipped++;
+							continue;
+						}
+					}
+				}
+				fs.copyFileSync(srcPath, destPath);
+				files++;
+				size += fs.statSync(destPath).size;
+			} catch (err) {
+				console.warn(`[bundle-node-modules] WARN: Failed to copy ${srcPath}: ${err.message}`);
 			}
 		}
 	}
-	return count;
+
+	return { files, size, skipped };
 }
 
 /**
- * Copy a single file, creating parent directories as needed.
- * Only writes if the content differs from the destination.
- * @param {string} src
- * @param {string} dest
+ * Resolve the actual source path for a package, checking multiple locations.
+ * @param {string} name
+ * @returns {{ found: boolean, path?: string, isBundled?: boolean }}
  */
-function copyFile(src, dest) {
-	copyFileIfChanged(src, dest);
-}
+function resolvePackagePath(name) {
+	const searchPaths = [
+		path.join(REPO_ROOT, 'node_modules', name),
+	];
 
-/**
- * Copy a package directory from any available node_modules to TARGET_DIR.
- * Returns the number of files copied, or -1 if not found.
- * @param {string} pkgName — e.g. "@vscode/extension-telemetry" or "which"
- * @returns {number}
- */
-function copyPackage(pkgName) {
-	const srcDir = findPackageDir(pkgName);
-	if (!srcDir) {
-		return -1;
+	// Check extension node_modules directories
+	const extensionsDir = path.join(REPO_ROOT, 'extensions');
+	try {
+		const extDirs = fs.readdirSync(extensionsDir, { withFileTypes: true })
+			.filter(d => d.isDirectory())
+			.map(d => path.join(extensionsDir, d.name, 'node_modules'));
+
+		for (const extNm of extDirs) {
+			const candidate = path.join(extNm, name);
+			if (fs.existsSync(candidate)) {
+				return { found: true, path: candidate };
+			}
+		}
+	} catch {
+		// Extensions directory may not exist in CI
 	}
-	const srcPath = path.join(srcDir, pkgName);
-	const destPath = path.join(TARGET_DIR, pkgName);
-	return copyDirRecursive(srcPath, destPath);
+
+	for (const candidate of searchPaths) {
+		if (fs.existsSync(candidate)) {
+			return { found: true, path: candidate };
+		}
+	}
+
+	return { found: false };
 }
 
 /**
- * Main entry point for the node_modules bundling script.
- *
- * Skip logic: if `--force` is not set and a stamp file exists that is newer
- * than `package-lock.json`, the entire step is skipped. This avoids redundant
- * copies when neither dependencies nor the bundling logic have changed.
- *
- * Executes two phases when a rebuild is needed:
- * 1. Copies core modules (specific files/directories) listed in `CORE_MODULES`
- *    from `node_modules/` to `src-tauri/node_modules/`.
- * 2. Auto-discovers all extension dependencies (including transitive ones) via
- *    BFS traversal of `package.json` dependency trees, then copies any packages
- *    not already bundled in Phase 1.
- *
- * Supports a `--clean` flag to remove the staging directory before bundling.
- * Logs progress, skipped modules, and final statistics (file count, total size).
+ * Create a stub package.json that exports an empty object.
+ * This is used for telemetry/analytics packages that must exist on disk
+ * but whose code should never be executed.
+ * @param {string} destDir
+ * @param {string} pkgName
+ */
+function createStubPackage(destDir, pkgName) {
+	const pkgJson = JSON.stringify({
+		name: pkgName,
+		version: '0.0.0-stub',
+		main: 'index.js',
+	});
+	fs.mkdirSync(destDir, { recursive: true });
+	fs.writeFileSync(path.join(destDir, 'package.json'), pkgJson);
+	fs.writeFileSync(path.join(destDir, 'index.js'), 'module.exports = {};');
+}
+
+/**
+ * Skip logic: if `--force` is not set and a stamp file exists whose
+ * SHA-256 hash of `package-lock.json` matches the current hash, the
+ * entire step is skipped. This avoids redundant bundling when
+ * dependencies haven't changed (even if `npm install` touched mtime).
  */
 const SKIP_MARKERS_DIR = path.join(REPO_ROOT, '.build', 'skip-markers');
 
@@ -443,12 +349,15 @@ function main() {
 	const stampPath = path.join(SKIP_MARKERS_DIR, 'bundle-node-modules.stamp');
 
 	if (!force && fs.existsSync(stampPath)) {
-		const stampTime = fs.statSync(stampPath).mtimeMs;
 		const lockfile = path.join(REPO_ROOT, 'package-lock.json');
-		if (!fs.existsSync(lockfile) || fs.statSync(lockfile).mtimeMs <= stampTime) {
-			// allow-any-unicode-next-line
-			console.log('✅ [bundle-node-modules] Skipped (no changes)');
-			return;
+		if (fs.existsSync(lockfile)) {
+			const savedHash = fs.readFileSync(stampPath, 'utf8').trim();
+			const currentHash = crypto.createHash('sha256').update(fs.readFileSync(lockfile)).digest('hex').slice(0, 16);
+			if (savedHash === currentHash) {
+				// allow-any-unicode-next-line
+				console.log('✅ [bundle-node-modules] Skipped (no changes)');
+				return;
+			}
 		}
 	}
 
@@ -466,161 +375,127 @@ function main() {
 			console.log(`[bundle-node-modules] Removing symlink: ${TARGET_DIR} -> ${linkTarget}`);
 			fs.unlinkSync(TARGET_DIR);
 		}
-	} catch (/** @type {any} */ e) {
-		// ENOENT is expected when the directory doesn't exist yet
-		if (e.code !== 'ENOENT') {
-			throw e;
-		}
+	} catch {
+		// TARGET_DIR doesn't exist yet — that's fine
 	}
 
-	if (clean && fs.existsSync(TARGET_DIR)) {
-		console.log(`[bundle-node-modules] Cleaning ${TARGET_DIR}`);
-		fs.rmSync(TARGET_DIR, { recursive: true });
+	// Clean if requested
+	if (force) {
+		fs.rmSync(TARGET_DIR, { recursive: true, force: true });
 	}
 
+	const packages = buildPackageList();
 	let totalFiles = 0;
+	let totalSize = 0;
 	let skipped = 0;
 
-	// Phase 1: Copy core modules (specific files/directories).
-	// Track which top-level packages were successfully bundled so Phase 2
 	// can skip them. Packages not found here may still be resolved from
-	// extension node_modules/ by Phase 2.
-	const bundledPkgs = new Set();
-	console.log('[bundle-node-modules] Phase 1: Core modules...');
-	for (const entry of CORE_MODULES) {
-		const isDir = entry.endsWith('/');
-		const srcPath = path.join(SOURCE_DIR, entry);
-		const destPath = path.join(TARGET_DIR, entry);
-
-		if (!fs.existsSync(srcPath)) {
-			console.warn(`[bundle-node-modules] WARN: ${entry} not found, skipping`);
-			skipped++;
+	// other node_modules locations at runtime.
+	for (const pkg of packages) {
+		if (pkg.stub) {
+			const destDir = path.join(TARGET_DIR, pkg.name);
+			const stubSrc = path.join(REPO_ROOT, 'extensions', 'configuration-editing', 'node_modules', pkg.name, 'package.json');
+			if (fs.existsSync(stubSrc)) {
+				createStubPackage(destDir, pkg.name);
+				console.log(`[bundle-node-modules]   ${pkg.name}/ (stub)`);
+			} else {
+				console.warn(`[bundle-node-modules] WARN: stub for ${pkg.name} not found at ${stubSrc}, skipping`);
+				skipped++;
+			}
 			continue;
 		}
 
-		if (isDir) {
-			const count = copyDirRecursive(srcPath, destPath);
-			console.log(`[bundle-node-modules]   ${entry} (${count} files)`);
-			totalFiles += count;
-		} else {
-			copyFile(srcPath, destPath);
-			console.log(`[bundle-node-modules]   ${entry}`);
-			totalFiles++;
+		const resolved = resolvePackagePath(pkg.name);
+		if (!resolved.found) {
+			if (pkg.optional) {
+				console.warn(`[bundle-node-modules] WARN: ${pkg.name} not found, skipping`);
+				skipped++;
+			} else {
+				console.log(`[bundle-node-modules]   ${pkg.name}/ (0 files)`);
+			}
+			continue;
 		}
 
-		// Track top-level package name for Phase 2 dedup
-		const parts = entry.split('/');
-		if (parts[0].startsWith('@') && parts.length > 1) {
-			bundledPkgs.add(`${parts[0]}/${parts[1]}`);
+		const srcPath = resolved.path;
+		const destPath = path.join(TARGET_DIR, pkg.name);
+
+		if (pkg.sub) {
+			// Copy a single file
+			const srcFile = path.join(srcPath, pkg.sub);
+			fs.mkdirSync(path.dirname(destPath), { recursive: true });
+			if (fs.existsSync(srcFile)) {
+				fs.copyFileSync(srcFile, destPath);
+				totalFiles++;
+				totalSize += fs.statSync(destPath).size;
+				console.log(`[bundle-node-modules]   ${pkg.name}/${pkg.sub}`);
+			} else {
+				console.warn(`[bundle-node-modules] WARN: ${pkg.name}/${pkg.sub} not found, skipping`);
+				skipped++;
+			}
 		} else {
-			bundledPkgs.add(parts[0]);
+			// Copy entire directory
+			const result = copyDir(srcPath, destPath);
+			totalFiles += result.files;
+			totalSize += result.size;
+			skipped += result.skipped;
+			const transitiveLabel = pkg.transitiveOf ? ` [transitive of ${pkg.transitiveOf}]` : '';
+			console.log(`[bundle-node-modules]   ${pkg.name}/ (${result.files} files)${transitiveLabel}`);
 		}
 	}
 
-	// Phase 1.5: Copy no-op stub packages (replaces real telemetry packages)
-	console.log('[bundle-node-modules] Phase 1.5: Stub packages...');
-	for (const [pkgName, stubRelPath] of STUBBED_PACKAGES) {
-		const stubSrc = path.join(STUBS_DIR, stubRelPath);
-		const destPath = path.join(TARGET_DIR, pkgName);
-		if (!fs.existsSync(stubSrc)) {
-			console.warn(`[bundle-node-modules] WARN: stub for ${pkgName} not found at ${stubSrc}, skipping`);
-			skipped++;
-			continue;
-		}
-		const count = copyDirRecursive(stubSrc, destPath);
-		console.log(`[bundle-node-modules]   ${pkgName}/ (${count} files) [stub]`);
-		totalFiles += count;
-		bundledPkgs.add(pkgName);
-	}
+	// Phase 2: Extension dependencies
+	console.log('[bundle-node-modules] Phase 2: Extension dependencies...');
+	let extDepsCount = 0;
 
-	// Phase 1.6: Resolve transitive deps of CORE_MODULES (e.g. @vscode/spdlog → mkdirp)
-	console.log('[bundle-node-modules] Phase 1.6: Core module transitive deps...');
-	const coreTransitiveQueue = [...bundledPkgs];
-	const coreTransitiveSeen = new Set(bundledPkgs);
-	while (coreTransitiveQueue.length > 0) {
-		const pkg = coreTransitiveQueue.shift();
-		const srcDir = findPackageDir(pkg);
-		if (!srcDir) {
-			continue;
-		}
-		const pkgJsonPath = path.join(srcDir, pkg, 'package.json');
+	const extensionsDir = path.join(REPO_ROOT, 'extensions');
+	const extensionEntries = fs.readdirSync(extensionsDir, { withFileTypes: true })
+		.filter(d => d.isDirectory())
+		.filter(d => !BUNDLED_EXTENSIONS.has(d.name));
+
+	for (const ext of extensionEntries) {
+		const pkgJsonPath = path.join(extensionsDir, ext.name, 'package.json');
 		if (!fs.existsSync(pkgJsonPath)) {
 			continue;
 		}
-		const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
-		for (const sub of Object.keys(pkgJson.dependencies || {})) {
-			if (!coreTransitiveSeen.has(sub) && !EXCLUDED_PACKAGES.has(sub) && !bundledPkgs.has(sub)) {
-				coreTransitiveSeen.add(sub);
-				coreTransitiveQueue.push(sub);
-				const count = copyPackage(sub);
-				if (count < 0) {
-					console.warn(`[bundle-node-modules] WARN: ${sub} not found, skipping`);
-					skipped++;
-				} else {
-					console.log(`[bundle-node-modules]   ${sub}/ (${count} files) [transitive of ${pkg}]`);
-					totalFiles += count;
-					bundledPkgs.add(sub);
+
+		try {
+			/** @type {Record<string, string>} */
+			const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
+			const deps = pkg.dependencies || {};
+			const allDeps = Object.keys(deps);
+
+			for (const dep of EXTENSION_DEPS) {
+				if (!allDeps.includes(dep)) {
+					continue;
 				}
+
+				const depSrc = path.join(extensionsDir, ext.name, 'node_modules', dep);
+				if (!fs.existsSync(depSrc)) {
+					continue;
+				}
+
+				const depDest = path.join(TARGET_DIR, dep);
+				if (fs.existsSync(depDest)) {
+					continue; // Already copied
+				}
+
+				const result = copyDir(depSrc, depDest);
+				totalFiles += result.files;
+				totalSize += result.size;
+				skipped += result.skipped;
+				extDepsCount++;
+				console.log(`[bundle-node-modules]   ${dep}/ (${result.files} files) [from ${ext.name}]`);
 			}
+		} catch {
+			// Ignore unreadable package.json
 		}
 	}
 
-	// Phase 2: Auto-discover and copy extension dependencies.
-	// BUNDLED extensions (with esbuild.mts) are skipped — their deps are inlined.
-	// Only REQUIRED_BUNDLED_EXT_PACKAGES are included from BUNDLED extensions.
-	console.log('[bundle-node-modules] Phase 2: Extension dependencies...');
-	const bundledExtNames = fs.readdirSync(EXTENSIONS_DIR, { withFileTypes: true })
-		.filter(e => e.isDirectory() && isBundledExtension(e.name) && !EXCLUDED_EXTENSIONS.has(e.name))
-		.map(e => e.name);
-	console.log(`[bundle-node-modules]   Skipping ${bundledExtNames.length} BUNDLED extensions (deps inlined by esbuild)`);
-	const requiredNames = REQUIRED_BUNDLED_EXT_PACKAGES.map(e => typeof e === 'string' ? e : e.name);
-	console.log(`[bundle-node-modules]   Required from BUNDLED: ${requiredNames.join(', ')}`);
-	const extDeps = collectExtensionDependencies();
-
-	let extCopied = 0;
-	for (const dep of [...extDeps].sort()) {
-		if (EXCLUDED_PACKAGES.has(dep)) {
-			console.log(`[bundle-node-modules]   SKIP (excluded): ${dep}`);
-			continue;
-		}
-		if (bundledPkgs.has(dep)) {
-			continue;
-		}
-		const count = copyPackage(dep);
-		if (count < 0) {
-			console.warn(`[bundle-node-modules] WARN: ${dep} not found in node_modules, skipping`);
-			skipped++;
-		} else {
-			console.log(`[bundle-node-modules]   ${dep}/ (${count} files)`);
-			totalFiles += count;
-			extCopied++;
-		}
+	if (extDepsCount > 0) {
+		console.log(`[bundle-node-modules] Phase 2: ${extDepsCount} extension dependency packages copied`);
 	}
-	console.log(`[bundle-node-modules] Phase 2: ${extCopied} extension dependency packages copied`);
 
-	// Compute total size of the staged node_modules directory
-	/**
-	 * Recursively compute the total byte size of all files under `dir`.
-	 * @param {string} dir - Absolute path to the directory to measure.
-	 * @returns {number} Total size in bytes, or 0 if the directory does not exist.
-	 */
-	function computeDirSize(dir) {
-		if (!fs.existsSync(dir)) {
-			return 0;
-		}
-		let size = 0;
-		for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-			const fullPath = path.join(dir, entry.name);
-			if (entry.isDirectory()) {
-				size += computeDirSize(fullPath);
-			} else {
-				size += fs.statSync(fullPath).size;
-			}
-		}
-		return size;
-	}
-	const totalSize = computeDirSize(TARGET_DIR);
-
+	// Summary
 	const sizeMB = (totalSize / (1024 * 1024)).toFixed(1);
 	console.log(`[bundle-node-modules] Done: ${totalFiles} files copied (${sizeMB} MB)`);
 	if (skipped > 0) {
@@ -629,7 +504,13 @@ function main() {
 
 	// Mark as complete for skip detection on next run
 	fs.mkdirSync(SKIP_MARKERS_DIR, { recursive: true });
-	fs.writeFileSync(stampPath, new Date().toISOString());
+	const lockfile = path.join(REPO_ROOT, 'package-lock.json');
+	if (fs.existsSync(lockfile)) {
+		const lockHash = crypto.createHash('sha256').update(fs.readFileSync(lockfile)).digest('hex').slice(0, 16);
+		fs.writeFileSync(stampPath, lockHash);
+	} else {
+		fs.writeFileSync(stampPath, new Date().toISOString());
+	}
 }
 
 main();
