@@ -12,9 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Show shutdown overlay during app closing for better UX feedback
+- Show splash screen immediately on Reload Window and quit ([#413](https://github.com/j4rviscmd/vscodeee/pull/413))
 
 ### Fixed
 
+- Align bundle.resources path with bundle-node-modules output directory ([#414](https://github.com/j4rviscmd/vscodeee/pull/414))
 - Preserve workspace on Reload Window ([#410](https://github.com/j4rviscmd/vscodeee/issues/410))
 - Resolve syntax error and EISDIR in bundle-node-modules.mjs ([#407](https://github.com/j4rviscmd/vscodeee/issues/407))
 - Use hash-based skip detection in bundle-node-modules ([#406](https://github.com/j4rviscmd/vscodeee/issues/406))
