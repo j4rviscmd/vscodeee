@@ -147,20 +147,6 @@ export class TauriLifecycleService extends AbstractLifecycleService {
       @keyframes shutdown-spin {
         to { transform: rotate(360deg); }
       }
-      #shutdown-overlay {
-        position: fixed;
-        inset: 0;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        z-index: 99999;
-        transition: opacity 0.2s ease-out;
-        opacity: 0;
-      }
-      #shutdown-overlay.visible {
-        opacity: 1;
-      }
     `;
     doc.head.appendChild(style);
 
@@ -168,20 +154,18 @@ export class TauriLifecycleService extends AbstractLifecycleService {
 
     const overlay = doc.createElement('div');
     overlay.id = 'shutdown-overlay';
-    overlay.style.backgroundColor = bg + 'BF';
-    overlay.style.backdropFilter = 'blur(20px)';
-    // eslint-disable-next-line local/code-no-any-casts, @typescript-eslint/no-explicit-any
-    (overlay.style as any).webkitBackdropFilter = 'blur(20px)';
+    overlay.style.cssText = `
+      position: fixed; inset: 0; z-index: 99999;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background-color: ${bg}BF;
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    `;
 
     const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('width', '120');
     svg.setAttribute('height', '120');
     svg.setAttribute('viewBox', '0 0 260 260');
-    svg.style.opacity = '0.4';
-    svg.style.marginBottom = '24px';
-    svg.style.userSelect = 'none';
-    svg.style.webkitUserSelect = 'none';
-    svg.style.pointerEvents = 'none';
+    svg.style.cssText = 'opacity: 0.4; margin-bottom: 24px; user-select: none; -webkit-user-select: none; pointer-events: none;';
     const text = doc.createElementNS('http://www.w3.org/2000/svg', 'text');
     text.setAttribute('x', '130');
     text.setAttribute('y', '148');
@@ -194,19 +178,15 @@ export class TauriLifecycleService extends AbstractLifecycleService {
     svg.appendChild(text);
 
     const spinner = doc.createElement('div');
-    spinner.style.width = '28px';
-    spinner.style.height = '28px';
-    spinner.style.border = '2px solid rgba(204, 204, 204, 0.2)';
-    spinner.style.borderTopColor = '#CCCCCC';
-    spinner.style.borderRadius = '50%';
-    spinner.style.animation = 'shutdown-spin 0.8s linear infinite';
+    spinner.style.cssText = `
+      width: 28px; height: 28px; border-radius: 50%;
+      border: 2px solid rgba(204, 204, 204, 0.2); border-top-color: #CCCCCC;
+      animation: shutdown-spin 0.8s linear infinite;
+    `;
 
     overlay.appendChild(svg);
     overlay.appendChild(spinner);
     doc.body.appendChild(overlay);
-
-    // Trigger fade-in on next frame
-    mainWindow.requestAnimationFrame(() => overlay.classList.add('visible'));
   }
 
   // --- Two-phase close handshake ---
@@ -281,9 +261,6 @@ export class TauriLifecycleService extends AbstractLifecycleService {
       reason,
       veto(value: boolean | Promise<boolean>, id: string) {
         vetos.push(value);
-        if (value === true) {
-          // Log sync vetos immediately for diagnostics
-        }
       },
       finalVeto(vetoFn: () => boolean | Promise<boolean>, id: string) {
         finalVetoFn = vetoFn;
@@ -423,18 +400,11 @@ export class TauriLifecycleService extends AbstractLifecycleService {
   async shutdown(): Promise<void> {
     this.logService.info('[lifecycle] Programmatic shutdown triggered');
 
-    // Dispose DOM listeners
-    this.beforeUnloadListener?.dispose();
-    this.beforeUnloadListener = undefined;
-    if (this.tauriCloseListener) {
-      this.tauriCloseListener();
-      this.tauriCloseListener = undefined;
-    }
-
     // Ensure UI state is persisted
     await this.storageService.flush(WillSaveStateReason.SHUTDOWN);
 
     // Fire shutdown events without veto support
+    // (handleShutdown also disposes DOM listeners)
     await this.handleShutdown(this.shutdownReason ?? ShutdownReason.QUIT);
   }
 
