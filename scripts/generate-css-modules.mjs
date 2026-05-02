@@ -32,6 +32,7 @@ let skipped = false;
 try {
 	const existing = readFileSync(destPath, 'utf8');
 	if (existing === content) {
+		// allow-any-unicode-next-line
 		console.log(`✅ [generate-css-modules] Unchanged (${modules.length} entries)`);
 		skipped = true;
 	}

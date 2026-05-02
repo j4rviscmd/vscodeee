@@ -1802,6 +1802,7 @@ async function main(): Promise<void> {
 				if (options.watch) {
 					await watch();
 				} else if (await canSkip('transpile', [path.join(REPO_ROOT, SRC_DIR)])) {
+					// allow-any-unicode-next-line
 					console.log('✅ [transpile] Skipped (no source changes)');
 					skipped = true;
 				} else {
@@ -1826,6 +1827,7 @@ async function main(): Promise<void> {
 
 		case 'transpile-extensions': {
 				if (await canSkip('transpile-extensions', [path.join(REPO_ROOT, 'extensions')], ['dist/', '/out/', 'node_modules/'])) {
+					// allow-any-unicode-next-line
 					console.log('✅ [transpile-extensions] Skipped (no source changes)');
 					skipped = true;
 				} else {
@@ -1848,6 +1850,7 @@ async function main(): Promise<void> {
 
 			case 'package-extensions': {
 				if (await canSkip('package-extensions', [path.join(REPO_ROOT, 'extensions')], ['dist/', '/out/', 'node_modules/'])) {
+					// allow-any-unicode-next-line
 					console.log('✅ [package-extensions] Skipped (no source changes)');
 					skipped = true;
 				} else {

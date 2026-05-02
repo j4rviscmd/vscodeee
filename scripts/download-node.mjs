@@ -222,6 +222,7 @@ async function main() {
 		const sizeMB = stat.size / 1024 / 1024;
 
 		if (stat.size >= MIN_VALID_SIZE) {
+// allow-any-unicode-next-line
 			console.log(`✅ [download-node] Already exists (${sizeMB.toFixed(1)} MB)`);
 			return;
 		}

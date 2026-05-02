@@ -446,6 +446,7 @@ function main() {
 		const stampTime = fs.statSync(stampPath).mtimeMs;
 		const lockfile = path.join(REPO_ROOT, 'package-lock.json');
 		if (!fs.existsSync(lockfile) || fs.statSync(lockfile).mtimeMs <= stampTime) {
+			// allow-any-unicode-next-line
 			console.log('✅ [bundle-node-modules] Skipped (no changes)');
 			return;
 		}

@@ -442,6 +442,7 @@ function configureGitSettings() {
  */
 async function main() {
 	if (!process.env['VSCODE_FORCE_INSTALL'] && isUpToDate()) {
+		// allow-any-unicode-next-line
 		console.log('✅ [postinstall] Dependencies up to date');
 		configureGitSettings();
 		return;
