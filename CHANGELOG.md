@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-05-03
+
+### Fixed
+
+- Suppress stale IME composition keydown events in WKWebView/Tauri ([c414de3](https://github.com/j4rviscmd/vscodeee/commit/c414de3))
+- Eliminate window stretch animation on new window open ([#422](https://github.com/j4rviscmd/vscodeee/pull/422))
+
 ## [0.11.1] - 2026-05-03
 
 ### Fixed
