@@ -9,7 +9,8 @@
 //! maps Tauri labels to IDs (and back), and provides workspace deduplication.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use super::state::{OpenWindowOptions, WindowId, WindowInfo, WindowKind, WindowSessionEntry};
@@ -142,15 +143,39 @@ impl WindowManager {
             let _ = _window.set_decorations(true);
         }
 
-        // Defer showing the window to allow tauri-plugin-window-state to
-        // restore the saved geometry first. Without this delay the window
-        // appears at the builder default (1200×800) and then "stretches"
-        // when the plugin applies the restored size.
-        let win = _window.clone();
+        // Show the window once tauri-plugin-window-state has restored the saved
+        // geometry.  Listen for the first Resized / Moved event (which the
+        // plugin fires when it applies the cached position and size), then
+        // reveal the window immediately — no "stretch" and no fixed delay.
+        // A 100 ms fallback timeout covers the case where no saved state exists
+        // (the plugin never fires a geometry event for a brand-new label).
+        let shown = Arc::new(AtomicBool::new(false));
+
+        let win_evt = _window.clone();
+        let shown_evt = shown.clone();
+        _window.on_window_event(move |event| {
+            if shown_evt.load(Ordering::Relaxed) {
+                return;
+            }
+            match event {
+                tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_) => {
+                    shown_evt.store(true, Ordering::Relaxed);
+                    let _ = win_evt.show();
+                    let _ = win_evt.set_focus();
+                }
+                _ => {}
+            }
+        });
+
+        let win_fb = _window.clone();
+        let shown_fb = shown.clone();
         tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-            let _ = win.show();
-            let _ = win.set_focus();
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            if !shown_fb.load(Ordering::Relaxed) {
+                shown_fb.store(true, Ordering::Relaxed);
+                let _ = win_fb.show();
+                let _ = win_fb.set_focus();
+            }
         });
 
         // Register in state
@@ -399,12 +424,33 @@ impl WindowManager {
             let _ = _window.set_decorations(true);
         }
 
-        // Defer showing the window to allow tauri-plugin-window-state to
-        // restore the saved geometry first (same reason as open_window).
-        let win = _window.clone();
+        // Show the window on the first geometry event from the state plugin
+        // (same approach as open_window — see the comment there).
+        let shown = Arc::new(AtomicBool::new(false));
+
+        let win_evt = _window.clone();
+        let shown_evt = shown.clone();
+        _window.on_window_event(move |event| {
+            if shown_evt.load(Ordering::Relaxed) {
+                return;
+            }
+            match event {
+                tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_) => {
+                    shown_evt.store(true, Ordering::Relaxed);
+                    let _ = win_evt.show();
+                }
+                _ => {}
+            }
+        });
+
+        let win_fb = _window.clone();
+        let shown_fb = shown.clone();
         tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-            let _ = win.show();
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            if !shown_fb.load(Ordering::Relaxed) {
+                shown_fb.store(true, Ordering::Relaxed);
+                let _ = win_fb.show();
+            }
         });
 
         let effective_uri = folder_uri
