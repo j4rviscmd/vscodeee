@@ -1,5 +1,19 @@
 <!-- Copyright (c) VS Codeee Contributors. All rights reserved. -->
 <!-- Licensed under the MIT License. See License.txt in the project root for license information. -->
+
+<!--
+  workbench-tauri.html — Entry-point HTML for the VS Codeee workbench running inside a Tauri 2.0 webview.
+
+  Responsibilities:
+  - Defines Content-Security-Policy (CSP) scoped to Tauri's custom protocols
+    (tauri:, vscode-file:, vscode-webview:, vscode-remote-resource:).
+  - Loads the console-interceptor script that forwards browser console output
+    to the Rust backend terminal for unified logging.
+  - Renders a splash screen overlay (spinner + <eee/> watermark) displayed
+    while the workbench bootstrap and workbench JS load asynchronously.
+  - Loads workbench-tauri.js as the bootstrap entry point, which sets up NLS,
+    CSS import maps, and dynamically imports the workbench module.
+-->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -113,6 +127,16 @@
 			border-radius: 50%;
 			animation: splash-spin 0.8s linear infinite;
 		}
+		.splash-status {
+			opacity: 0.4;
+			margin-top: 16px;
+			font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, 'Ubuntu', 'Droid Sans', sans-serif;
+			font-size: 12px;
+			color: #CCCCCC;
+			user-select: none;
+			-webkit-user-select: none;
+			pointer-events: none;
+		}
 	</style>
 	</head>
 <body aria-label="">
@@ -121,6 +145,7 @@
 			<text x="130" y="148" text-anchor="middle" font-family="'SF Mono','Menlo','Consolas','Courier New',monospace" font-size="52" font-weight="600" fill="#808080">&lt;eee/&gt;</text>
 		</svg>
 		<div class="splash-spinner"></div>
+		<div class="splash-status">loading...</div>
 	</div>
 </body>
 
