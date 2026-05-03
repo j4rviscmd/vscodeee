@@ -25,6 +25,7 @@
 //! | `load_terminal_state` | Load terminal buffer state |
 //! | `persist_terminal_layout` | Save terminal layout info |
 //! | `load_terminal_layout` | Load terminal layout info |
+//! | `acknowledge_terminal` | Acknowledge processed output chars for flow control |
 //! | `install_auto_reply` | Install an auto-reply pattern |
 //! | `uninstall_all_auto_replies` | Remove all auto-reply patterns |
 
@@ -101,6 +102,31 @@ pub fn send_terminal_signal(
     pty_manager.send_signal(id, &signal)
 }
 
+/// Acknowledge that the frontend has processed terminal output.
+///
+/// Decrements the unacknowledged char counter for flow control backpressure.
+/// If the reader thread is paused and the counter drops below the low
+/// watermark, reading resumes automatically.
+#[tauri::command]
+pub fn acknowledge_terminal(
+    id: u32,
+    char_count: u64,
+    pty_manager: State<'_, PtyManager>,
+) -> Result<(), String> {
+    log::debug!(target: "vscodeee::pty::commands", "acknowledge_terminal id={id} char_count={char_count}");
+    pty_manager.acknowledge(id, char_count)
+}
+
+/// Get flow control state for a terminal (diagnostic).
+#[tauri::command]
+pub fn get_flow_control_state(
+    id: u32,
+    pty_manager: State<'_, PtyManager>,
+) -> Result<serde_json::Value, String> {
+    let (unack, paused) = pty_manager.flow_control_state(id)?;
+    Ok(serde_json::json!({ "unacknowledgedChars": unack, "paused": paused }))
+}
+
 /// List all running terminal processes.
 ///
 /// Returns a summary for each active PTY instance including
@@ -135,7 +161,7 @@ pub fn get_default_shell() -> String {
 
 /// Get the current process environment variables.
 #[tauri::command]
-pub fn get_environment() -> std::collections::HashMap<String, String> {
+pub fn get_environment() -> HashMap<String, String> {
     std::env::vars().collect()
 }
 
