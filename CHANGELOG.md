@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-05-03
+
+### Added
+
+- Ack-based flow control backpressure for PTY output, matching VS Code's `FlowControlConstants` pattern (high watermark 100K, low watermark 5K) with 100ms deadlock-prevention timeout ([#425](https://github.com/j4rviscmd/vscodeee/pull/425))
+
 ## [0.11.2] - 2026-05-03
 
 ### Fixed
