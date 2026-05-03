@@ -10,16 +10,35 @@
 //! - A master handle for resize operations
 //! - A background reader thread that emits output via Tauri events
 //! - A child process handle for lifecycle management (PID, signals, exit)
+//!
+//! ## Flow Control
+//!
+//! Implements ack-based backpressure matching VS Code's `FlowControlConstants`.
+//! When unacknowledged chars exceed `HIGH_WATERMARK_CHARS`, the reader thread
+//! pauses reading. The frontend sends `acknowledge_terminal` to decrement the
+//! counter, and reading resumes when it drops below `LOW_WATERMARK_CHARS`.
 
 use std::collections::HashMap;
 use std::io::Write;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
 
 use super::autoreply::AutoReplyInterceptor;
+
+/// Flow control watermarks matching VS Code's `FlowControlConstants`.
+const HIGH_WATERMARK_CHARS: u64 = 100_000;
+const LOW_WATERMARK_CHARS: u64 = 5_000;
+/// Sleep duration when the reader is paused (flow control).
+const PAUSED_POLL_INTERVAL: Duration = Duration::from_millis(1);
+/// Maximum time to stay paused before force-resuming.
+/// Prevents deadlock when acks don't arrive (e.g., VS Code's AckDataBufferer
+/// chain not yet wired through for the Tauri backend).
+const PAUSE_TIMEOUT: Duration = Duration::from_millis(100);
 
 /// Configuration for creating a new PTY instance.
 pub struct PtyConfig {
@@ -49,6 +68,28 @@ pub struct ProcessSummary {
     pub is_alive: bool,
 }
 
+/// Shared flow control state between the reader thread and the acknowledge command.
+///
+/// Uses lock-free atomics for the hot path (reader thread incrementing,
+/// acknowledge command decrementing). `Ordering::Relaxed` is sufficient
+/// because flow control is approximate — the generous watermark margins
+/// absorb any race-induced drift.
+struct FlowControlState {
+    /// Number of chars sent to the frontend but not yet acknowledged.
+    unacknowledged_chars: AtomicU64,
+    /// When true, the reader thread should stop reading from the PTY.
+    paused: AtomicBool,
+}
+
+impl FlowControlState {
+    fn new() -> Self {
+        Self {
+            unacknowledged_chars: AtomicU64::new(0),
+            paused: AtomicBool::new(false),
+        }
+    }
+}
+
 /// A running PTY instance with handles for I/O and control.
 pub struct PtyInstance {
     /// Writer handle to send data to the shell's stdin.
@@ -68,6 +109,8 @@ pub struct PtyInstance {
     /// One-shot channel sender to activate the reader thread.
     /// `None` after activation (consumed on first call to `activate()`).
     activate_tx: Mutex<Option<std::sync::mpsc::SyncSender<()>>>,
+    /// Shared flow control state for reader thread backpressure.
+    flow_control: Arc<FlowControlState>,
 }
 
 impl Drop for PtyInstance {
@@ -199,6 +242,10 @@ impl PtyInstance {
         let master: Box<dyn MasterPty + Send> = pair.master;
         let master = Arc::new(Mutex::new(Some(master)));
 
+        // Shared flow control state between this instance and the reader thread.
+        let flow_control = Arc::new(FlowControlState::new());
+        let flow_control_reader = Arc::clone(&flow_control);
+
         // Start background reader thread
         // The reader blocks on a one-shot channel until activate() is called.
         // This gives the frontend time to register event listeners before any
@@ -221,15 +268,38 @@ impl PtyInstance {
             log::info!(target: "vscodeee::pty::instance", "Reader activated (pty:{pty_id})");
 
             let event_name = format!("pty-output-{pty_id}");
+            let exit_event_name = format!("pty-exit-{pty_id}");
             let mut buf = [0u8; 8192];
+            let mut pause_start: Option<Instant> = None;
 
             loop {
+                // When paused, sleep and periodically check the flag.
+                // The kernel PTY buffer provides natural backpressure: as it fills
+                // up, the shell process blocks on write.
+                if flow_control_reader.paused.load(Ordering::Relaxed) {
+                    let now = Instant::now();
+                    let start = *pause_start.get_or_insert(now);
+                    if now.duration_since(start) > PAUSE_TIMEOUT {
+                        flow_control_reader.paused.store(false, Ordering::Relaxed);
+                        flow_control_reader
+                            .unacknowledged_chars
+                            .store(0, Ordering::Relaxed);
+                        pause_start = None;
+                        log::debug!(target: "vscodeee::pty::instance",
+                            "Flow control: force-resumed after timeout (pty:{pty_id})");
+                        continue;
+                    }
+                    thread::sleep(PAUSED_POLL_INTERVAL);
+                    continue;
+                }
+
+                pause_start = None;
+
                 match std::io::Read::read(&mut reader, &mut buf) {
                     Ok(0) => {
-                        // EOF — PTY closed
                         log::info!(target: "vscodeee::pty::instance", "Reader EOF (pty:{pty_id})");
                         let _ = app_handle.emit(
-                            &format!("pty-exit-{pty_id}"),
+                            &exit_event_name,
                             serde_json::json!({ "id": pty_id, "exitCode": 0 }),
                         );
                         break;
@@ -240,7 +310,6 @@ impl PtyInstance {
                         // Check auto-reply patterns before emitting
                         if let Some(ref interceptor) = auto_reply {
                             if let Some(reply) = interceptor.check(data) {
-                                // Write the reply back to the PTY
                                 if let Ok(mut guard) = writer_for_reply.lock() {
                                     if let Some(ref mut w) = *guard {
                                         let _ = w.write_all(reply.as_bytes());
@@ -250,17 +319,29 @@ impl PtyInstance {
                             }
                         }
 
-                        // Emit the output data as a Tauri event.
-                        let data = data.to_vec();
-                        if let Err(e) = app_handle.emit(&event_name, data) {
-                            log::error!(target: "vscodeee::pty::instance", "Failed to emit output event (pty:{pty_id}): {e}");
+                        let char_count = n as u64;
+                        if let Err(e) = app_handle.emit(&event_name, data.to_vec()) {
+                            log::error!(target: "vscodeee::pty::instance",
+                                "Failed to emit output event (pty:{pty_id}): {e}");
                             break;
+                        }
+
+                        // Track unacknowledged chars and check high watermark.
+                        let prev = flow_control_reader
+                            .unacknowledged_chars
+                            .fetch_add(char_count, Ordering::Relaxed);
+                        let total = prev + char_count;
+                        if total > HIGH_WATERMARK_CHARS {
+                            flow_control_reader.paused.store(true, Ordering::Relaxed);
+                            log::debug!(target: "vscodeee::pty::instance",
+                                "Flow control: paused (pty:{pty_id}, unack:{total})");
                         }
                     }
                     Err(e) => {
-                        log::error!(target: "vscodeee::pty::instance", "Reader error (pty:{pty_id}): {e}");
+                        log::error!(target: "vscodeee::pty::instance",
+                            "Reader error (pty:{pty_id}): {e}");
                         let _ = app_handle.emit(
-                            &format!("pty-exit-{pty_id}"),
+                            &exit_event_name,
                             serde_json::json!({ "id": pty_id, "exitCode": -1 }),
                         );
                         break;
@@ -274,7 +355,8 @@ impl PtyInstance {
             }
         });
 
-        log::info!(target: "vscodeee::pty::instance", "Spawned PTY {pty_id} (pid={pid}, shell={})", config.shell);
+        log::info!(target: "vscodeee::pty::instance",
+            "Spawned PTY {pty_id} (pid={pid}, shell={})", config.shell);
 
         Ok(Self {
             writer,
@@ -285,6 +367,7 @@ impl PtyInstance {
             shell: config.shell,
             cwd: config.cwd,
             activate_tx: Mutex::new(Some(activate_tx)),
+            flow_control,
         })
     }
 
@@ -308,6 +391,54 @@ impl PtyInstance {
         }
         // Already activated — no-op
         Ok(())
+    }
+
+    /// Acknowledge that the frontend has processed `char_count` characters of output.
+    ///
+    /// Decrements the unacknowledged char counter. If the reader thread is currently
+    /// paused and the counter drops below `LOW_WATERMARK_CHARS`, reading resumes.
+    pub fn acknowledge_data(&self, char_count: u64) {
+        let prev = self
+            .flow_control
+            .unacknowledged_chars
+            .fetch_sub(char_count, Ordering::Relaxed);
+        let current = prev.saturating_sub(char_count);
+
+        // Clamp stored value if fetch_sub underflowed (wraps near u64::MAX)
+        if prev < char_count {
+            self.flow_control
+                .unacknowledged_chars
+                .store(0, Ordering::Relaxed);
+        }
+
+        if self.flow_control.paused.load(Ordering::Relaxed) && current < LOW_WATERMARK_CHARS {
+            self.flow_control.paused.store(false, Ordering::Relaxed);
+            log::debug!(target: "vscodeee::pty::instance",
+                "Flow control: resumed (unack:{current})");
+        }
+    }
+
+    /// Get the current flow control state for diagnostics.
+    pub fn flow_control_state(&self) -> (u64, bool) {
+        (
+            self.flow_control
+                .unacknowledged_chars
+                .load(Ordering::Relaxed),
+            self.flow_control.paused.load(Ordering::Relaxed),
+        )
+    }
+
+    /// Reset the unacknowledged char counter and resume reading.
+    ///
+    /// Called after terminal replay/reconnect where previously sent data
+    /// is effectively acknowledged by the viewport reset.
+    // TODO(Phase 3): Wire up from terminal replay path
+    #[allow(dead_code)]
+    pub fn clear_unacknowledged_chars(&self) {
+        self.flow_control
+            .unacknowledged_chars
+            .store(0, Ordering::Relaxed);
+        self.flow_control.paused.store(false, Ordering::Relaxed);
     }
 
     /// Write data to the PTY (sends to the shell's stdin).

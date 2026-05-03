@@ -246,6 +246,8 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
             commands::terminal::get_default_shell,
             commands::terminal::get_environment,
             commands::terminal::send_terminal_signal,
+            commands::terminal::acknowledge_terminal,
+            commands::terminal::get_flow_control_state,
             commands::terminal::list_terminals,
             commands::terminal::detect_shells,
             commands::terminal::persist_terminal_state,

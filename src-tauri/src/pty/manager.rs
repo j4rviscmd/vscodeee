@@ -155,6 +155,23 @@ impl PtyManager {
         self.with_instance(id, |inst| inst.send_signal(signal))
     }
 
+    /// Acknowledge that the frontend has processed `char_count` characters of output.
+    ///
+    /// This decrements the unacknowledged char counter for flow control backpressure.
+    /// If the reader thread is paused and the counter drops below the low watermark,
+    /// reading resumes automatically.
+    pub fn acknowledge(&self, id: u32, char_count: u64) -> Result<(), String> {
+        self.with_instance(id, |inst| {
+            inst.acknowledge_data(char_count);
+            Ok(())
+        })
+    }
+
+    /// Get the flow control state for a PTY instance (diagnostic).
+    pub fn flow_control_state(&self, id: u32) -> Result<(u64, bool), String> {
+        self.with_instance(id, |inst| Ok(inst.flow_control_state()))
+    }
+
     /// List all running PTY processes.
     pub fn list_processes(&self) -> Vec<ProcessSummary> {
         if let Ok(instances) = self.instances.lock() {

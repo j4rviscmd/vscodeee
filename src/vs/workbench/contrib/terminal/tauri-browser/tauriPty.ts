@@ -18,13 +18,17 @@
  * ## Flow Control
  *
  * Implements VS Code's flow control mechanism via acknowledgeDataEvent().
- * When unacknowledged characters exceed HighWatermarkChars, output is buffered
- * until the client catches up to LowWatermarkChars.
+ * The Rust reader thread owns the actual backpressure: when unacknowledged
+ * chars exceed HighWatermarkChars, the reader pauses. This TypeScript side
+ * forwards acks to Rust via `invoke('acknowledge_terminal')`.
+ *
+ * The existing `AckDataBufferer` in `TerminalProcessManager` batches acks
+ * at CharCountAckSize intervals before calling `acknowledgeDataEvent()`.
  */
 
 import { Emitter } from '../../../../base/common/event.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { FlowControlConstants, ProcessPropertyType, ITerminalLogService, type IProcessDataEvent, type IProcessProperty, type IProcessPropertyMap, type IProcessReadyEvent, type ITerminalChildProcess, type ITerminalLaunchError, type ITerminalLaunchResult } from '../../../../platform/terminal/common/terminal.js';
+import { ProcessPropertyType, ITerminalLogService, type IProcessDataEvent, type IProcessProperty, type IProcessPropertyMap, type IProcessReadyEvent, type ITerminalChildProcess, type ITerminalLaunchError, type ITerminalLaunchResult } from '../../../../platform/terminal/common/terminal.js';
 
 import { tauriInvoke } from './tauriIpc.js';
 
@@ -71,21 +75,16 @@ function tauriListen(event: string, handler: (payload: unknown) => void): Promis
  * Output flows from the Rust reader thread as Tauri events (`pty-output-{id}`),
  * and input is sent via Tauri invoke (`write_terminal`).
  *
- * Implements VS Code's flow control protocol: when unacknowledged output
- * exceeds `FlowControlConstants.HighWatermarkChars`, the instance pauses
- * emission and buffers data until the consumer calls `acknowledgeDataEvent`
- * to drain back below `FlowControlConstants.LowWatermarkChars`.
+ * Flow control follows the RemotePty pattern: the Rust reader thread owns
+ * the actual backpressure state (unacknowledged chars, pause/resume).
+ * This class is a thin forwarder that sends acks to Rust via
+ * `invoke('acknowledge_terminal', { id, charCount })`.
  */
 export class TauriPty extends Disposable implements ITerminalChildProcess {
   // The Rust PTY id, assigned after start()
   private _ptyId: number = 0;
   id: number;
   shouldPersist: boolean = false;
-
-  // Flow control state
-  private _unacknowledgedCharCount = 0;
-  private _isPaused = false;
-  private _pendingData: string[] = [];
 
   // Event unlisten functions
   private _unlistenOutput: (() => void) | undefined;
@@ -110,17 +109,15 @@ export class TauriPty extends Disposable implements ITerminalChildProcess {
   private _lastDimensions: { cols: number; rows: number } = { cols: -1, rows: -1 };
 
   /**
-	 * Persistent TextDecoder for streaming UTF-8 decoding.
-	 *
-	 * PTY output arrives in arbitrary-sized chunks (up to 8192 bytes from the
-	 * Rust reader thread) that may split multi-byte UTF-8 sequences across chunk
-	 * boundaries. Using `{ stream: true }` in each `decode()` call tells the
-	 * decoder to buffer any incomplete trailing bytes and prepend them to the
-	 * next chunk, preventing U+FFFD replacement characters from appearing.
-	 *
-	 * This mirrors how node-pty handles UTF-8 internally — the PTY backend
-	 * reads raw bytes, and the consumer side is responsible for correct decoding.
-	 */
+		 * Persistent TextDecoder for streaming UTF-8 decoding.
+		 *
+		 * PTY output arrives in arbitrary-sized chunks (batched by the Rust
+		 * reader thread with up to 8KB per batch) that may split multi-byte
+		 * UTF-8 sequences across chunk boundaries. Using `{ stream: true }` in
+		 * each `decode()` call tells the decoder to buffer any incomplete
+		 * trailing bytes and prepend them to the next chunk, preventing
+		 * U+FFFD replacement characters from appearing.
+		 */
   private readonly _decoder = new TextDecoder('utf-8', { fatal: false });
 
   // Events
@@ -150,19 +147,19 @@ export class TauriPty extends Disposable implements ITerminalChildProcess {
   }
 
   /**
-	 * Start the PTY process.
-	 *
-	 * Uses a two-phase startup to prevent race conditions with initial output:
-	 * 1. Spawn the PTY via Rust (reader thread is paused)
-	 * 2. Register event listeners for output and exit
-	 * 3. Activate the reader thread (output starts flowing)
-	 *
-	 * This ensures that interactive programs started during shell initialization
-	 * (e.g., fzf session pickers in .zshrc) have their output captured from
-	 * the very first byte.
-	 *
-	 * @returns `undefined` on success, or an `ITerminalLaunchError` on failure
-	 */
+		 * Start the PTY process.
+		 *
+		 * Uses a two-phase startup to prevent race conditions with initial output:
+		 * 1. Spawn the PTY via Rust (reader thread is paused)
+		 * 2. Register event listeners for output and exit
+		 * 3. Activate the reader thread (output starts flowing)
+		 *
+		 * This ensures that interactive programs started during shell initialization
+		 * (e.g., fzf session pickers in .zshrc) have their output captured from
+		 * the very first byte.
+		 *
+		 * @returns `undefined` on success, or an `ITerminalLaunchError` on failure
+		 */
   async start(): Promise<ITerminalLaunchError | ITerminalLaunchResult | undefined> {
     try {
       this._logService.trace('TauriPty#start', { id: this.id, shell: this._shell, cwd: this._cwd });
@@ -231,62 +228,40 @@ export class TauriPty extends Disposable implements ITerminalChildProcess {
   }
 
   /**
-	 * Handle output data with flow control.
-	 */
+		 * Handle output data — fire event directly.
+		 *
+		 * The Rust reader thread handles flow control (pause/resume based on
+		 * unacknowledged char count), so no local buffering is needed here.
+		 */
   private _handleOutput(data: string): void {
-    if (this._isPaused) {
-      this._pendingData.push(data);
+    this._onProcessData.fire(data);
+  }
+
+  /**
+		 * Acknowledge that the consumer has processed `charCount` characters of output.
+		 *
+		 * Forwards the ack to the Rust backend, which decrements the unacknowledged
+		 * char counter. If the reader thread is paused and the counter drops below
+		 * the low watermark, reading resumes automatically.
+		 *
+		 * @param charCount - Number of characters the consumer has processed
+		 */
+  acknowledgeDataEvent(charCount: number): void {
+    if (this._ptyId === 0) {
       return;
     }
-
-    this._unacknowledgedCharCount += data.length;
-    this._onProcessData.fire(data);
-
-    // Check if we need to pause
-    if (this._unacknowledgedCharCount > FlowControlConstants.HighWatermarkChars) {
-      this._isPaused = true;
-      this._logService.trace('TauriPty#flowControl paused', {
-        id: this.id,
-        unacknowledgedChars: this._unacknowledgedCharCount,
-      });
-    }
+    tauriInvoke('acknowledge_terminal', { id: this._ptyId, charCount }).catch(() => {
+      // Silently ignore — the PTY may have already exited.
+    });
   }
 
   /**
-	 * Acknowledge that the consumer has processed `charCount` characters of output.
-	 *
-	 * Decrements the unacknowledged character counter. If the instance is
-	 * currently paused and the counter drops below `LowWatermarkChars`,
-	 * the instance resumes emitting and flushes any buffered data.
-	 *
-	 * @param charCount - Number of characters the consumer has processed
-	 */
-  acknowledgeDataEvent(charCount: number): void {
-    this._unacknowledgedCharCount = Math.max(this._unacknowledgedCharCount - charCount, 0);
-
-    // Resume if we've dropped below the low watermark
-    if (this._isPaused && this._unacknowledgedCharCount < FlowControlConstants.LowWatermarkChars) {
-      this._isPaused = false;
-      this._logService.trace('TauriPty#flowControl resumed', {
-        id: this.id,
-        unacknowledgedChars: this._unacknowledgedCharCount,
-      });
-
-      // Flush any buffered data
-      const pending = this._pendingData.splice(0);
-      for (const data of pending) {
-        this._handleOutput(data);
-      }
-    }
-  }
-
-  /**
-	 * Send input data to the PTY's stdin.
-	 *
-	 * No-op if the PTY has not been started yet (`_ptyId === 0`).
-	 *
-	 * @param data - The string data to send to the shell's stdin
-	 */
+		 * Send input data to the PTY's stdin.
+		 *
+		 * No-op if the PTY has not been started yet (`_ptyId === 0`).
+		 *
+		 * @param data - The string data to send to the shell's stdin
+		 */
   input(data: string): void {
     if (this._ptyId === 0) {
       return; // Not started yet
@@ -297,14 +272,14 @@ export class TauriPty extends Disposable implements ITerminalChildProcess {
   }
 
   /**
-	 * Resize the PTY to the given dimensions.
-	 *
-	 * Skips the IPC call if the dimensions are unchanged from the last resize.
-	 * No-op if the PTY has not been started yet.
-	 *
-	 * @param cols - New terminal column count
-	 * @param rows - New terminal row count
-	 */
+		 * Resize the PTY to the given dimensions.
+		 *
+		 * Skips the IPC call if the dimensions are unchanged from the last resize.
+		 * No-op if the PTY has not been started yet.
+		 *
+		 * @param cols - New terminal column count
+		 * @param rows - New terminal row count
+		 */
   resize(cols: number, rows: number): void {
     if (this._ptyId === 0) {
       return; // Not started yet
@@ -319,14 +294,14 @@ export class TauriPty extends Disposable implements ITerminalChildProcess {
   }
 
   /**
-	 * Shut down the PTY process.
-	 *
-	 * Sends a close command to the Rust PTY manager. The `immediate` parameter
-	 * is accepted for interface compatibility but is not differentiated —
-	 * the PTY is always closed immediately.
-	 *
-	 * @param immediate - Whether to force immediate shutdown (currently unused, always closes immediately)
-	 */
+		 * Shut down the PTY process.
+		 *
+		 * Sends a close command to the Rust PTY manager. The `immediate` parameter
+		 * is accepted for interface compatibility but is not differentiated —
+		 * the PTY is always closed immediately.
+		 *
+		 * @param immediate - Whether to force immediate shutdown (currently unused, always closes immediately)
+		 */
   shutdown(immediate: boolean): void {
     if (this._ptyId === 0) {
       return;
@@ -338,13 +313,13 @@ export class TauriPty extends Disposable implements ITerminalChildProcess {
   }
 
   /**
-	 * Send a signal to the PTY's child process.
-	 *
-	 * Delegates to the Rust `send_terminal_signal` command.
-	 * Supported signals: `SIGINT`, `SIGTERM`, `SIGKILL`, `SIGHUP`, `SIGQUIT`.
-	 *
-	 * @param signal - The signal name (e.g., `SIGINT`)
-	 */
+		 * Send a signal to the PTY's child process.
+		 *
+		 * Delegates to the Rust `send_terminal_signal` command.
+		 * Supported signals: `SIGINT`, `SIGTERM`, `SIGKILL`, `SIGHUP`, `SIGQUIT`.
+		 *
+		 * @param signal - The signal name (e.g., `SIGINT`)
+		 */
   sendSignal(signal: string): void {
     if (this._ptyId === 0) {
       return;
@@ -356,23 +331,23 @@ export class TauriPty extends Disposable implements ITerminalChildProcess {
   }
 
   /**
-	 * Process binary data from the terminal.
-	 *
-	 * Currently a no-op. Binary data processing is not implemented in this
-	 * Tauri PTY backend.
-	 *
-	 * @param _data - Binary data string (unused)
-	 */
+		 * Process binary data from the terminal.
+		 *
+		 * Currently a no-op. Binary data processing is not implemented in this
+		 * Tauri PTY backend.
+		 *
+		 * @param _data - Binary data string (unused)
+		 */
   async processBinary(_data: string): Promise<void> {
     // Binary data processing — not typically used in basic scenarios
   }
 
   /**
-	 * Clear the terminal screen by sending ANSI escape sequences.
-	 *
-	 * Sends `\x1b[2J\x1b[H` (clear screen + move cursor to home position)
-	 * to the PTY's stdin. This signals the shell to clear its scrollback buffer.
-	 */
+		 * Clear the terminal screen by sending ANSI escape sequences.
+		 *
+		 * Sends `\x1b[2J\x1b[H` (clear screen + move cursor to home position)
+		 * to the PTY's stdin. This signals the shell to clear its scrollback buffer.
+		 */
   async clearBuffer(): Promise<void> {
     // Send ANSI clear screen sequence via write.
     // xterm.js manages its own buffer, so this signals the shell
@@ -383,71 +358,71 @@ export class TauriPty extends Disposable implements ITerminalChildProcess {
   }
 
   /**
-	 * Set the Unicode version for the terminal.
-	 *
-	 * No-op in this implementation — Unicode version handling is performed
-	 * client-side by xterm.js.
-	 *
-	 * @param _version - Unicode version ('6' or '11'), unused
-	 */
+		 * Set the Unicode version for the terminal.
+		 *
+		 * No-op in this implementation — Unicode version handling is performed
+		 * client-side by xterm.js.
+		 *
+		 * @param _version - Unicode version ('6' or '11'), unused
+		 */
   async setUnicodeVersion(_version: '6' | '11'): Promise<void> {
     // No-op — unicode version handling is done client-side by xterm.js
   }
 
   /**
-	 * Get the initial working directory that the shell was launched in.
-	 *
-	 * @returns The initial CWD string
-	 */
+		 * Get the initial working directory that the shell was launched in.
+		 *
+		 * @returns The initial CWD string
+		 */
   async getInitialCwd(): Promise<string> {
     return this._properties.initialCwd;
   }
 
   /**
-	 * Get the current working directory of the shell process.
-	 *
-	 * Falls back to the initial CWD if the current CWD has not been updated.
-	 *
-	 * @returns The current CWD string
-	 */
+		 * Get the current working directory of the shell process.
+		 *
+		 * Falls back to the initial CWD if the current CWD has not been updated.
+		 *
+		 * @returns The current CWD string
+		 */
   async getCwd(): Promise<string> {
     return this._properties.cwd || this._properties.initialCwd;
   }
 
   /**
-	 * Refresh and return a process property value.
-	 *
-	 * Returns the locally cached value without querying the Rust side.
-	 *
-	 * @typeParam T - The process property type to refresh
-	 * @param _property - The property to refresh
-	 * @returns The current value of the requested property
-	 */
+		 * Refresh and return a process property value.
+		 *
+		 * Returns the locally cached value without querying the Rust side.
+		 *
+		 * @typeParam T - The process property type to refresh
+		 * @param _property - The property to refresh
+		 * @returns The current value of the requested property
+		 */
   async refreshProperty<T extends ProcessPropertyType>(_property: T): Promise<IProcessPropertyMap[T]> {
     return this._properties[_property];
   }
 
   /**
-	 * Update a process property and notify listeners.
-	 *
-	 * Stores the new value in the local property map and fires
-	 * `onDidChangeProperty` with the updated property type and value.
-	 *
-	 * @typeParam T - The process property type to update
-	 * @param property - The property to update
-	 * @param value - The new value for the property
-	 */
+		 * Update a process property and notify listeners.
+		 *
+		 * Stores the new value in the local property map and fires
+		 * `onDidChangeProperty` with the updated property type and value.
+		 *
+		 * @typeParam T - The process property type to update
+		 * @param property - The property to update
+		 * @param value - The new value for the property
+		 */
   async updateProperty<T extends ProcessPropertyType>(property: T, value: IProcessPropertyMap[T]): Promise<void> {
     (this._properties as unknown as Record<string, unknown>)[property] = value;
     this._onDidChangeProperty.fire({ type: property, value });
   }
 
   /**
-	 * Dispose of the PTY instance.
-	 *
-	 * Unsubscribes from Tauri output and exit events, closes the Rust PTY
-	 * via `close_terminal`, and cleans up all internal state.
-	 */
+		 * Dispose of the PTY instance.
+		 *
+		 * Unsubscribes from Tauri output and exit events, closes the Rust PTY
+		 * via `close_terminal`, and cleans up all internal state.
+		 */
   override dispose(): void {
     // Unlisten from Tauri events
     this._unlistenOutput?.();
