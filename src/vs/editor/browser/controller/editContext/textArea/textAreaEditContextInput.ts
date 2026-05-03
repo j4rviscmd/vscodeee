@@ -167,6 +167,7 @@ export class TextAreaInput extends Disposable {
 
 	private _hasFocus: boolean;
 	private _currentComposition: CompositionContext | null;
+	private _compositionEndTime: number = 0;
 
 	constructor(
 		private readonly _host: ITextAreaInputHost,
@@ -202,6 +203,14 @@ export class TextAreaInput extends Disposable {
 				|| (this._currentComposition && e.keyCode === KeyCode.Backspace)) {
 				// Stop propagation for keyDown events if the IME is processing key input
 				e.stopPropagation();
+			}
+
+			// WKWebView/Tauri: keydown with browserKeyCode=229 (KEY_IN_COMPOSITION) can fire
+			// AFTER compositionend due to event ordering differences. Suppress these stale
+			// composition-key events to prevent unintended actions (e.g. newline on Enter).
+			if (_e.keyCode === 229 && this._compositionEndTime > 0 && (Date.now() - this._compositionEndTime) < 300) {
+				e.stopPropagation();
+				e.preventDefault();
 			}
 
 			if (e.equals(KeyCode.Escape)) {
@@ -299,6 +308,7 @@ export class TextAreaInput extends Disposable {
 				return;
 			}
 			this._currentComposition = null;
+			this._compositionEndTime = Date.now();
 
 			if (this._browser.isAndroid) {
 				// On Android, the data sent with the composition update event is unusable.
@@ -329,6 +339,13 @@ export class TextAreaInput extends Disposable {
 			this._textArea.setIgnoreSelectionChangeTime('received input event');
 
 			if (this._currentComposition) {
+				return;
+			}
+
+			// WKWebView/Tauri: After compositionend, a newline `input` event may arrive
+			// from the Enter key that confirmed the composition. Suppress it if composition
+			// ended very recently to prevent an unwanted newline insertion.
+			if (this._compositionEndTime > 0 && (Date.now() - this._compositionEndTime) < 300) {
 				return;
 			}
 
