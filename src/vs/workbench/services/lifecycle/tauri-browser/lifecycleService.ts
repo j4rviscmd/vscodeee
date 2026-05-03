@@ -61,6 +61,14 @@ export class TauriLifecycleService extends AbstractLifecycleService {
   /** When `true`, the next `beforeunload` event is silently ignored (used by `withExpectedShutdown`). */
   private ignoreBeforeUnload = false;
 
+  /**
+	 * Creates a new Tauri lifecycle service and registers close-requested
+	 * and beforeunload listeners immediately.
+	 *
+	 * @param logService - The log service for lifecycle diagnostics.
+	 * @param storageService - The storage service used to persist shutdown reason
+	 *   and flush state during shutdown.
+	 */
   constructor(
     @ILogService logService: ILogService,
     @IStorageService storageService: IStorageService,
@@ -138,7 +146,7 @@ export class TauriLifecycleService extends AbstractLifecycleService {
    * window is destroyed by Rust after `lifecycle_close_confirmed`, or the
    * page reloads during an expected shutdown.
    */
-  private showShutdownOverlay(): void {
+  private showShutdownOverlay(statusText: string): void {
     const doc = mainWindow.document;
 
     // Inject the spinner keyframe animation
@@ -184,8 +192,18 @@ export class TauriLifecycleService extends AbstractLifecycleService {
       animation: shutdown-spin 0.8s linear infinite;
     `;
 
+    const status = doc.createElement('div');
+    status.style.cssText = `
+      opacity: 0.4; margin-top: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, 'Ubuntu', 'Droid Sans', sans-serif;
+      font-size: 12px; color: #CCCCCC;
+      user-select: none; -webkit-user-select: none; pointer-events: none;
+    `;
+    status.textContent = statusText;
+
     overlay.appendChild(svg);
     overlay.appendChild(spinner);
+    overlay.appendChild(status);
     doc.body.appendChild(overlay);
   }
 
@@ -318,7 +336,10 @@ export class TauriLifecycleService extends AbstractLifecycleService {
     this.logService.info('[lifecycle] Proceeding with shutdown');
 
     if (!options?.skipOverlay) {
-      this.showShutdownOverlay();
+      const statusText = (reason === ShutdownReason.RELOAD || reason === ShutdownReason.LOAD)
+        ? localize('lifecycleReloading', "reloading...")
+        : localize('lifecycleShuttingDown', "shutting down...");
+      this.showShutdownOverlay(statusText);
     }
 
     this._willShutdown = true;
@@ -395,7 +416,15 @@ export class TauriLifecycleService extends AbstractLifecycleService {
   // --- Public API ---
 
   /**
-	 * Programmatic shutdown (e.g., from reload or workspace switch).
+	 * Initiates a programmatic shutdown without async veto support.
+		 *
+		 * Unlike the Rust close-requested path ({@link handleCloseRequested}),
+		 * this method skips `fireBeforeShutdown` entirely and proceeds directly
+		 * to the shutdown sequence. Used internally for workspace switches and
+		 * reload operations where the caller has already handled veto logic.
+		 *
+		 * Flushes storage before invoking {@link handleShutdown} to ensure
+		 * UI state is persisted.
 	 */
   async shutdown(): Promise<void> {
     this.logService.info('[lifecycle] Programmatic shutdown triggered');
@@ -454,7 +483,7 @@ export class TauriLifecycleService extends AbstractLifecycleService {
       return;
     }
 
-    await this.handleShutdown(reason, { skipRustClose: true, skipOverlay: true });
+    await this.handleShutdown(reason, { skipRustClose: true });
   }
 
   /**
