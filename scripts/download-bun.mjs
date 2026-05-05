@@ -21,11 +21,10 @@
  */
 
 import { execFileSync } from 'child_process';
-import fs from 'fs';
+import fs, { createWriteStream } from 'fs';
 import https from 'https';
 import path from 'path';
 import { pipeline } from 'stream/promises';
-import { createWriteStream } from 'fs';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '..');
 const BINARIES_DIR = path.join(REPO_ROOT, 'src-tauri', 'binaries');

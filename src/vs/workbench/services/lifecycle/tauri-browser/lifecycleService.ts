@@ -337,8 +337,8 @@ export class TauriLifecycleService extends AbstractLifecycleService {
 
     if (!options?.skipOverlay) {
       const statusText = (reason === ShutdownReason.RELOAD || reason === ShutdownReason.LOAD)
-        ? localize('lifecycleReloading', "reloading...")
-        : localize('lifecycleShuttingDown', "shutting down...");
+        ? localize('lifecycleReloading', 'reloading...')
+        : localize('lifecycleShuttingDown', 'shutting down...');
       this.showShutdownOverlay(statusText);
     }
 
