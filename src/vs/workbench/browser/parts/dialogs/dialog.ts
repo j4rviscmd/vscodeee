@@ -6,7 +6,6 @@
 import { EventHelper } from '../../../../base/browser/dom.js';
 import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
 import { IDialogOptions } from '../../../../base/browser/ui/dialog/dialog.js';
-import { fromNow } from '../../../../base/common/date.js';
 import { localize } from '../../../../nls.js';
 import { IHostService } from '../../../services/host/browser/host.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
@@ -64,32 +63,27 @@ export function createWorkbenchDialogOptions(options: Partial<IDialogOptions>, k
  * Build the content for the workbench About dialog.
  *
  * Composes a title (long product name) and a details string containing the
- * version, commit hash, build date (with relative time), extension host runtime,
- * and browser user agent. Two variants of the details string are returned:
- * one with relative timestamps for display, and one without for clipboard copy.
+ * version, commit hash, extension host runtime, and browser user agent.
  *
- * @param productService - Provides product metadata (name, version, commit, date, runtime).
+ * @param productService - Provides product metadata (name, version, commit, runtime).
  * @returns An object with `title`, `details` (display string), and `detailsToCopy` (plain copy string).
  */
 export function createBrowserAboutDialogDetails(productService: IProductService): { title: string; details: string; detailsToCopy: string } {
-	const detailString = (useAgo: boolean): string => {
-		return localize('aboutDetail',
-			"Version: {0}\nCommit: {1}\nDate: {2}\nRuntime: {3}\nBrowser: {4}",
-			productService.version || 'Unknown',
-			productService.commit || 'Unknown',
-			productService.date ? `${productService.date}${useAgo ? ' (' + fromNow(new Date(productService.date), true) + ')' : ''}` : 'Unknown',
-			productService.extensionHostRuntime || 'Unknown',
-			navigator.userAgent
-		);
-	};
-
-	const details = detailString(true);
-	const detailsToCopy = detailString(false);
+	const version = productService.tauriAppVersion
+		? `v${productService.tauriAppVersion} (${productService.version || 'Unknown'})`
+		: productService.version || 'Unknown';
+	const detailString = localize('aboutDetail',
+		"Version: {0}\nCommit: {1}\nRuntime: {2}\nBrowser: {3}",
+		version,
+		productService.commit || 'Unknown',
+		productService.extensionHostRuntime || 'Unknown',
+		navigator.userAgent
+	);
 
 	return {
 		title: productService.nameLong,
-		details: details,
-		detailsToCopy: detailsToCopy
+		details: detailString,
+		detailsToCopy: detailString
 	};
 }
 

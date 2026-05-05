@@ -20,10 +20,12 @@
 //! - [`session`] — Session persistence to `sessions.json`.
 //! - [`settings`] — User window settings (restore mode, fullscreen behavior).
 //! - [`state`] — Shared types for window state (`WindowInfo`, `OpenWindowOptions`, etc.).
+//! - [`menu`] — Native application menu with custom About handling.
 
 pub mod chrome;
 pub mod events;
 pub mod manager;
+pub mod menu;
 pub mod quit_state;
 pub mod restore;
 pub mod restore_geometry;

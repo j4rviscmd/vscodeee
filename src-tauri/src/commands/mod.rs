@@ -356,10 +356,20 @@ pub fn get_product_json(app_handle: tauri::AppHandle) -> Result<ProductPackageJs
         }
     }
 
-    // Inject extension host runtime info for About dialog display.
-    // Detect by looking for the bundled Bun sidecar next to the executable.
-    let runtime_label = detect_runtime_label();
+    // Inject Tauri app version and extension host runtime for the About dialog.
     if let Some(obj) = product.as_object_mut() {
+        let tauri_version = app_handle
+            .config()
+            .version
+            .clone()
+            .unwrap_or_else(|| "0.0.0".to_string());
+        obj.insert(
+            "tauriAppVersion".to_string(),
+            serde_json::Value::String(tauri_version),
+        );
+
+        // Detect by looking for the bundled Bun sidecar next to the executable.
+        let runtime_label = detect_runtime_label();
         obj.insert(
             "extensionHostRuntime".to_string(),
             serde_json::Value::String(runtime_label),
