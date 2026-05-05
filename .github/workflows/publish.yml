@@ -266,7 +266,7 @@ jobs:
           - platform: 'macos-latest'
             args: '--target x86_64-apple-darwin'
           - platform: 'ubuntu-22.04'
-            args: ''
+            args: '--bundles deb,rpm'
           - platform: 'windows-latest'
             args: '--bundles nsis'
 
