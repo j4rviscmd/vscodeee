@@ -2,17 +2,17 @@
 <!-- Licensed under the MIT License. See License.txt in the project root for license information. -->
 
 <!--
-  workbench-tauri.html — Entry-point HTML for the VS Codeee workbench running inside a Tauri 2.0 webview.
+	workbench-tauri.html — Entry-point HTML for the VS Codeee workbench running inside a Tauri 2.0 webview.
 
-  Responsibilities:
-  - Defines Content-Security-Policy (CSP) scoped to Tauri's custom protocols
-    (tauri:, vscode-file:, vscode-webview:, vscode-remote-resource:).
-  - Loads the console-interceptor script that forwards browser console output
-    to the Rust backend terminal for unified logging.
-  - Renders a splash screen overlay (spinner + <eee/> watermark) displayed
-    while the workbench bootstrap and workbench JS load asynchronously.
-  - Loads workbench-tauri.js as the bootstrap entry point, which sets up NLS,
-    CSS import maps, and dynamically imports the workbench module.
+	Responsibilities:
+	- Defines Content-Security-Policy (CSP) scoped to Tauri's custom protocols
+		(tauri:, vscode-file:, vscode-webview:, vscode-remote-resource:).
+	- Loads the console-interceptor script that forwards browser console output
+		to the Rust backend terminal for unified logging.
+	- Renders a splash screen overlay (spinner + <eee/> watermark) displayed
+		while the workbench bootstrap and workbench JS load asynchronously.
+	- Loads workbench-tauri.js as the bootstrap entry point, which sets up NLS,
+		CSS import maps, and dynamically imports the workbench module.
 -->
 <!DOCTYPE html>
 <html lang="en">
