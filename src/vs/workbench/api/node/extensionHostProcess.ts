@@ -295,7 +295,10 @@ function _createExtHostProtocol(): Promise<IMessagePassingProtocol> {
 
 		return new Promise<PersistentProtocol>((resolve, reject) => {
 
-			const socket = net.createConnection(pipeName, () => {
+			// Use {path} object form for Bun compatibility.
+			// Bun's net.createConnection(string) treats the argument as a TCP host
+			// rather than a Unix socket path. The object form works on both runtimes.
+			const socket = net.createConnection({ path: pipeName }, () => {
 				socket.removeListener('error', reject);
 				const protocol = new PersistentProtocol({ socket: new NodeSocket(socket, 'extHost-renderer') });
 				protocol.sendResume();
