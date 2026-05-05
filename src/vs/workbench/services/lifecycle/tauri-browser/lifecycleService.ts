@@ -61,6 +61,14 @@ export class TauriLifecycleService extends AbstractLifecycleService {
   /** When `true`, the next `beforeunload` event is silently ignored (used by `withExpectedShutdown`). */
   private ignoreBeforeUnload = false;
 
+  /**
+	 * Creates a new Tauri lifecycle service and registers close-requested
+	 * and beforeunload listeners immediately.
+	 *
+	 * @param logService - The log service for lifecycle diagnostics.
+	 * @param storageService - The storage service used to persist shutdown reason
+	 *   and flush state during shutdown.
+	 */
   constructor(
     @ILogService logService: ILogService,
     @IStorageService storageService: IStorageService,
@@ -85,12 +93,13 @@ export class TauriLifecycleService extends AbstractLifecycleService {
     // close request (e.g., closing an SSH window must not cascade to
     // the main window).
     const currentLabel = new URL(document.location.href).searchParams.get('windowLabel') ?? 'main';
-    listen<{ window_id: number; label: string }>('vscodeee:lifecycle:close-requested', (event) => {
+    listen<{ window_id: number; label: string; reason?: string }>('vscodeee:lifecycle:close-requested', (event) => {
       if (event.payload.label !== currentLabel) {
         return; // Not our window — ignore
       }
-      this.logService.info(`[lifecycle] Tauri close-requested received (window_id: ${event.payload.window_id}, label: ${event.payload.label})`);
-      this.handleCloseRequested();
+      const reason = event.payload.reason === 'quit' ? ShutdownReason.QUIT : ShutdownReason.CLOSE;
+      this.logService.info(`[lifecycle] Tauri close-requested received (window_id: ${event.payload.window_id}, label: ${event.payload.label}, reason: ${event.payload.reason ?? 'close'})`);
+      this.handleCloseRequested(reason);
     }).then(unlisten => {
       this.tauriCloseListener = unlisten;
     });
@@ -126,6 +135,78 @@ export class TauriLifecycleService extends AbstractLifecycleService {
     }
   }
 
+  // --- Shutdown overlay ---
+
+  /**
+   * Shows a full-screen overlay during shutdown, identical in design to the
+   * startup splash screen (spinner + `<eee/>` watermark + blurred backdrop).
+   *
+   * The overlay blocks user interaction with the workbench while shutdown
+   * joiners run (backup, storage flush, etc.). No cleanup is needed — the
+   * window is destroyed by Rust after `lifecycle_close_confirmed`, or the
+   * page reloads during an expected shutdown.
+   */
+  private showShutdownOverlay(statusText: string): void {
+    const doc = mainWindow.document;
+
+    // Inject the spinner keyframe animation
+    const style = doc.createElement('style');
+    style.textContent = `
+      @keyframes shutdown-spin {
+        to { transform: rotate(360deg); }
+      }
+    `;
+    doc.head.appendChild(style);
+
+    const bg = mainWindow.getComputedStyle(doc.body).getPropertyValue('--vscode-editor-background').trim() || '#1E1E1E';
+
+    const overlay = doc.createElement('div');
+    overlay.id = 'shutdown-overlay';
+    overlay.style.cssText = `
+      position: fixed; inset: 0; z-index: 99999;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background-color: ${bg}BF;
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    `;
+
+    const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', '120');
+    svg.setAttribute('height', '120');
+    svg.setAttribute('viewBox', '0 0 260 260');
+    svg.style.cssText = 'opacity: 0.4; margin-bottom: 24px; user-select: none; -webkit-user-select: none; pointer-events: none;';
+    const text = doc.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', '130');
+    text.setAttribute('y', '148');
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('font-family', 'SF Mono, Menlo, Consolas, Courier New, monospace');
+    text.setAttribute('font-size', '52');
+    text.setAttribute('font-weight', '600');
+    text.setAttribute('fill', '#808080');
+    text.textContent = '<eee/>';
+    svg.appendChild(text);
+
+    const spinner = doc.createElement('div');
+    spinner.style.cssText = `
+      width: 28px; height: 28px; border-radius: 50%;
+      border: 2px solid rgba(204, 204, 204, 0.2); border-top-color: #CCCCCC;
+      animation: shutdown-spin 0.8s linear infinite;
+    `;
+
+    const status = doc.createElement('div');
+    status.style.cssText = `
+      opacity: 0.4; margin-top: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, 'Ubuntu', 'Droid Sans', sans-serif;
+      font-size: 12px; color: #CCCCCC;
+      user-select: none; -webkit-user-select: none; pointer-events: none;
+    `;
+    status.textContent = statusText;
+
+    overlay.appendChild(svg);
+    overlay.appendChild(spinner);
+    overlay.appendChild(status);
+    doc.body.appendChild(overlay);
+  }
+
   // --- Two-phase close handshake ---
 
   /**
@@ -138,13 +219,14 @@ export class TauriLifecycleService extends AbstractLifecycleService {
 	 *    shutdown sequence.
 	 *
 	 * Errors during the veto phase are treated as vetoes to prevent data loss.
+	 *
+	 * @param reason - The shutdown reason: CLOSE for individual window close,
+	 *   QUIT for application-wide quit (affects dialog messages and Hot Exit).
 	 */
-  private async handleCloseRequested(): Promise<void> {
+  private async handleCloseRequested(reason: ShutdownReason = ShutdownReason.CLOSE): Promise<void> {
     if (this._willShutdown) {
       return; // already shutting down
     }
-
-    const reason = ShutdownReason.CLOSE;
 
     try {
       const veto = await this.fireBeforeShutdown(reason);
@@ -197,9 +279,6 @@ export class TauriLifecycleService extends AbstractLifecycleService {
       reason,
       veto(value: boolean | Promise<boolean>, id: string) {
         vetos.push(value);
-        if (value === true) {
-          // Log sync vetos immediately for diagnostics
-        }
       },
       finalVeto(vetoFn: () => boolean | Promise<boolean>, id: string) {
         finalVetoFn = vetoFn;
@@ -253,8 +332,15 @@ export class TauriLifecycleService extends AbstractLifecycleService {
 	 *
 	 * @param reason - The shutdown reason propagated to event listeners.
 	 */
-  private async handleShutdown(reason: ShutdownReason): Promise<void> {
+  private async handleShutdown(reason: ShutdownReason, options?: { skipRustClose?: boolean; skipOverlay?: boolean }): Promise<void> {
     this.logService.info('[lifecycle] Proceeding with shutdown');
+
+    if (!options?.skipOverlay) {
+      const statusText = (reason === ShutdownReason.RELOAD || reason === ShutdownReason.LOAD)
+        ? localize('lifecycleReloading', "reloading...")
+        : localize('lifecycleShuttingDown', "shutting down...");
+      this.showShutdownOverlay(statusText);
+    }
 
     this._willShutdown = true;
     this.shutdownReason = reason;
@@ -314,48 +400,57 @@ export class TauriLifecycleService extends AbstractLifecycleService {
     // Fire final event
     this._onDidShutdown.fire();
 
-    // Tell Rust to save session, unregister, and destroy the window
-    this.logService.info('[lifecycle] Invoking lifecycle_close_confirmed');
-    try {
-      await invoke('lifecycle_close_confirmed');
-    } catch (error) {
-      this.logService.error('[lifecycle] Error invoking lifecycle_close_confirmed', error);
+    // Tell Rust to save session, unregister, and destroy the window.
+    // Skipped for expected shutdowns (e.g., reload) where the Tauri window
+    // stays alive and only the webview reloads.
+    if (!options?.skipRustClose) {
+      this.logService.info('[lifecycle] Invoking lifecycle_close_confirmed');
+      try {
+        await invoke('lifecycle_close_confirmed');
+      } catch (error) {
+        this.logService.error('[lifecycle] Error invoking lifecycle_close_confirmed', error);
+      }
     }
   }
 
   // --- Public API ---
 
   /**
-	 * Programmatic shutdown (e.g., from reload or workspace switch).
+	 * Initiates a programmatic shutdown without async veto support.
+		 *
+		 * Unlike the Rust close-requested path ({@link handleCloseRequested}),
+		 * this method skips `fireBeforeShutdown` entirely and proceeds directly
+		 * to the shutdown sequence. Used internally for workspace switches and
+		 * reload operations where the caller has already handled veto logic.
+		 *
+		 * Flushes storage before invoking {@link handleShutdown} to ensure
+		 * UI state is persisted.
 	 */
   async shutdown(): Promise<void> {
     this.logService.info('[lifecycle] Programmatic shutdown triggered');
-
-    // Dispose DOM listeners
-    this.beforeUnloadListener?.dispose();
-    this.beforeUnloadListener = undefined;
-    if (this.tauriCloseListener) {
-      this.tauriCloseListener();
-      this.tauriCloseListener = undefined;
-    }
 
     // Ensure UI state is persisted
     await this.storageService.flush(WillSaveStateReason.SHUTDOWN);
 
     // Fire shutdown events without veto support
+    // (handleShutdown also disposes DOM listeners)
     await this.handleShutdown(this.shutdownReason ?? ShutdownReason.QUIT);
   }
 
   /**
 	 * Compatibility with `BrowserHostService` which casts `ILifecycleService`
 	 * to `BrowserLifecycleService` and calls this method directly.
+	 *
+	 * For numeric reasons (RELOAD, LOAD, etc.), runs the full shutdown
+	 * lifecycle so that the backup tracker can persist unsaved changes
+	 * before the page is reloaded.
 	 */
   withExpectedShutdown(reason: ShutdownReason): Promise<void>;
   withExpectedShutdown(reason: { disableShutdownHandling: true }, callback: Function): void;
   withExpectedShutdown(reason: ShutdownReason | { disableShutdownHandling: true }, callback?: Function): Promise<void> | void {
     if (typeof reason === 'number') {
       this.shutdownReason = reason;
-      return this.storageService.flush(WillSaveStateReason.SHUTDOWN);
+      return this.performExpectedShutdown(reason);
     } else {
       this.ignoreBeforeUnload = true;
       try {
@@ -364,6 +459,31 @@ export class TauriLifecycleService extends AbstractLifecycleService {
         this.ignoreBeforeUnload = false;
       }
     }
+  }
+
+  /**
+	 * Runs the full shutdown lifecycle for expected shutdowns (reload, workspace switch).
+	 *
+	 * Unlike the Rust close-requested path, this does NOT invoke
+	 * `lifecycle_close_confirmed` because the Tauri window stays alive.
+	 * Only the webview reloads.
+	 *
+	 * Flow:
+	 * 1. {@link fireBeforeShutdown} — triggers backup tracker to create backups
+	 * 2. If vetoed, returns early (the subsequent `beforeunload` event will
+	 *    block the page reload since `_willShutdown` remains `false`).
+	 * 3. {@link handleShutdown} with `skipRustClose` — full shutdown sequence
+	 *    without destroying the Rust window.
+	 */
+  private async performExpectedShutdown(reason: ShutdownReason): Promise<void> {
+    const veto = await this.fireBeforeShutdown(reason);
+    if (veto) {
+      this.logService.info('[lifecycle] Expected shutdown was vetoed');
+      this._onShutdownVeto.fire();
+      return;
+    }
+
+    await this.handleShutdown(reason, { skipRustClose: true });
   }
 
   /**

@@ -22,6 +22,7 @@ import { IUserDataProfilesService } from '../../../../platform/userDataProfile/c
 import { IOpenEmptyWindowOptions, IOpenWindowOptions, IWindowOpenable, isFolderToOpen, isWorkspaceToOpen, IPoint, IRectangle } from '../../../../platform/window/common/window.js';
 import { invoke } from '../../../../platform/tauri/common/tauriApi.js';
 import { Schemas } from '../../../../base/common/network.js';
+import { mainWindow } from '../../../../base/browser/window.js';
 
 // NOTE: BrowserHostService's singleton registration is triggered by the named import above (line 6).
 // The last registration wins (Map.set semantics), so our Tauri service overrides the browser one.
@@ -36,6 +37,7 @@ import { Schemas } from '../../../../base/common/network.js';
  * - {@link toggleFullScreen}: uses native window fullscreen instead of the DOM Fullscreen API
  * - {@link moveTop}: brings the window to front via the native API
  * - {@link restart}: relaunches the entire application (not just a WebView reload)
+ * - {@link reload}: injects a splash overlay before reloading to avoid UI flicker
  * - {@link getCursorScreenPoint}: returns cursor position via native API for D&D positioning
  *
  * Registered as a delayed singleton so that it overrides the browser
@@ -95,6 +97,75 @@ export class TauriHostService extends BrowserHostService {
 	 */
   override async restart(): Promise<void> {
     return this.nativeHostService.relaunch();
+  }
+
+  /**
+	 * Reloads the window with an immediate splash overlay to prevent flicker.
+	 *
+	 * Injects a full-screen splash overlay (matching the startup splash style)
+	 * before delegating to the base implementation which calls
+	 * `mainWindow.location.reload()`. The overlay is destroyed along with
+	 * the rest of the DOM when the page reloads, so no cleanup is needed.
+	 */
+  override async reload(): Promise<void> {
+    this.injectReloadSplash();
+    await super.reload();
+  }
+
+  /**
+	 * Injects a full-screen splash overlay into the DOM.
+	 *
+	 * Matches the startup splash from `workbench-tauri.html` and the
+	 * shutdown overlay from `TauriLifecycleService`. Uses the active
+	 * theme background color for visual consistency.
+	 */
+  private injectReloadSplash(): void {
+    const doc = mainWindow.document;
+
+    const style = doc.createElement('style');
+    style.textContent = `
+      @keyframes reload-splash-spin {
+        to { transform: rotate(360deg); }
+      }
+    `;
+    doc.head.appendChild(style);
+
+    const bg = mainWindow.getComputedStyle(doc.body).getPropertyValue('--vscode-editor-background').trim() || '#1E1E1E';
+
+    const overlay = doc.createElement('div');
+    overlay.style.cssText = `
+      position: fixed; inset: 0; z-index: 99999;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background-color: ${bg}BF;
+      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    `;
+
+    const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', '120');
+    svg.setAttribute('height', '120');
+    svg.setAttribute('viewBox', '0 0 260 260');
+    svg.style.cssText = 'opacity: 0.4; margin-bottom: 24px; user-select: none; -webkit-user-select: none; pointer-events: none;';
+    const text = doc.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', '130');
+    text.setAttribute('y', '148');
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('font-family', 'SF Mono, Menlo, Consolas, Courier New, monospace');
+    text.setAttribute('font-size', '52');
+    text.setAttribute('font-weight', '600');
+    text.setAttribute('fill', '#808080');
+    text.textContent = '<eee/>';
+    svg.appendChild(text);
+
+    const spinner = doc.createElement('div');
+    spinner.style.cssText = `
+      width: 28px; height: 28px; border-radius: 50%;
+      border: 2px solid rgba(204, 204, 204, 0.2); border-top-color: #CCCCCC;
+      animation: reload-splash-spin 0.8s linear infinite;
+    `;
+
+    overlay.appendChild(svg);
+    overlay.appendChild(spinner);
+    doc.body.appendChild(overlay);
   }
 
   /**

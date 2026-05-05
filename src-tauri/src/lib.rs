@@ -3,37 +3,55 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-/// Tauri commands exposed to the WebView via `invoke()`
+/// Tauri commands exposed to the WebView via `invoke()`.
 mod commands;
 
 /// Shutdown coordination — ordered cleanup of child processes and threads.
+///
+/// Ensures that extension hosts, PTY instances, and file watchers are torn
+/// down in the correct sequence during application exit.
 mod shutdown;
 
-/// Custom protocol handlers for vscode-file:// etc.
+/// Custom protocol handlers for `vscode-file://` URIs.
+///
+/// Implements the same security model as Electron's `ProtocolMainService`:
+/// root validation, CORS, COOP/COEP, and MIME type resolution.
 mod protocol;
 
-/// IPC infrastructure — channel routing and event bus for VS Code's binary protocol.
+/// IPC infrastructure — channel routing and event bus for VS Code's binary IPC protocol.
+///
+/// Replaces Electron's `ipcMain` / `ipcRenderer` with a Tauri-native
+/// implementation supporting multiplexed named channels and event bus semantics.
 mod ipc;
 
-/// Window management — registry, event forwarding, and session persistence.
+/// Window management — centralized registry, event forwarding, and session persistence.
+///
+/// Manages multi-window lifecycle including creation, close negotiation,
+/// fullscreen state, and session-based window restoration.
 mod window;
 
 /// Extension Host sidecar management — spawn Node.js, communicate via named pipe.
+///
 /// TODO(Phase 1-2): Replace PoC direct handshake with WebSocket relay + TypeScript IExtensionHost impl
 mod exthost;
 
-/// Logging configuration — tauri-plugin-log with AI-agent-readable format.
+/// Logging configuration — `tauri-plugin-log` with structured, AI-agent-readable format.
 mod logging;
 
 /// System event monitoring — OS-level events (suspend, resume, lock, battery)
-/// forwarded to the WebView via Tauri's app.emit() mechanism.
+/// forwarded to the WebView via Tauri's `app.emit()` mechanism.
 mod system_events;
 
 /// PTY (pseudo-terminal) management — spawn shells, relay I/O to xterm.js via Tauri events.
-/// Phase 0-4: Uses portable-pty for direct Rust PTY management.
+///
+/// Phase 0-4: Uses `portable-pty` for direct Rust PTY management with
+/// persistent state storage for terminal sessions across restarts.
 mod pty;
 
-/// CLI argument handling for the `eee` command.
+/// CLI argument handling for the `eee` launcher command.
+///
+/// Public because it is shared with the single-instance plugin callback
+/// to route forwarded CLI arguments from a second process instance.
 pub mod cli;
 
 /// Build and run the Tauri application.
@@ -59,7 +77,7 @@ pub mod cli;
 ///    `FileWatcherState`, `ExtHostState`, `ShutdownCoordinator`, etc.) so they
 ///    are accessible from Tauri command handlers.
 /// 5. **Custom protocol** — Register the `vscode-file://` scheme for secure
-///    access to local files ([`protocol::handle_vscode_file_protocol`]).
+///    access to local files ([`protocol::handle_vscode_file_protocol_async`]).
 /// 6. **Command handlers** — Register all Tauri commands callable from the
 ///    WebView via `invoke()`.
 /// 7. **Setup closure** — Executed once before the event loop starts:
@@ -175,6 +193,9 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
     #[cfg(debug_assertions)]
     let builder = builder.plugin(tauri_plugin_mcp_bridge::init());
 
+    // Quit coordination — tracks whether a multi-window quit is in progress
+    let quit_state = Arc::new(window::quit_state::QuitState::new());
+
     builder
         .manage(pty::manager::PtyManager::new())
         .manage(commands::file_watcher::FileWatcherState::new())
@@ -183,28 +204,32 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
         .manage(Arc::clone(&window_manager))
         .manage(Arc::clone(&pending_closes))
         .manage(Arc::clone(&pending_shows))
+        .manage(Arc::clone(&quit_state))
         .manage(commands::updater::UpdaterState::default())
         .manage(shutdown::ShutdownCoordinator::new())
         .on_window_event(window::events::handle_window_event)
-        .register_uri_scheme_protocol("vscode-file", move |ctx, request| {
+        .register_asynchronous_uri_scheme_protocol("vscode-file", move |ctx, request, responder| {
             // On first call the state will have been initialized by setup().
             // If somehow called before setup (shouldn't happen), return 503.
             match state_for_handler.get() {
                 Some(state) => {
                     let handler =
-                        protocol::handle_vscode_file_protocol::<tauri::Wry>(Arc::clone(state));
-                    handler(ctx, request)
+                        protocol::handle_vscode_file_protocol_async::<tauri::Wry>(Arc::clone(state));
+                    handler(ctx, request, responder)
                 }
-                None => tauri::http::Response::builder()
-                    .status(503)
-                    .body(b"Protocol not yet initialized".to_vec())
-                    .unwrap(),
+                None => responder.respond(
+                    tauri::http::Response::builder()
+                        .status(503)
+                        .body(b"Protocol not yet initialized".to_vec())
+                        .unwrap(),
+                ),
             }
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_native_host_info,
             commands::get_window_configuration,
             commands::list_css_modules,
+            commands::cache_theme_colors,
             commands::get_product_json,
             commands::extensions::list_builtin_extensions,
             commands::ipc_channel::ipc_message,
@@ -221,6 +246,8 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
             commands::terminal::get_default_shell,
             commands::terminal::get_environment,
             commands::terminal::send_terminal_signal,
+            commands::terminal::acknowledge_terminal,
+            commands::terminal::get_flow_control_state,
             commands::terminal::list_terminals,
             commands::terminal::detect_shells,
             commands::terminal::persist_terminal_state,
@@ -278,6 +305,7 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
             commands::native_host::lifecycle_close_confirmed,
             commands::native_host::lifecycle_close_vetoed,
             commands::native_host::quit_app,
+            commands::native_host::quit_all_windows,
             commands::native_host::exit_app,
             commands::native_host::save_session,
             commands::native_host::relaunch_app,
@@ -450,6 +478,12 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
                 let chrome = window::chrome::WindowChromeConfig::for_platform();
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.set_decorations(chrome.decorations);
+                    // Show the window immediately so the user sees the splash
+                    // overlay (spinner + watermark) rendered by inline HTML/CSS.
+                    // hideSplash() in workbench-tauri.ts removes the overlay
+                    // after the workbench finishes loading.
+                    let _ = window.show();
+                    let _ = window.set_focus();
                 }
             }
 

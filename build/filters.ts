@@ -28,6 +28,7 @@ export const all = Object.freeze<string[]>([
 	'!test/**/out/**',
 	'!**/node_modules/**',
 	'!**/*.js.map',
+	'!**/*.log',
 ]);
 
 export const unicodeFilter = Object.freeze<string[]>([
@@ -109,7 +110,6 @@ export const indentationFilter = Object.freeze<string[]>([
 	'!src/vs/workbench/contrib/terminal/common/scripts/psreadline/**',
 
 	// except fork-specific sub-projects (use their own tsconfig with space indentation)
-	'!src/vs/code/tauri-browser/workbench/pty-poc/**',
 	'!src/vs/code/tauri-browser/workbench/console-interceptor/tsconfig.json',
 	// contains embedded python snippet with space indentation
 	'!src/vs/workbench/contrib/webview/browser/pre/index.html',
@@ -148,7 +148,7 @@ export const indentationFilter = Object.freeze<string[]>([
 	'!**/*.tiff',
 
 	// except for built files
-	'!extensions/mermaid-chat-features/chat-webview-out/*.js',
+	'!extensions/mermaid-chat-features/chat-webview-out/**',
 	'!extensions/markdown-language-features/media/*.js',
 	'!extensions/markdown-language-features/notebook-out/*.js',
 	'!extensions/markdown-math/notebook-out/*.js',
@@ -192,6 +192,7 @@ export const copyrightFilter = Object.freeze<string[]>([
 	'!extensions/markdown-math/notebook-out/**',
 	'!extensions/ipynb/notebook-out/**',
 	'!extensions/simple-browser/media/codicon.css',
+	'!extensions/mermaid-chat-features/chat-webview-out/**',
 	'!extensions/terminal-suggest/src/completions/upstream/**',
 	'!extensions/typescript-language-features/node-maintainer/**',
 	'!extensions/html-language-features/server/src/modes/typescript/*',

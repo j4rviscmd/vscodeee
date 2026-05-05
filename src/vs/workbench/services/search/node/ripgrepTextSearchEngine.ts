@@ -16,18 +16,35 @@ import { Progress } from '../../../../platform/progress/common/progress.js';
 import { DEFAULT_MAX_SEARCH_RESULTS, IExtendedExtensionSearchOptions, ITextSearchPreviewOptions, SearchError, SearchErrorCode, serializeSearchError, TextSearchMatch } from '../common/search.js';
 import { Range, TextSearchComplete2, TextSearchContext2, TextSearchMatch2, TextSearchProviderOptions, TextSearchQuery2, TextSearchResult2 } from '../common/searchExtTypes.js';
 import { AST as ReAST, RegExpParser, RegExpVisitor } from 'vscode-regexpp';
-import { rgPath } from '@vscode/ripgrep';
-import { anchorGlob, IOutputChannel, Maybe, rangeToSearchRange, searchRangeToRange } from './ripgrepSearchUtils.js';
+import { anchorGlob, ensureRgExecutable, IOutputChannel, Maybe, rangeToSearchRange, rgDiskPath, searchRangeToRange } from './ripgrepSearchUtils.js';
 import type { RipgrepTextSearchOptions } from '../common/searchExtTypesInternal.js';
 import { newToOldPreviewOptions } from '../common/searchExtConversionTypes.js';
 
-// If @vscode/ripgrep is in an .asar file, then the binary is unpacked.
-const rgDiskPath = rgPath.replace(/\bnode_modules\.asar\b/, 'node_modules.asar.unpacked');
-
+/**
+ * Text search engine backed by ripgrep. Spawns a ripgrep child process for each folder
+ * in the search scope and streams parsed results through the provided progress callback.
+ *
+ * Supports cancellation, result limits, surrounding context lines, PCRE2 mode,
+ * and both fixed-string and regex search patterns.
+ */
 export class RipgrepTextSearchEngine {
 
+	/**
+	 * @param outputChannel - Diagnostic output channel for logging ripgrep invocations.
+	 * @param _numThreads - Optional number of ripgrep worker threads.
+	 */
 	constructor(private outputChannel: IOutputChannel, private readonly _numThreads?: number | undefined) { }
 
+	/**
+	 * Performs a text search across all folder options by delegating to
+	 * {@link provideTextSearchResultsWithRgOptions} for each folder.
+	 *
+	 * @param query - The text search query (pattern, case sensitivity, etc.).
+	 * @param options - Provider-level options including folder list and result limits.
+	 * @param progress - Callback invoked for each search result.
+	 * @param token - Cancellation token to abort the search.
+	 * @returns A promise resolving to a {@link TextSearchComplete2} indicating whether the result limit was hit.
+	 */
 	provideTextSearchResults(query: TextSearchQuery2, options: TextSearchProviderOptions, progress: Progress<TextSearchResult2>, token: CancellationToken): Promise<TextSearchComplete2> {
 		return Promise.all(options.folderOptions.map(folderOption => {
 			const extendedOptions: RipgrepTextSearchOptions = {
@@ -48,6 +65,19 @@ export class RipgrepTextSearchEngine {
 		}));
 	}
 
+	/**
+	 * Performs a text search within a single folder using ripgrep.
+	 *
+	 * Spawns a ripgrep process in JSON output mode, pipes stdout through a
+	 * {@link RipgrepParser} to decode matches, and reports results via the progress callback.
+	 * Handles cancellation, result-limit detection, and ripgrep stderr error classification.
+	 *
+	 * @param query - The text search query.
+	 * @param options - Extended ripgrep-specific search options.
+	 * @param progress - Callback invoked for each search result.
+	 * @param token - Cancellation token to abort the search.
+	 * @returns A promise resolving to a {@link TextSearchComplete2} indicating whether the result limit was hit.
+	 */
 	provideTextSearchResultsWithRgOptions(query: TextSearchQuery2, options: RipgrepTextSearchOptions, progress: Progress<TextSearchResult2>, token: CancellationToken): Promise<TextSearchComplete2> {
 		this.outputChannel.appendLine(`provideTextSearchResults ${query.pattern}, ${JSON.stringify({
 			...options,
@@ -76,6 +106,7 @@ export class RipgrepTextSearchEngine {
 				.join(' ');
 			this.outputChannel.appendLine(`${rgDiskPath} ${escapedArgs}\n - cwd: ${cwd}`);
 
+			ensureRgExecutable();
 			let rgProc: Maybe<cp.ChildProcess> = cp.spawn(rgDiskPath, rgArgs, { cwd });
 			rgProc.on('error', e => {
 				console.error(e);
@@ -190,6 +221,15 @@ function rgErrorMsgForDisplay(msg: string): Maybe<SearchError> {
 	return undefined;
 }
 
+/**
+ * Builds a human-readable error message from ripgrep's PCRE2 regex parse error output.
+ *
+ * Extracts the specific PCRE2 error portion from stderr lines and formats it
+ * as a "Regex parse error: <detail>" message.
+ *
+ * @param lines - The stderr output lines from ripgrep.
+ * @returns A formatted error message string.
+ */
 function buildRegexParseError(lines: string[]): string {
 	const errorMessage: string[] = ['Regex parse error'];
 	const pcre2ErrorLine = lines.filter(l => (l.startsWith('PCRE2:')));
@@ -205,6 +245,12 @@ function buildRegexParseError(lines: string[]): string {
 }
 
 
+/**
+ * Streams ripgrep JSON output line-by-line and emits parsed {@link TextSearchResult2} events.
+ *
+ * Handles incremental decoding via {@link StringDecoder}, accumulates partial lines across
+ * data chunks, and enforces a maximum result count (emitting `'hitLimit'` when reached).
+ */
 export class RipgrepParser extends EventEmitter {
 	private remainder = '';
 	private isDone = false;
@@ -218,10 +264,12 @@ export class RipgrepParser extends EventEmitter {
 		this.stringDecoder = new StringDecoder();
 	}
 
+	/** Cancels the parser, preventing any further results from being emitted. */
 	cancel(): void {
 		this.isDone = true;
 	}
 
+	/** Flushes any remaining decoded data from the internal string decoder. */
 	flush(): void {
 		this.handleDecodedData(this.stringDecoder.end());
 	}
@@ -234,6 +282,11 @@ export class RipgrepParser extends EventEmitter {
 		return this;
 	}
 
+	/**
+	 * Feeds raw data (Buffer or string) into the parser for incremental decoding and line processing.
+	 *
+	 * @param data - The raw data chunk from ripgrep's stdout.
+	 */
 	handleData(data: Buffer | string): void {
 		if (this.isDone) {
 			return;
@@ -380,12 +433,27 @@ export class RipgrepParser extends EventEmitter {
 	}
 }
 
+/**
+ * Extracts the text content from a ripgrep JSON message field, which may be either
+ * a base64-encoded byte array (`{ bytes: string }`) or a plain text string (`{ text: string }`).
+ *
+ * @param obj - The ripgrep message field to decode.
+ * @returns The decoded string content.
+ */
 function bytesOrTextToString(obj: any): string {
 	return obj.bytes ?
 		Buffer.from(obj.bytes, 'base64').toString() :
 		obj.text;
 }
 
+/**
+ * Counts the number of newline characters in a string and the length of the trailing segment
+ * after the last newline. Used to compute line/column positions for search match ranges.
+ *
+ * @param text - The text to analyze.
+ * @returns An object with `numLines` (count of `\n` characters) and `lastLineLength`
+ *          (characters after the last `\n`, or the full string length if none).
+ */
 function getNumLinesAndLastNewlineLength(text: string): { numLines: number; lastLineLength: number } {
 	const re = /\n/g;
 	let numLines = 0;
@@ -403,7 +471,20 @@ function getNumLinesAndLastNewlineLength(text: string): { numLines: number; last
 	return { numLines, lastLineLength };
 }
 
-// exported for testing
+/**
+ * Builds the ripgrep command-line arguments for a text search.
+ *
+ * Handles include/exclude glob construction, pattern escaping (fixed-strings vs regex),
+ * PCRE2 mode, multiline mode, surrounding context, encoding, max file size,
+ * and special-case patterns like `--` and `\n` in regex.
+ *
+ * Exported for testing.
+ *
+ * @param query - The text search query. May be mutated (e.g., `isRegExp` set to true for
+ *                multiline non-regex patterns or the `--` sentinel).
+ * @param options - Extended ripgrep-specific search options.
+ * @returns The array of command-line arguments to pass to the ripgrep binary.
+ */
 export function getRgArgs(query: TextSearchQuery2, options: RipgrepTextSearchOptions): string[] {
 	const args = ['--hidden', '--no-require-git'];
 	args.push(query.isCaseSensitive ? '--case-sensitive' : '--ignore-case');
@@ -535,7 +616,13 @@ export function getRgArgs(query: TextSearchQuery2, options: RipgrepTextSearchOpt
 }
 
 /**
- * `"foo/*bar/something"` -> `["foo", "foo/*bar", "foo/*bar/something", "foo/*bar/something/**"]`
+ * Expands a glob pattern into all of its intermediate path components, with brace expansion applied first.
+ *
+ * For example, `"foo/*bar/something"` produces `["foo", "foo/*bar", "foo/*bar/something", "foo/*bar/something/**"]`.
+ * Brace expressions like `"src/{a,b}/c"` are expanded before spreading.
+ *
+ * @param globComponent - The glob pattern to expand.
+ * @returns An array of intermediate and final glob path components.
  */
 function spreadGlobComponents(globComponent: string): string[] {
 	const globComponentWithBraceExpansion = performBraceExpansionForRipgrep(globComponent);
@@ -547,6 +634,15 @@ function spreadGlobComponents(globComponent: string): string[] {
 
 }
 
+/**
+ * Converts JavaScript-style Unicode escape sequences (`\u1234` and `\u{1234}`) in a regex
+ * pattern to PCRE2-compatible hex escapes (`\x{1234}`).
+ *
+ * Handles escaped backslashes correctly so that `\\u1234` is not mistakenly converted.
+ *
+ * @param pattern - The regex pattern containing Unicode escape sequences.
+ * @returns The pattern with Unicode escapes converted to PCRE2 hex escapes.
+ */
 export function unicodeEscapesToPCRE2(pattern: string): string {
 	// Match \u1234
 	const unicodePattern = /((?:[^\\]|^)(?:\\\\)*)\\u([a-z0-9]{4})/gi;
@@ -565,11 +661,17 @@ export function unicodeEscapesToPCRE2(pattern: string): string {
 	return pattern;
 }
 
+/**
+ * Represents a single JSON message line emitted by ripgrep in `--json` mode.
+ */
 export interface IRgMessage {
 	type: 'match' | 'context' | string;
 	data: IRgMatch;
 }
 
+/**
+ * The data payload of a ripgrep JSON message for a 'match' or 'context' line.
+ */
 export interface IRgMatch {
 	path: IRgBytesOrText;
 	lines: IRgBytesOrText;
@@ -578,16 +680,38 @@ export interface IRgMatch {
 	submatches: IRgSubmatch[];
 }
 
+/**
+ * A single submatch within a ripgrep match line, representing one captured group
+ * (or the overall match) with byte offsets.
+ */
 export interface IRgSubmatch {
 	match: IRgBytesOrText;
 	start: number;
 	end: number;
 }
 
+/**
+ * A ripgrep JSON field that contains either base64-encoded bytes or a plain text string.
+ * Ripgrep uses base64-encoded bytes when the output contains non-UTF8 data.
+ */
 export type IRgBytesOrText = { bytes: string } | { text: string };
 
 const isLookBehind = (node: ReAST.Node) => node.type === 'Assertion' && node.kind === 'lookbehind';
 
+/**
+ * Transforms `\n` literals in a regex pattern to `\r?\n` so that the pattern matches
+ * both LF and CRLF line endings.
+ *
+ * Uses a full AST walk (via `vscode-regexpp`) to handle edge cases:
+ * - Inside lookbehinds, `\n` is left unchanged (PCRE2 limitation).
+ * - Inside negated character classes (`[^a-z\n]`), converts to a negative lookahead.
+ * - Inside positive character classes (`[a-z\n]`), converts to an alternation.
+ * - Inside quantified character classes, falls back to `.` or simplified negation.
+ *
+ * @param pattern - The regex pattern to transform.
+ * @returns The transformed pattern with `\n` expanded to `\r?\n`, or the original pattern
+ *          if it fails to parse.
+ */
 export function fixRegexNewline(pattern: string): string {
 	// we parse the pattern anew each tiem
 	let re: ReAST.Pattern;
@@ -673,6 +797,14 @@ export function fixRegexNewline(pattern: string): string {
 	return output;
 }
 
+/**
+ * Replaces literal newline characters in a pattern with `\r?\n` for CRLF compatibility.
+ * Unlike {@link fixRegexNewline}, this operates on raw string content rather than regex AST,
+ * and does not handle character class or lookbehind edge cases.
+ *
+ * @param pattern - The pattern string to transform.
+ * @returns The pattern with literal newlines replaced by `\r?\n`.
+ */
 export function fixNewline(pattern: string): string {
 	return pattern.replace(/\n/g, '\\r?\\n');
 }

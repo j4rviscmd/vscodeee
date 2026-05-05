@@ -38,12 +38,10 @@ use roots::ValidRoots;
 /// Shared protocol state, managed as Tauri app state.
 ///
 /// Wrapped in `Arc` so it can be cheaply cloned into the protocol handler
-/// closure registered with `register_uri_scheme_protocol`.
+/// closure registered with `register_asynchronous_uri_scheme_protocol`.
 pub struct ProtocolState {
     /// The set of valid file system roots and allowed extensions.
     pub roots: ValidRoots,
-    /// Whether this is a development (non-built) build — affects caching headers.
-    pub is_dev: bool,
 }
 
 /// Initialize [`ProtocolState`] with the standard VS Code root directories.
@@ -96,38 +94,51 @@ pub fn init_protocol_state(app: &tauri::App) -> Arc<ProtocolState> {
         roots.add_root(&extensions_dir);
     }
 
-    // Detect dev build: if Tauri was invoked via `cargo tauri dev`, the
-    // TAURI_DEV environment variable is set.
-    let is_dev = cfg!(debug_assertions);
-
-    let state = Arc::new(ProtocolState { roots, is_dev });
+    let state = Arc::new(ProtocolState { roots });
 
     log::info!(
         target: "vscodeee::protocol",
         "Initialized with {} root(s), dev={}",
         state.roots.root_count(),
-        state.is_dev
+        cfg!(debug_assertions)
     );
 
     state
 }
 
-/// Handle a `vscode-file://vscode-app/<path>` request.
+/// Handle a `vscode-file://vscode-app/<path>` request synchronously.
 ///
-/// This is the main entry point registered with Tauri's
-/// `register_uri_scheme_protocol`. It:
+/// Kept for reference / tests. Use [`handle_vscode_file_protocol_async`]
+/// in production to avoid blocking the main thread.
+#[cfg(test)]
+fn handle_vscode_file_protocol_sync(
+    state: &ProtocolState,
+    raw_uri: &str,
+    request_origin: Option<&str>,
+    _app_handle: &tauri::AppHandle,
+) -> Response<Vec<u8>> {
+    match serve_file(state, raw_uri, request_origin) {
+        Ok(response) => response,
+        Err(ProtocolError::NotFound(_)) => error_response(404, b"Not Found", request_origin),
+        Err(e) => {
+            log::error!(target: "vscodeee::protocol", "{e}");
+            error_response(e.status_code(), e.reason().as_bytes(), request_origin)
+        }
+    }
+}
+
+/// Async variant of the protocol handler for `register_asynchronous_uri_scheme_protocol`.
 ///
-/// 1. Parses and canonicalizes the URI.
-/// 2. Validates the path against registered roots + extension whitelist.
-/// 3. Reads the file and returns it with appropriate security headers.
-/// 4. If the file is not found on disk, falls back to Tauri's embedded
-///    asset resolver (for production builds where `frontendDist` assets
-///    are bundled into the binary).
-pub fn handle_vscode_file_protocol<R: tauri::Runtime>(
+/// Spawns a thread for each request so the main thread is never blocked by
+/// file I/O. The synchronous handler saturated the main thread when the
+/// workbench loaded hundreds of modules, freezing the WebView.
+pub fn handle_vscode_file_protocol_async<R: tauri::Runtime>(
     state: Arc<ProtocolState>,
-) -> impl Fn(UriSchemeContext<'_, R>, Request<Vec<u8>>) -> Response<Vec<u8>> + Send + Sync + 'static
+) -> impl Fn(UriSchemeContext<'_, R>, Request<Vec<u8>>, tauri::UriSchemeResponder) + Send + Sync + 'static
 {
-    move |ctx: UriSchemeContext<'_, R>, request: Request<Vec<u8>>| {
+    move |ctx: UriSchemeContext<'_, R>,
+          request: Request<Vec<u8>>,
+          responder: tauri::UriSchemeResponder| {
         let raw_uri = request.uri().to_string();
         let request_origin = request
             .headers()
@@ -135,46 +146,63 @@ pub fn handle_vscode_file_protocol<R: tauri::Runtime>(
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_string());
 
-        match serve_file(&state, &raw_uri, request_origin.as_deref()) {
-            Ok(response) => response,
-            Err(ProtocolError::NotFound(_)) => {
-                // File not found on disk — try embedded asset fallback.
-                // In production builds, frontendDist assets are embedded in the
-                // binary and not available on the filesystem.
-                log::debug!(
-                    target: "vscodeee::protocol",
-                    "File not found on disk, trying embedded asset: {raw_uri}"
-                );
-                match serve_embedded_asset(
-                    ctx.app_handle(),
-                    &raw_uri,
-                    request_origin.as_deref(),
-                    state.is_dev,
-                ) {
-                    Ok(response) => response,
-                    Err(fallback_err) => {
-                        log::warn!(
-                            target: "vscodeee::protocol",
-                            "Embedded asset fallback also failed: {fallback_err}"
-                        );
-                        error_response(
-                            fallback_err.status_code(),
-                            fallback_err.reason().as_bytes(),
-                            request_origin.as_deref(),
-                        )
+        // Fast-path: serve from disk on a background thread.
+        let state_clone = Arc::clone(&state);
+        let app_handle = ctx.app_handle().clone();
+        std::thread::spawn(move || {
+            let response = match serve_file(&state_clone, &raw_uri, request_origin.as_deref()) {
+                Ok(response) => response,
+                Err(ProtocolError::NotFound(_)) => {
+                    log::debug!(
+                        target: "vscodeee::protocol",
+                        "File not found on disk, trying embedded asset: {raw_uri}"
+                    );
+                    match serve_embedded_asset(&app_handle, &raw_uri, request_origin.as_deref()) {
+                        Ok(response) => response,
+                        Err(fallback_err) => {
+                            log::warn!(
+                                target: "vscodeee::protocol",
+                                "Embedded asset fallback also failed: {fallback_err}"
+                            );
+                            error_response(
+                                fallback_err.status_code(),
+                                fallback_err.reason().as_bytes(),
+                                request_origin.as_deref(),
+                            )
+                        }
                     }
                 }
-            }
-            Err(e) => {
-                log::error!(target: "vscodeee::protocol", "{e}");
-                error_response(
-                    e.status_code(),
-                    e.reason().as_bytes(),
-                    request_origin.as_deref(),
-                )
-            }
-        }
+                Err(e) => {
+                    log::error!(target: "vscodeee::protocol", "{e}");
+                    error_response(
+                        e.status_code(),
+                        e.reason().as_bytes(),
+                        request_origin.as_deref(),
+                    )
+                }
+            };
+            responder.respond(response);
+        });
     }
+}
+
+/// Build a 200 OK response with the given MIME type, security headers, and body.
+fn build_ok_response(
+    mime_type: &str,
+    security_headers: &[headers::Header],
+    body: Vec<u8>,
+) -> Result<Response<Vec<u8>>, ProtocolError> {
+    let mut builder = Response::builder()
+        .status(200)
+        .header("Content-Type", mime_type);
+
+    for (key, value) in security_headers {
+        builder = builder.header(key.as_str(), value.as_str());
+    }
+
+    builder
+        .body(body)
+        .map_err(|e| ProtocolError::Internal(format!("failed to build response: {e}")))
 }
 
 /// Internal file-serving logic, separated for testability.
@@ -205,20 +233,10 @@ fn serve_file(
 
     // 4. Compute headers (pass request origin for dynamic CORS)
     let mime_type = mime::mime_from_path(&canonical_path);
-    let security_headers = headers::headers_for_path(&canonical_path, state.is_dev, request_origin);
+    let security_headers = headers::headers_for_path(&canonical_path, request_origin);
 
     // 5. Build response
-    let mut builder = Response::builder()
-        .status(200)
-        .header("Content-Type", mime_type);
-
-    for (key, value) in &security_headers {
-        builder = builder.header(key.as_str(), value.as_str());
-    }
-
-    builder
-        .body(content)
-        .map_err(|e| ProtocolError::Internal(format!("failed to build response: {e}")))
+    build_ok_response(mime_type, &security_headers, content)
 }
 
 /// Extract the Tauri embedded asset key from a decoded URI path.
@@ -254,7 +272,6 @@ fn serve_embedded_asset<R: tauri::Runtime>(
     app_handle: &tauri::AppHandle<R>,
     raw_uri: &str,
     request_origin: Option<&str>,
-    is_dev: bool,
 ) -> Result<Response<Vec<u8>>, ProtocolError> {
     // 1. Parse URI without filesystem canonicalization
     let decoded_path = uri::parse_vscode_file_uri_raw(raw_uri)?;
@@ -282,19 +299,9 @@ fn serve_embedded_asset<R: tauri::Runtime>(
     // Use a synthetic path for header computation so COOP/COEP etc. are applied correctly
     let path = std::path::PathBuf::from(asset_key);
     let mime_type = mime::mime_from_path(&path);
-    let security_headers = headers::headers_for_path(&path, is_dev, request_origin);
+    let security_headers = headers::headers_for_path(&path, request_origin);
 
-    let mut builder = Response::builder()
-        .status(200)
-        .header("Content-Type", mime_type);
-
-    for (key, value) in &security_headers {
-        builder = builder.header(key.as_str(), value.as_str());
-    }
-
-    builder
-        .body(asset.bytes().to_vec())
-        .map_err(|e| ProtocolError::Internal(format!("failed to build response: {e}")))
+    build_ok_response(mime_type, &security_headers, asset.bytes().to_vec())
 }
 
 /// Build a minimal error response with CORS headers.
@@ -302,14 +309,7 @@ fn serve_embedded_asset<R: tauri::Runtime>(
 /// CORS headers are required even on error responses, otherwise WKWebView's
 /// fetch() will report "Load failed" instead of the actual status code.
 fn error_response(status: u16, body: &[u8], request_origin: Option<&str>) -> Response<Vec<u8>> {
-    // Use the same CORS origin resolution as success responses
-    let dummy_path = std::path::PathBuf::from("error");
-    let cors_headers = headers::headers_for_path(&dummy_path, false, request_origin);
-    let cors_origin = cors_headers
-        .iter()
-        .find(|(k, _)| k == "Access-Control-Allow-Origin")
-        .map(|(_, v)| v.as_str())
-        .unwrap_or("tauri://localhost");
+    let cors_origin = headers::resolve_cors_origin(request_origin);
 
     Response::builder()
         .status(status)
@@ -332,10 +332,7 @@ mod tests {
     fn test_state_with_root(root: &std::path::Path) -> ProtocolState {
         let roots = ValidRoots::new();
         roots.add_root(root);
-        ProtocolState {
-            roots,
-            is_dev: true,
-        }
+        ProtocolState { roots }
     }
 
     #[test]

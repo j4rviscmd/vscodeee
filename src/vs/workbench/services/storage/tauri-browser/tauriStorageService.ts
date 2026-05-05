@@ -11,6 +11,7 @@ import { ILogService } from '../../../../platform/log/common/log.js';
 import { isUserDataProfile, IUserDataProfile } from '../../../../platform/userDataProfile/common/userDataProfile.js';
 import { IAnyWorkspaceIdentifier } from '../../../../platform/workspace/common/workspace.js';
 import { IUserDataProfileService } from '../../userDataProfile/common/userDataProfile.js';
+import { getActiveWindow } from '../../../../base/browser/dom.js';
 import { TauriFileStorageDatabase } from './fileStorageDatabase.js';
 import { IBrowserWorkbenchEnvironmentService } from '../../environment/browser/environmentService.js';
 
@@ -179,7 +180,7 @@ export class TauriStorageService extends AbstractStorageService {
   }
 
   protected override shouldFlushWhenIdle(): boolean {
-    return true;
+    return getActiveWindow().document.hasFocus();
   }
 
   /**

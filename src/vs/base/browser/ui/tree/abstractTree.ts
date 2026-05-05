@@ -886,6 +886,34 @@ class FindWidget<T, TFilterData> extends Disposable {
 
 		this.actionbar = this._register(new ActionBar(this.elements.actionbar));
 
+		// Local IME composition tracking for this input element.
+		// WKWebView/Tauri has unreliable composition event bubbling to window,
+		// so we track directly on the element for maximum reliability.
+		let localComposing = false;
+		const inputElement = this.findInput.inputBox.inputElement;
+		this._register(addDisposableListener(inputElement, 'compositionstart', () => {
+			localComposing = true;
+		}));
+		this._register(addDisposableListener(inputElement, 'compositionend', () => {
+			// Keep localComposing true for a grace period to catch the Enter keydown
+			// that may fire after compositionend in WKWebView
+			setTimeout(() => { localComposing = false; }, 100);
+		}));
+
+		// Direct native keydown listener to intercept Enter during IME composition
+		// BEFORE any Event.chain/DomEmitter processing. This is the most reliable
+		// guard because it checks the raw native event directly.
+		this._register(addDisposableListener(inputElement, 'keydown', (e: KeyboardEvent) => {
+			if (e.key === 'Enter' || e.keyCode === 13) {
+				if (localComposing || e.isComposing || this.findInput.isImeSessionInProgress || StandardKeyboardEvent.isComposingActive || StandardKeyboardEvent.recentlyComposed) {
+					e.preventDefault();
+					e.stopPropagation();
+					e.stopImmediatePropagation();
+					return;
+				}
+			}
+		}));
+
 		const emitter = this._register(new DomEmitter(this.findInput.inputBox.inputElement, 'keydown'));
 		const onKeyDown = Event.chain(emitter.event, $ => $.map(e => new StandardKeyboardEvent(e)));
 

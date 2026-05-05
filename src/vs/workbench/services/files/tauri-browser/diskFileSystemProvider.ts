@@ -280,8 +280,9 @@ export class TauriDiskFileSystemProvider extends AbstractDiskFileSystemProvider 
   }
 
   /**
-	 * Closes the file descriptor. If it was opened for writing and has pending
-	 * changes, the buffer is flushed to disk.
+	 * Closes the file descriptor. Always flushes write-mode handles to
+	 * ensure the file content on disk matches the handle buffer, including
+	 * empty content (file truncation).
 	 */
   async close(fd: number): Promise<void> {
     const handle = this.openFiles.get(fd);
@@ -293,7 +294,7 @@ export class TauriDiskFileSystemProvider extends AbstractDiskFileSystemProvider 
     }
 
     try {
-      if (handle.isWrite && handle.dirty) {
+      if (handle.isWrite) {
         await this.writeFile(handle.resource, handle.data, {
           create: true,
           overwrite: true,

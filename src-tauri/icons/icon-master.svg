@@ -1,8 +1,23 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
-  <!-- Background: VS Code dark theme color -->
-  <rect width="1024" height="1024" fill="#1E1E2E"/>
-  <!-- <eee/> text centered -->
-  <text x="512" y="582" text-anchor="middle"
-    font-family="'SF Mono', 'Menlo', 'Consolas', 'Courier New', monospace"
-    font-size="250" font-weight="700" fill="white">&lt;eee/&gt;</text>
+  <!-- macOS-style squircle clip path (approximated with cubic bezier) -->
+  <defs>
+    <clipPath id="squircle">
+      <path d="M 512 0
+        C 774 0, 896 0, 960 64
+        C 1024 128, 1024 250, 1024 512
+        C 1024 774, 1024 896, 960 960
+        C 896 1024, 774 1024, 512 1024
+        C 250 1024, 128 1024, 64 960
+        C 0 896, 0 774, 0 512
+        C 0 250, 0 128, 64 64
+        C 128 0, 250 0, 512 0 Z"/>
+    </clipPath>
+  </defs>
+  <!-- Clipped background + text with transparent corners -->
+  <g clip-path="url(#squircle)">
+    <rect width="1024" height="1024" fill="#1E1E2E"/>
+    <text x="512" y="582" text-anchor="middle"
+      font-family="'SF Mono', 'Menlo', 'Consolas', 'Courier New', monospace"
+      font-size="250" font-weight="700" fill="white">&lt;eee/&gt;</text>
+  </g>
 </svg>

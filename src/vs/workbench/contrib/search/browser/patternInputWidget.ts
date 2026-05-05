@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as dom from '../../../../base/browser/dom.js';
-import { IKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
+import { IKeyboardEvent, StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
 import { Toggle } from '../../../../base/browser/ui/toggle/toggle.js';
 import { IContextViewProvider } from '../../../../base/browser/ui/contextview/contextview.js';
 import { HistoryInputBox, IInputBoxStyles } from '../../../../base/browser/ui/inputbox/inputBox.js';
@@ -158,6 +158,26 @@ export class PatternInputWidget extends Widget {
 		this.inputFocusTracker = dom.trackFocus(this.inputBox.inputElement);
 		this.onkeyup(this.inputBox.inputElement, (keyboardEvent) => this.onInputKeyUp(keyboardEvent));
 
+		// Native keyup IME guard - intercepts Enter during composition before
+		// the Widget.onkeyup handler can process it. Required because global
+		// composition tracking via window-level events is unreliable in WKWebView/Tauri.
+		let localComposing = false;
+		this._register(dom.addDisposableListener(this.inputBox.inputElement, 'compositionstart', () => {
+			localComposing = true;
+		}));
+		this._register(dom.addDisposableListener(this.inputBox.inputElement, 'compositionend', () => {
+			setTimeout(() => { localComposing = false; }, 100);
+		}));
+		this._register(dom.addDisposableListener(this.inputBox.inputElement, 'keyup', (e: KeyboardEvent) => {
+			if (e.key === 'Enter' || e.keyCode === 13) {
+				if (localComposing || e.isComposing || StandardKeyboardEvent.isComposingActive || StandardKeyboardEvent.recentlyComposed) {
+					e.preventDefault();
+					e.stopPropagation();
+					e.stopImmediatePropagation();
+				}
+			}
+		}));
+
 		const controls = document.createElement('div');
 		controls.className = 'controls';
 		this.renderSubcontrols(controls);
@@ -172,6 +192,10 @@ export class PatternInputWidget extends Widget {
 	private onInputKeyUp(keyboardEvent: IKeyboardEvent) {
 		switch (keyboardEvent.keyCode) {
 			case KeyCode.Enter:
+				// Skip during IME composition (e.g. Japanese input confirming with Enter)
+				if (keyboardEvent.isComposing || StandardKeyboardEvent.isComposingActive || StandardKeyboardEvent.recentlyComposed) {
+					return;
+				}
 				this.onSearchSubmit();
 				this._onSubmit.fire(false);
 				return;

@@ -18,38 +18,42 @@ use tokio::sync::oneshot;
 
 use super::manager::WindowManager;
 
-/// Tracks pending close handshakes so that a safety-net timeout can be
-/// cancelled when the TypeScript layer confirms or vetoes the close.
+/// Generic tracker for pending one-shot handshakes (close or ready-to-show).
 ///
 /// Each window label maps to a [`oneshot::Sender`] that, when dropped or
 /// sent, cancels the corresponding timeout task.
-pub struct PendingCloses {
+struct PendingTracker {
     inner: Mutex<HashMap<String, oneshot::Sender<()>>>,
 }
 
-impl PendingCloses {
-    /// Creates a new empty `PendingCloses` tracker.
-    pub fn new() -> Self {
+impl PendingTracker {
+    /// Creates a new empty `PendingTracker`.
+    fn new() -> Self {
         Self {
             inner: Mutex::new(HashMap::new()),
         }
     }
 
-    /// Register a pending close for the given window label.
+    /// Register a pending handshake for the given window label.
+    ///
+    /// If a previous entry already exists for this label (e.g., the user
+    /// clicks close twice quickly), the old sender is dropped which
+    /// automatically cancels the old timeout.
+    ///
     /// Returns the receiver that the timeout task should await.
-    pub fn register(&self, label: &str) -> oneshot::Receiver<()> {
+    fn register(&self, label: &str) -> oneshot::Receiver<()> {
         let (tx, rx) = oneshot::channel();
         let mut map = self.inner.lock().unwrap();
-        // If a previous pending close exists for this label (unlikely but
+        // If a previous pending entry exists for this label (unlikely but
         // possible if the user clicks close twice quickly), the old sender
         // is dropped which cancels the old timeout.
         map.insert(label.to_string(), tx);
         rx
     }
 
-    /// Cancel a pending close for the given window label.
-    /// Returns `true` if a pending close was found and cancelled.
-    pub fn cancel(&self, label: &str) -> bool {
+    /// Cancel a pending handshake for the given window label.
+    /// Returns `true` if a pending entry was found and cancelled.
+    fn cancel(&self, label: &str) -> bool {
         let mut map = self.inner.lock().unwrap();
         if let Some(tx) = map.remove(label) {
             let _ = tx.send(());
@@ -57,6 +61,41 @@ impl PendingCloses {
         } else {
             false
         }
+    }
+}
+
+/// Tracks pending close handshakes so that a safety-net timeout can be
+/// cancelled when the TypeScript layer confirms or vetoes the close.
+pub struct PendingCloses(PendingTracker);
+
+impl PendingCloses {
+    /// Creates a new empty `PendingCloses` tracker.
+    ///
+    /// Each registered window maps to a [`oneshot::Sender`] that, when
+    /// dropped or sent, cancels the corresponding safety-net timeout task.
+    pub fn new() -> Self {
+        Self(PendingTracker::new())
+    }
+
+    /// Register a pending close handshake for the given window label.
+    ///
+    /// Returns the [`oneshot::Receiver`] that the safety-net timeout task
+    /// should await. If the TypeScript layer calls `lifecycle_close_confirmed`
+    /// or `lifecycle_close_vetoed` before the timeout fires, the receiver
+    /// resolves and the timeout is cancelled.
+    pub fn register(&self, label: &str) -> oneshot::Receiver<()> {
+        self.0.register(label)
+    }
+
+    /// Cancel a pending close handshake for the given window label.
+    ///
+    /// Called when the TypeScript layer invokes `lifecycle_close_confirmed`
+    /// or `lifecycle_close_vetoed`, signalling that the window has responded
+    /// and the safety-net timeout should not force-destroy it.
+    ///
+    /// Returns `true` if a pending entry was found and cancelled.
+    pub fn cancel(&self, label: &str) -> bool {
+        self.0.cancel(label)
     }
 }
 
@@ -74,39 +113,30 @@ const SHOW_TIMEOUT: Duration = Duration::from_secs(30);
 /// Each window starts hidden (`visible: false`). When the TypeScript workbench
 /// calls `notify_ready`, the pending show is cancelled. If TS never responds
 /// (crash/hang), the safety-net timeout shows the window anyway.
-pub struct PendingShows {
-    inner: Mutex<HashMap<String, oneshot::Sender<()>>>,
-}
+pub struct PendingShows(PendingTracker);
 
 impl PendingShows {
     /// Creates a new empty `PendingShows` tracker.
+    ///
+    /// Each registered window maps to a [`oneshot::Sender`] that, when
+    /// dropped or sent, cancels the corresponding safety-net timeout task.
     pub fn new() -> Self {
-        Self {
-            inner: Mutex::new(HashMap::new()),
-        }
+        Self(PendingTracker::new())
     }
 
-    /// Register a pending show for the given window label.
-    /// Returns the receiver that the safety timeout task should await.
+    /// Register a pending show handshake for the given window label.
+    ///
+    /// Returns the [`oneshot::Receiver`] that the safety-net timeout task
+    /// should await. If the TypeScript layer calls `notify_ready` before the
+    /// timeout fires, the receiver resolves and the timeout is cancelled.
     pub fn register(&self, label: &str) -> oneshot::Receiver<()> {
-        let (tx, rx) = oneshot::channel();
-        let mut map = self.inner.lock().unwrap();
-        // If a previous pending show exists for this label, the old sender
-        // is dropped which cancels the old timeout.
-        map.insert(label.to_string(), tx);
-        rx
+        self.0.register(label)
     }
 
     /// Cancel a pending show for the given window label.
     /// Called when the TypeScript layer invokes `notify_ready`.
     pub fn cancel(&self, label: &str) -> bool {
-        let mut map = self.inner.lock().unwrap();
-        if let Some(tx) = map.remove(label) {
-            let _ = tx.send(());
-            true
-        } else {
-            false
-        }
+        self.0.cancel(label)
     }
 
     /// Spawn a safety timeout task for the given window.
@@ -165,10 +195,16 @@ struct FullscreenPayload {
 /// Includes the window label so each TypeScript window can filter
 /// events not intended for it (Tauri 2's `listen` delivers to all
 /// windows by default).
+///
+/// The `reason` field distinguishes between a single-window close ("close")
+/// and an application-wide quit ("quit") so the TypeScript lifecycle service
+/// can use the correct `ShutdownReason`.
 #[derive(Clone, serde::Serialize)]
 struct CloseRequestedPayload {
     window_id: u32,
     label: String,
+    /// "close" for individual window close, "quit" for application quit.
+    reason: String,
 }
 
 /// Event name constants emitted to the WebView.
@@ -207,6 +243,11 @@ pub mod event_names {
 
 /// Emit a state-change event to both the specific window and globally when a
 /// boolean property transitions between `current` and `previous`.
+///
+/// When the property changes from `false` to `true`, `enter_event` is emitted
+/// to both the target window and globally. When it changes from `true` to
+/// `false`, `leave_event` is emitted instead. No event is emitted if the
+/// state has not changed.
 fn emit_state_change(
     handle: &tauri::AppHandle,
     label: &str,
@@ -267,13 +308,24 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
 
             let wm = handle.state::<Arc<WindowManager>>();
             let wm = wm.inner().clone();
-            let pending = handle.state::<Arc<PendingCloses>>();
-            let pending = pending.inner().clone();
+            let pending_closes = handle.state::<Arc<PendingCloses>>();
+            let pending_closes = pending_closes.inner().clone();
             let label_c = label.clone();
             let handle_c = handle.clone();
 
+            // Check if a coordinated quit is in progress to set the correct reason.
+            let reason = if handle
+                .try_state::<Arc<super::quit_state::QuitState>>()
+                .is_some_and(|qs| qs.is_active())
+            {
+                "quit"
+            } else {
+                "close"
+            }
+            .to_string();
+
             // Register a cancel channel for the safety-net timeout.
-            let cancel_rx = pending.register(&label_c);
+            let cancel_rx = pending_closes.register(&label_c);
 
             tauri::async_runtime::spawn(async move {
                 if let Some(id) = wm.id_for_label(&label_c).await {
@@ -285,6 +337,7 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
                         CloseRequestedPayload {
                             window_id: id,
                             label: label_c.clone(),
+                            reason,
                         },
                     );
                 } else {
@@ -314,6 +367,22 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
                         wm.unregister(&label_c).await;
                         if let Some(w) = handle_c.get_webview_window(&label_c) {
                             let _ = w.destroy();
+                        }
+
+                        // If quit is in progress and this was the last window, exit the app.
+                        if let Some(quit_state) =
+                            handle_c.try_state::<std::sync::Arc<super::quit_state::QuitState>>()
+                        {
+                            if quit_state.is_active() && wm.count().await == 0 {
+                                log::info!(target: "vscodeee::lifecycle", "Last window force-destroyed during quit — exiting application");
+                                quit_state.cancel();
+                                if let Some(coordinator) =
+                                    handle_c.try_state::<std::sync::Arc<crate::shutdown::ShutdownCoordinator>>()
+                                {
+                                    coordinator.shutdown_all();
+                                }
+                                handle_c.exit(0);
+                            }
                         }
                     }
                 }

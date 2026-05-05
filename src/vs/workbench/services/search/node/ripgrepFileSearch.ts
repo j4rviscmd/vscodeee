@@ -11,15 +11,23 @@ import * as extpath from '../../../../base/common/extpath.js';
 import { isMacintosh as isMac } from '../../../../base/common/platform.js';
 import * as strings from '../../../../base/common/strings.js';
 import { IFileQuery, IFolderQuery } from '../common/search.js';
-import { anchorGlob } from './ripgrepSearchUtils.js';
-import { rgPath } from '@vscode/ripgrep';
+import { anchorGlob, ensureRgExecutable, rgDiskPath } from './ripgrepSearchUtils.js';
 
-// If @vscode/ripgrep is in an .asar file, then the binary is unpacked.
-const rgDiskPath = rgPath.replace(/\bnode_modules\.asar\b/, 'node_modules.asar.unpacked');
-
+/**
+ * Spawns a ripgrep child process configured for file search (not text search).
+ *
+ * @param config - The file search query configuration.
+ * @param folderQuery - The root folder to search within.
+ * @param includePattern - Optional glob patterns to include (merged with folder-level includes).
+ * @param excludePattern - Optional glob patterns to exclude (merged with folder-level excludes).
+ * @param numThreads - Optional number of ripgrep threads.
+ * @returns An object containing the spawned child process, the rg disk path, sibling clauses,
+ *          the constructed argument list, and the working directory.
+ */
 export function spawnRipgrepCmd(config: IFileQuery, folderQuery: IFolderQuery, includePattern?: glob.IExpression, excludePattern?: glob.IExpression, numThreads?: number) {
 	const rgArgs = getRgArgs(config, folderQuery, includePattern, excludePattern, numThreads);
 	const cwd = folderQuery.folder.fsPath;
+	ensureRgExecutable();
 	return {
 		cmd: cp.spawn(rgDiskPath, rgArgs.args, { cwd }),
 		rgDiskPath,
@@ -29,6 +37,16 @@ export function spawnRipgrepCmd(config: IFileQuery, folderQuery: IFolderQuery, i
 	};
 }
 
+/**
+ * Builds the ripgrep command-line arguments for a file search.
+ *
+ * @param config - The file search query configuration.
+ * @param folderQuery - The root folder to search within.
+ * @param includePattern - Optional glob patterns to include.
+ * @param excludePattern - Optional glob patterns to exclude.
+ * @param numThreads - Optional number of ripgrep threads.
+ * @returns The argument array and any sibling clauses derived from the exclude patterns.
+ */
 function getRgArgs(config: IFileQuery, folderQuery: IFolderQuery, includePattern?: glob.IExpression, excludePattern?: glob.IExpression, numThreads?: number) {
 	const args = ['--files', '--hidden', '--case-sensitive', '--no-require-git'];
 
@@ -91,11 +109,23 @@ function getRgArgs(config: IFileQuery, folderQuery: IFolderQuery, includePattern
 	};
 }
 
+/**
+ * Result of converting glob expressions to ripgrep-compatible glob arguments.
+ */
 interface IRgGlobResult {
 	globArgs: string[];
 	siblingClauses: glob.IExpression;
 }
 
+/**
+ * Converts folder-level and global exclude patterns into ripgrep glob arguments.
+ *
+ * @param folderQueries - The folder queries whose exclude patterns to merge.
+ * @param globalExclude - Additional global exclude patterns.
+ * @param excludesToSkip - A set of pattern keys to skip during conversion.
+ * @param absoluteGlobs - Whether to produce absolute glob paths.
+ * @returns The ripgrep glob arguments and any sibling clauses extracted from the patterns.
+ */
 function foldersToRgExcludeGlobs(folderQueries: IFolderQuery[], globalExclude?: glob.IExpression, excludesToSkip?: Set<string>, absoluteGlobs = true): IRgGlobResult {
 	const globArgs: string[] = [];
 	let siblingClauses: glob.IExpression = {};
@@ -111,6 +141,14 @@ function foldersToRgExcludeGlobs(folderQueries: IFolderQuery[], globalExclude?: 
 	return { globArgs, siblingClauses };
 }
 
+/**
+ * Converts folder-level and global include patterns into ripgrep glob arguments.
+ *
+ * @param folderQueries - The folder queries whose include patterns to merge.
+ * @param globalInclude - Additional global include patterns.
+ * @param absoluteGlobs - Whether to produce absolute glob paths.
+ * @returns The ripgrep include glob argument strings.
+ */
 function foldersToIncludeGlobs(folderQueries: IFolderQuery[], globalInclude?: glob.IExpression, absoluteGlobs = true): string[] {
 	const globArgs: string[] = [];
 	folderQueries.forEach(folderQuery => {
@@ -122,6 +160,18 @@ function foldersToIncludeGlobs(folderQueries: IFolderQuery[], globalInclude?: gl
 	return globArgs;
 }
 
+/**
+ * Converts a glob expression object (key-value map of patterns to boolean/sibling-clause values)
+ * into ripgrep-compatible glob arguments.
+ *
+ * Handles Windows drive-letter normalization, UNC path edge cases, and sibling clauses.
+ *
+ * @param patterns - A glob expression where keys are glob patterns and values indicate inclusion
+ *                   (boolean) or conditional sibling clauses (object with a `when` property).
+ * @param folder - Optional base folder to make globs absolute.
+ * @param excludesToSkip - A set of pattern keys to skip during conversion.
+ * @returns The ripgrep glob arguments and any sibling clauses.
+ */
 function globExprsToRgGlobs(patterns: glob.IExpression, folder?: string, excludesToSkip?: Set<string>): IRgGlobResult {
 	const globArgs: string[] = [];
 	const siblingClauses: glob.IExpression = {};
@@ -173,11 +223,25 @@ export function getAbsoluteGlob(folder: string, key: string): string {
 		path.join(folder, key);
 }
 
+/**
+ * Removes trailing backslashes and forward slashes from a path string.
+ *
+ * @param str - The path string to trim.
+ * @returns The path string without trailing slashes.
+ */
 function trimTrailingSlash(str: string): string {
 	str = strings.rtrim(str, '\\');
 	return strings.rtrim(str, '/');
 }
 
+/**
+ * Normalizes a Windows path on the C: drive to use a leading "/" instead of "C:/".
+ * This works around a ripgrep issue where C: drive paths are not handled correctly.
+ * See https://github.com/BurntSushi/ripgrep/issues/530.
+ *
+ * @param path - The file path to normalize.
+ * @returns The normalized path, or the original path if it is not on the C: drive.
+ */
 export function fixDriveC(path: string): string {
 	const root = extpath.getRoot(path);
 	return root.toLowerCase() === 'c:/' ?

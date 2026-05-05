@@ -7,6 +7,116 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-05-04
+
+### Added
+
+- Add status text labels to workspace splash and shutdown overlay
+
+## [0.12.1] - 2026-05-03
+
+### Fixed
+
+- Regenerate app icons with squircle clip for transparent corners ([#427](https://github.com/j4rviscmd/vscodeee/pull/427))
+
+## [0.12.0] - 2026-05-03
+
+### Added
+
+- Ack-based flow control backpressure for PTY output, matching VS Code's `FlowControlConstants` pattern (high watermark 100K, low watermark 5K) with 100ms deadlock-prevention timeout ([#425](https://github.com/j4rviscmd/vscodeee/pull/425))
+
+## [0.11.2] - 2026-05-03
+
+### Fixed
+
+- Suppress stale IME composition keydown events in WKWebView/Tauri ([c414de3](https://github.com/j4rviscmd/vscodeee/commit/c414de3))
+- Eliminate window stretch animation on new window open ([#422](https://github.com/j4rviscmd/vscodeee/pull/422))
+
+## [0.11.1] - 2026-05-03
+
+### Fixed
+
+- Revert `bundle.resources` to array notation and restore node_modules staging path to fix broken built-in extension resolution in production builds ([#416](https://github.com/j4rviscmd/vscodeee/pull/416))
+
+### Changed
+
+- Move symlink guard before skip-logic in `bundle-node-modules.mjs` so stale npm symlinks are always removed
+
+## [0.11.0] - 2026-05-02
+
+### Added
+
+- Show shutdown overlay during app closing for better UX feedback
+- Show splash screen immediately on Reload Window and quit ([#413](https://github.com/j4rviscmd/vscodeee/pull/413))
+
+### Fixed
+
+- Align bundle.resources path with bundle-node-modules output directory ([#414](https://github.com/j4rviscmd/vscodeee/pull/414))
+- Preserve workspace on Reload Window ([#410](https://github.com/j4rviscmd/vscodeee/issues/410))
+- Resolve syntax error and EISDIR in bundle-node-modules.mjs ([#407](https://github.com/j4rviscmd/vscodeee/issues/407))
+- Use hash-based skip detection in bundle-node-modules ([#406](https://github.com/j4rviscmd/vscodeee/issues/406))
+- Use shell comment syntax for unicode suppression in check-csp-hash.sh ([#405](https://github.com/j4rviscmd/vscodeee/issues/405))
+- Resolve hygiene check failures by adding filter exclusions
+
+### Changed
+
+- Fix progressive performance degradation
+- Skip unnecessary build steps in tauri:dev ([#404](https://github.com/j4rviscmd/vscodeee/issues/404))
+- Remove pty-poc standalone terminal PoC (Phase 0-4 artifact no longer needed) ([#401](https://github.com/j4rviscmd/vscodeee/issues/401))
+
+## [0.10.1] - 2026-05-02
+
+### Fixed
+
+- Prevent watermark text selection on splash screen ([00ebdcd](https://github.com/j4rviscmd/vscodeee/commit/00ebdcd))
+- Resolve hot exit backup and empty file save issues on reload ([#398](https://github.com/j4rviscmd/vscodeee/pull/398))
+- Restore rg binary execute permission stripped by Tauri bundler ([#395](https://github.com/j4rviscmd/vscodeee/pull/395))
+
+## [0.10.0] - 2026-05-02
+
+### Added
+
+- Splash screen with theme-aware colors and spinner overlay for startup UX ([#391](https://github.com/j4rviscmd/vscodeee/pull/391))
+
+## [0.9.1] - 2026-05-01
+
+### Fixed
+
+- Prevent duplicate workspace windows from UI open actions ([#388](https://github.com/j4rviscmd/vscodeee/pull/388))
+
+### Changed
+
+- Skip unchanged file writes to prevent unnecessary Cargo rebuilds ([#387](https://github.com/j4rviscmd/vscodeee/pull/387))
+
+## [0.9.0] - 2026-05-01
+
+### Added
+
+- Implement multi-window quit with proper ShutdownReason handling ([#382](https://github.com/j4rviscmd/vscodeee/pull/382))
+
+### Fixed
+
+- Resolve startup freeze by offloading file I/O and watcher init from main thread
+- Correct update download progress bar accumulation bug ([#383](https://github.com/j4rviscmd/vscodeee/pull/383))
+
+## [0.8.0] - 2026-05-01
+
+### Added
+
+- Relax REH version check from commit hash to semver major.minor ([#375](https://github.com/j4rviscmd/vscodeee/pull/375))
+
+### Fixed
+
+- Add IME composition guards to prevent Enter key from triggering actions during Japanese input
+- Add event coalescing and NFC normalization to Tauri file watcher ([#373](https://github.com/j4rviscmd/vscodeee/pull/373))
+- Replace manual event batching with notify-debouncer-full for reliable file watcher coalescing ([#381](https://github.com/j4rviscmd/vscodeee/pull/381))
+- Disable auto-save by default in Tauri desktop environment ([#378](https://github.com/j4rviscmd/vscodeee/pull/378))
+- Use full clone in publish workflow preflight for REH diff detection ([#380](https://github.com/j4rviscmd/vscodeee/pull/380))
+
+### Changed
+
+- Disable auto-opening DevTools on debug startup ([#371](https://github.com/j4rviscmd/vscodeee/pull/371))
+
 ## [0.7.0] - 2026-04-30
 
 ### Added

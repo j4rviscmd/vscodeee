@@ -3,68 +3,110 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-//! File watcher using the `notify` crate.
+//! File watcher using the `notify-debouncer-full` crate.
 //!
 //! Provides real-time file system change notifications to the VS Code workbench
-//! via Tauri events. Each watch request from the TypeScript side gets a unique ID,
-//! and events are batched (100ms debounce) before emission.
+//! via Tauri events. Uses `notify-debouncer-full` for intelligent event coalescing
+//! that handles atomic file replacements (e.g., git checkout), rename tracking,
+//! and deduplication at the Rust level — equivalent to what `@parcel/watcher`
+//! provides in the original Electron-based VS Code.
 
-use notify::{Config, Event as NotifyEvent, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::RecursiveMode;
+use notify_debouncer_full::{new_debouncer, DebounceEventResult, DebouncedEvent};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::Emitter;
+use std::time::Duration;
+use tauri::{Emitter, Manager};
 
 /// File change type matching VS Code's `FileChangeType` enum.
-// TODO(Phase 3): Remove allow(dead_code) when this is wired up
+///
+/// The discriminant values correspond to the numeric codes expected by the
+/// TypeScript side so that deserialization works without explicit mapping.
 #[allow(dead_code)]
 #[derive(Serialize, Clone, Debug)]
 pub enum FileChangeType {
+    /// An existing file was modified or its metadata changed.
     Updated = 0,
+    /// A new file was created.
     Added = 1,
+    /// A file was removed.
     Deleted = 2,
 }
 
-/// A single file change event sent to the WebView.
+/// A single file change event emitted to the WebView via `vscode:fs_change`.
+///
+/// Serialized as camelCase to match the TypeScript `IFileChange` interface
+/// consumed by `AbstractFileService` on the workbench side.
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct FileChange {
+    /// Absolute file path of the changed resource.
     pub resource: String,
+    /// Numeric change type: `0` = Updated, `1` = Added, `2` = Deleted.
+    /// Matches `FileChangeType` discriminant values.
     pub r#type: u8,
+    /// Optional correlation ID to link the event back to a specific watcher request.
+    /// Skipped during serialization when `None`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub c_id: Option<i32>,
 }
 
-/// Request to start watching a path.
+/// Request to start watching a file or directory for changes.
+///
+/// Deserialized from the `invoke("fs_watch_start", request)` payload sent
+/// by the TypeScript `TauriFileWatcher` service.
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct WatchRequest {
+    /// Unique watcher identifier used to stop or look up this watcher later.
     pub id: u64,
+    /// Absolute path to the file or directory to watch.
     pub path: String,
+    /// Whether to watch recursively (all subdirectories) or only the top level.
     pub recursive: bool,
+    /// Glob patterns for paths to exclude from change notifications.
     pub excludes: Vec<String>,
+    /// Optional correlation ID forwarded to emitted `FileChange` events,
+    /// allowing the caller to associate changes with a specific watch request.
     #[serde(default)]
     pub correlation_id: Option<i32>,
 }
 
 /// Managed state for the file watcher system.
+///
+/// Registered as Tauri managed state so that both command handlers and the
+/// shutdown coordinator can access the active watcher map.
+///
+/// The inner `Mutex<HashMap>` maps watcher IDs to their debouncer handles.
+/// Dropping a `WatcherHandle` automatically stops the watcher and terminates
+/// the background thread.
 pub struct FileWatcherState {
+    /// Map of watcher ID to debouncer handle. Protected by a mutex because
+    /// command handlers and shutdown can access concurrently.
     watchers: Mutex<HashMap<u64, WatcherHandle>>,
 }
 
+/// Holds the debouncer instance for a single watcher.
+///
+/// When dropped, the debouncer is stopped and the background thread terminates.
+/// The underscore-prefixed `_debouncer` field signals that the value is held
+/// solely for its `Drop` side effect.
 struct WatcherHandle {
-    _watcher: RecommendedWatcher,
-    /// The sender half of the event channel.
-    /// When `WatcherHandle` is dropped, the sender is dropped, causing the
-    /// batching thread's `rx.recv()` to return `Err(Disconnected)` and exit.
-    _event_tx: std::sync::mpsc::Sender<NotifyEvent>,
-    // TODO(Phase 3): Remove allow(dead_code) when this is wired up
+    /// The debounced file watcher. Kept alive for the duration of the watch.
+    /// Dropping this field stops the watcher and releases the background thread.
+    _debouncer: notify_debouncer_full::Debouncer<
+        notify::RecommendedWatcher,
+        notify_debouncer_full::RecommendedCache,
+    >,
+    /// Correlation ID associated with this watcher, forwarded to emitted events.
     #[allow(dead_code)]
     correlation_id: Option<i32>,
 }
 
 impl FileWatcherState {
+    /// Create a new empty file watcher state.
     pub fn new() -> Self {
         Self {
             watchers: Mutex::new(HashMap::new()),
@@ -87,7 +129,13 @@ impl FileWatcherState {
     }
 }
 
-fn notify_event_to_change_type(kind: &EventKind) -> Option<u8> {
+/// Maps a debounced `notify::EventKind` to VS Code's `FileChangeType`.
+///
+/// The debouncer coalesces rapid DELETE+CREATE sequences (from atomic file
+/// replacements like `git checkout`) into a single event. On macOS, this
+/// typically arrives as `Modify(Name(Both))` or `Modify(Data(_))`.
+fn debounced_event_to_change_type(kind: &notify::EventKind) -> Option<u8> {
+    use notify::EventKind;
     match kind {
         EventKind::Create(_) => Some(1), // Added
         EventKind::Modify(_) => Some(0), // Updated
@@ -96,11 +144,19 @@ fn notify_event_to_change_type(kind: &EventKind) -> Option<u8> {
     }
 }
 
+/// Check whether a path matches any of the exclude glob patterns.
+///
+/// Used to filter out noise from change notifications (e.g., `.git` objects,
+/// `node_modules`, build artifacts).
 fn should_exclude(path: &std::path::Path, excludes: &[globset::GlobMatcher]) -> bool {
     let path_str = path.to_string_lossy();
     excludes.iter().any(|m| m.is_match(path_str.as_ref()))
 }
 
+/// Compile glob patterns into `GlobMatcher` instances for efficient matching.
+///
+/// Silently skips patterns that fail to parse (invalid globs are ignored rather
+/// than causing the watch to fail entirely).
 fn build_glob_matchers(patterns: &[String]) -> Vec<globset::GlobMatcher> {
     patterns
         .iter()
@@ -108,15 +164,51 @@ fn build_glob_matchers(patterns: &[String]) -> Vec<globset::GlobMatcher> {
         .collect()
 }
 
+/// Converts a batch of debounced events into `FileChange` items, applying
+/// exclude filters and attaching the correlation ID.
+fn process_debounced_events(
+    events: &[DebouncedEvent],
+    excludes: &[globset::GlobMatcher],
+    correlation_id: Option<i32>,
+) -> Vec<FileChange> {
+    let mut changes: Vec<FileChange> = Vec::new();
+
+    for debounced in events {
+        if let Some(change_type) = debounced_event_to_change_type(&debounced.event.kind) {
+            for path in &debounced.event.paths {
+                if should_exclude(path, excludes) {
+                    continue;
+                }
+                changes.push(FileChange {
+                    resource: path.to_string_lossy().to_string(),
+                    r#type: change_type,
+                    c_id: correlation_id,
+                });
+            }
+        }
+    }
+
+    changes
+}
+
 /// Start watching a file path for changes.
 ///
-/// Creates a watcher using the `notify` crate and emits file change events
-/// to the WebView via the `vscode:fs_change` Tauri event.
-/// Events are debounced internally by `notify` (100ms).
+/// Creates a debounced watcher using `notify-debouncer-full` which provides
+/// intelligent event coalescing: DELETE+CREATE pairs (from git operations)
+/// are merged into a single MODIFY event, rapid modifications are deduplicated,
+/// and rename events are properly paired.
+///
+/// The debounce timeout (500ms) ensures that related events from atomic file
+/// replacements are always captured in the same batch, regardless of OS-level
+/// event delivery timing.
+///
+/// This is an async command because `Debouncer::watch()` calls
+/// `FileIdMap::add_root()` which enumerates the directory tree and calls
+/// `stat()` on every entry. On large directories this can take seconds,
+/// so it MUST NOT run on the main thread.
 #[tauri::command]
-pub fn fs_watch_start(
+pub async fn fs_watch_start(
     app_handle: tauri::AppHandle,
-    state: tauri::State<'_, FileWatcherState>,
     request: WatchRequest,
 ) -> Result<(), String> {
     let path = PathBuf::from(&request.path);
@@ -160,75 +252,57 @@ pub fn fs_watch_start(
 
     let app = app_handle.clone();
 
-    // Batch events using a channel + spawn
-    let (tx, rx) = std::sync::mpsc::channel::<NotifyEvent>();
-
-    // Clone tx for the closure; the original is stored in WatcherHandle so
-    // that dropping the handle closes the channel and terminates the thread.
-    let tx_for_watcher = tx.clone();
-
-    let mut watcher = RecommendedWatcher::new(
-        move |res: Result<NotifyEvent, notify::Error>| {
-            if let Ok(event) = res {
-                let _ = tx_for_watcher.send(event);
-            }
-        },
-        Config::default().with_poll_interval(std::time::Duration::from_millis(500)),
-    )
-    .map_err(|e| format!("Failed to create watcher: {e}"))?;
-
-    watcher
-        .watch(&watch_path, watch_mode)
-        .map_err(|e| format!("Failed to watch path {}: {e}", watch_path.display()))?;
-
-    // Spawn a thread that batches events every 100ms
-    let cid = correlation_id;
-    std::thread::spawn(move || {
-        while let Ok(first) = rx.recv() {
-            // Collect more events for 100ms
-            let mut events = vec![first];
-            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(100);
-            loop {
-                let timeout = deadline.saturating_duration_since(std::time::Instant::now());
-                if timeout.is_zero() {
-                    break;
-                }
-                match rx.recv_timeout(timeout) {
-                    Ok(e) => events.push(e),
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => break,
-                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
-                }
-            }
-
-            // Convert to FileChange events
-            let mut changes: Vec<FileChange> = Vec::new();
-            for event in &events {
-                if let Some(change_type) = notify_event_to_change_type(&event.kind) {
-                    for path in &event.paths {
-                        if should_exclude(path, &excludes) {
-                            continue;
-                        }
-                        changes.push(FileChange {
-                            resource: path.to_string_lossy().to_string(),
-                            r#type: change_type,
-                            c_id: cid,
-                        });
+    // Create debouncer + start watching on a background thread.
+    // `Debouncer::watch()` calls `FileIdMap::add_root()` which enumerates
+    // the directory tree and calls `stat()` on every entry — this can take
+    // seconds on large directories and MUST NOT block the main thread.
+    let debouncer_result: Result<
+        notify_debouncer_full::Debouncer<
+            notify::RecommendedWatcher,
+            notify_debouncer_full::RecommendedCache,
+        >,
+        String,
+    > = tauri::async_runtime::spawn_blocking(move || {
+        let mut debouncer = new_debouncer(
+            Duration::from_millis(500),
+            None, // tick_rate: auto (1/4 of timeout = 125ms)
+            move |result: DebounceEventResult| match result {
+                Ok(events) => {
+                    let changes = process_debounced_events(&events, &excludes, correlation_id);
+                    if !changes.is_empty() {
+                        let _ = app.emit("vscode:fs_change", &changes);
                     }
                 }
-            }
+                Err(errors) => {
+                    for error in &errors {
+                        log::warn!(
+                            target: "vscodeee::file_watcher",
+                            "Watcher error: {error}"
+                        );
+                    }
+                }
+            },
+        )
+        .map_err(|e| format!("Failed to create debounced watcher: {e}"))?;
 
-            if !changes.is_empty() {
-                let _ = app.emit("vscode:fs_change", &changes);
-            }
-        }
-    });
+        debouncer
+            .watch(&watch_path, watch_mode)
+            .map_err(|e| format!("Failed to watch path {}: {e}", watch_path.display()))?;
 
+        Ok(debouncer)
+    })
+    .await
+    .map_err(|e| format!("Watcher setup panicked: {e}"))?;
+
+    let debouncer = debouncer_result?;
+
+    // Register watcher in state (lightweight HashMap insert).
+    let state = app_handle.state::<FileWatcherState>();
     let mut watchers = state.watchers.lock().map_err(|e| e.to_string())?;
     watchers.insert(
         watch_id,
         WatcherHandle {
-            _watcher: watcher,
-            _event_tx: tx,
+            _debouncer: debouncer,
             correlation_id,
         },
     );

@@ -128,12 +128,16 @@ pub struct OpenWindowOptions {
     /// When `true`, always create a new window even if the workspace is already open.
     #[serde(default)]
     pub force_new_window: bool,
+    /// When `true`, skip workspace deduplication. Reserved for CLI `-n` flag.
+    /// Not sent by TypeScript UI calls (defaults to `false` via serde).
+    #[serde(default)]
+    pub skip_dedup: bool,
 }
 
 /// Open a new Tauri window.
 ///
 /// Delegates to `WindowManager` for label generation, workspace dedup,
-/// and registry tracking. If `force_new_window` is false and a window
+/// and registry tracking. If `skip_dedup` is false and a window
 /// already has the requested workspace open, that window is focused instead.
 #[tauri::command]
 pub async fn open_new_window(
@@ -147,6 +151,7 @@ pub async fn open_new_window(
         remote_authority: options.remote_authority.clone(),
         force_new_window: options.force_new_window,
         force_reuse_window: false,
+        skip_dedup: options.skip_dedup,
     };
 
     // Delegate to WindowManager — handles dedup, ID assignment, and registry

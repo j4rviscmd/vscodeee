@@ -55,6 +55,7 @@ export interface SignRequest {
 export interface ConnectionTypeRequest {
 	type: 'connectionType';
 	commit?: string;
+	version?: string;
 	signedData: string;
 	desiredConnectionType?: ConnectionType;
 	args?: any;
@@ -75,6 +76,7 @@ export type HandshakeMessage = AuthRequest | SignRequest | ConnectionTypeRequest
 interface ISimpleConnectionOptions<T extends RemoteConnection = RemoteConnection> {
 	commit: string | undefined;
 	quality: string | undefined;
+	version: string | undefined;
 	connectTo: T;
 	connectionToken: string | undefined;
 	reconnectionToken: string;
@@ -284,6 +286,7 @@ async function connectToRemoteExtensionHostAgent<T extends RemoteConnection>(opt
 		const connTypeRequest: ConnectionTypeRequest = {
 			type: 'connectionType',
 			commit: options.commit,
+			version: options.version,
 			signedData: signed,
 			desiredConnectionType: connectionType
 		};
@@ -380,6 +383,7 @@ async function doConnectRemoteAgentTunnel(options: ISimpleConnectionOptions, sta
 export interface IConnectionOptions<T extends RemoteConnection = RemoteConnection> {
 	commit: string | undefined;
 	quality: string | undefined;
+	version: string | undefined;
 	addressProvider: IAddressProvider<T>;
 	remoteSocketFactoryService: IRemoteSocketFactoryService;
 	signService: ISignService;
@@ -392,6 +396,7 @@ async function resolveConnectionOptions<T extends RemoteConnection>(options: ICo
 	return {
 		commit: options.commit,
 		quality: options.quality,
+		version: options.version,
 		connectTo,
 		connectionToken: connectionToken,
 		reconnectionToken: reconnectionToken,

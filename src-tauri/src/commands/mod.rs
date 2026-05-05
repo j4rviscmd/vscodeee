@@ -67,6 +67,12 @@ pub struct WindowConfiguration {
     /// Determined by `cfg!(debug_assertions)` — a compile-time constant.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_dev_build: Option<bool>,
+    /// Cached theme background color from previous session (e.g. `"#1E1E1E"`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme_background: Option<String>,
+    /// Cached theme foreground color from previous session (e.g. `"#CCCCCC"`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme_foreground: Option<String>,
 }
 
 /// Retrieve native host environment information.
@@ -172,6 +178,9 @@ pub async fn get_window_configuration(
     let restored_workspace_uri: Option<String> = None; // workspace files handled separately
     let is_dev_build = cfg!(debug_assertions).then_some(true);
 
+    // Read cached theme colors from previous session for splash screen.
+    let (theme_background, theme_foreground) = read_theme_cache(&app_handle);
+
     Ok(WindowConfiguration {
         window_id,
         log_level: 1, // Info
@@ -181,6 +190,8 @@ pub async fn get_window_configuration(
         restored_folder_uri,
         restored_workspace_uri,
         is_dev_build,
+        theme_background,
+        theme_foreground,
     })
 }
 
@@ -234,6 +245,26 @@ pub struct ProductPackageJson {
     pub package: serde_json::Value,
 }
 
+/// Read and return the contents of `product.json` and `package.json`.
+///
+/// Locates the project root by checking the current working directory first
+/// (development mode: `src-tauri/../`), then falls back to Tauri's resource
+/// directory (production: `_up_/` subdirectory for `../` resource paths).
+///
+/// Additionally injects the git commit hash and version from `package.json`
+/// into `product.json` if they are not already set, ensuring the client
+/// and any remote extension host agree on the same codebase version.
+///
+/// # Returns
+///
+/// A [`ProductPackageJson`] containing the parsed `product.json` and
+/// `package.json` as raw JSON values.
+///
+/// # Errors
+///
+/// Returns a `String` error if:
+/// - The project root cannot be determined (neither CWD nor resource_dir works).
+/// - Either JSON file cannot be read or parsed.
 #[tauri::command]
 pub fn get_product_json(app_handle: tauri::AppHandle) -> Result<ProductPackageJson, String> {
     use tauri::Manager;
@@ -373,4 +404,87 @@ pub fn list_css_modules(app_handle: tauri::AppHandle) -> Vec<String> {
     }
 
     Vec::new()
+}
+
+// ── Theme color cache for splash screen ──────────────────────────────────
+
+use tauri::Manager;
+
+/// Cached theme colors persisted between sessions for the splash screen.
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+struct ThemeColorCache {
+    background: String,
+    foreground: String,
+}
+
+/// Resolve the filesystem path for the splash-screen theme color cache file.
+///
+/// The cache file (`splash-theme-cache.json`) is stored in the application
+/// data directory so that theme colors persist across application restarts.
+///
+/// # Arguments
+///
+/// * `app_handle` - The Tauri application handle used to resolve `app_data_dir`.
+///
+/// # Returns
+///
+/// `Some(PathBuf)` pointing to the cache file, or `None` if the application
+/// data directory cannot be resolved.
+fn theme_cache_path(app_handle: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    app_handle
+        .path()
+        .app_data_dir()
+        .ok()
+        .map(|d| d.join("splash-theme-cache.json"))
+}
+
+/// Read cached theme colors from the splash-screen theme cache.
+///
+/// Returns the background and foreground color strings that were persisted
+/// by [`cache_theme_colors`] during the previous session. If the cache file
+/// does not exist, cannot be parsed, or contains an empty background color,
+/// returns `(None, None)`.
+///
+/// # Arguments
+///
+/// * `app_handle` - The Tauri application handle used to locate the cache file.
+///
+/// # Returns
+///
+/// A tuple of `(background, foreground)` color strings, or `(None, None)` if
+/// no valid cache is available.
+fn read_theme_cache(app_handle: &tauri::AppHandle) -> (Option<String>, Option<String>) {
+    let path = match theme_cache_path(app_handle) {
+        Some(p) => p,
+        None => return (None, None),
+    };
+    let cache: ThemeColorCache = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or_default();
+    if cache.background.is_empty() {
+        (None, None)
+    } else {
+        (Some(cache.background), Some(cache.foreground))
+    }
+}
+
+/// Cache theme colors for the next startup's splash screen.
+///
+/// Called from TypeScript after the workbench finishes loading, before
+/// `hideSplash()`. Persists the active theme's background and foreground
+/// colors so the splash screen can use them on next launch.
+#[tauri::command]
+pub fn cache_theme_colors(
+    app_handle: tauri::AppHandle,
+    background: String,
+    foreground: String,
+) -> Result<(), String> {
+    let path = theme_cache_path(&app_handle).ok_or("Cannot resolve app_data_dir")?;
+    let cache = ThemeColorCache {
+        background,
+        foreground,
+    };
+    let json = serde_json::to_string(&cache).map_err(|e| e.to_string())?;
+    std::fs::write(path, json).map_err(|e| e.to_string())
 }

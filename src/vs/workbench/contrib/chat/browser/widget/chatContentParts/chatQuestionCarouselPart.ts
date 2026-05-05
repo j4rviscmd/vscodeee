@@ -185,6 +185,10 @@ export class ChatQuestionCarouselPart extends Disposable implements IChatContent
 		// Register keyboard navigation
 		interactiveStore.add(dom.addDisposableListener(this.domNode, dom.EventType.KEY_DOWN, (e: KeyboardEvent) => {
 			const event = new StandardKeyboardEvent(e);
+			// Skip during IME composition (e.g. Japanese input confirming with Enter)
+			if (event.isComposing || StandardKeyboardEvent.isComposingActive || StandardKeyboardEvent.recentlyComposed) {
+				return;
+			}
 			if (event.keyCode === KeyCode.Escape && this.carousel.allowSkip) {
 				e.preventDefault();
 				e.stopPropagation();

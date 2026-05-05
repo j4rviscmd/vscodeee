@@ -1,6 +1,9 @@
 > [!IMPORTANT]
-> If you are using v0.6.0 or below, the auto-update feature is not implemented.
-> Please manually update to v0.7.0 or above.
+> If you are using v0.6.0 or below, the auto-update feature is not implemented.<br>
+> Please manually install the latest version.
+>
+> If you are using v0.1.0–v0.8.0, the app may freeze on startup when no workspace is open due to the protocol handler and file watcher initialization blocking the main thread.<br>
+> Please manually install the latest version (fixed in [#384](https://github.com/j4rviscmd/vscodeee/pull/384)).
 
 <div align="center">
 

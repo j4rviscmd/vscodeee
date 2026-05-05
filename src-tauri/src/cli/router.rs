@@ -21,7 +21,7 @@ use crate::window::state::OpenWindowOptions;
 ///
 /// 1. **No paths** — focus the most recently active window
 /// 2. **Paths without flags** — workspace dedup via `WindowManager`
-/// 3. **`force_new_window`** — each path gets a new window regardless
+/// 3. **`-n` / `--new-window`** — sets `skip_dedup`, each path gets a new window regardless
 pub async fn route_gui_args(
     app_handle: &tauri::AppHandle,
     wm: &WindowManager,
@@ -57,6 +57,7 @@ pub async fn route_gui_args(
             remote_authority: None,
             force_new_window: args.force_new_window,
             force_reuse_window: args.force_reuse_window,
+            skip_dedup: args.force_new_window,
         };
 
         match wm.open_window(app_handle, &options).await {

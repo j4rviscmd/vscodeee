@@ -3,10 +3,12 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { StandardKeyboardEvent } from '../../../../../base/browser/keyboardEvent.js';
 import { Codicon } from '../../../../../base/common/codicons.js';
 import { KeyCode, KeyMod } from '../../../../../base/common/keyCodes.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ServicesAccessor } from '../../../../../editor/browser/editorExtensions.js';
+import { EditorContextKeys } from '../../../../../editor/common/editorContextKeys.js';
 import { localize, localize2 } from '../../../../../nls.js';
 import { Action2, MenuId, MenuRegistry, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
@@ -84,6 +86,7 @@ export class ChatQueueMessageAction extends Action2 {
 					ChatContextKeys.inChatInput,
 					queuingActionsPresent,
 					effectiveDefaultIsQueue,
+					EditorContextKeys.isComposing.negate(),
 				),
 				primary: KeyCode.Enter,
 				weight: KeybindingWeight.EditorContrib + 1
@@ -92,6 +95,11 @@ export class ChatQueueMessageAction extends Action2 {
 	}
 
 	override run(accessor: ServicesAccessor, ...args: unknown[]): void {
+		// IME guard: prevent submit during/immediately after IME composition
+		if (StandardKeyboardEvent.isComposingActive || StandardKeyboardEvent.recentlyComposed) {
+			return;
+		}
+
 		const widgetService = accessor.get(IChatWidgetService);
 		const widget = widgetService.lastFocusedWidget;
 		if (!widget?.viewModel) {
@@ -127,6 +135,7 @@ export class ChatSteerWithMessageAction extends Action2 {
 					ChatContextKeys.inChatInput,
 					queuingActionsPresent,
 					effectiveDefaultIsSteer,
+					EditorContextKeys.isComposing.negate(),
 				),
 				primary: KeyCode.Enter,
 				weight: KeybindingWeight.EditorContrib + 1
@@ -143,6 +152,11 @@ export class ChatSteerWithMessageAction extends Action2 {
 	}
 
 	override run(accessor: ServicesAccessor, ...args: unknown[]): void {
+		// IME guard: prevent submit during/immediately after IME composition
+		if (StandardKeyboardEvent.isComposingActive || StandardKeyboardEvent.recentlyComposed) {
+			return;
+		}
+
 		const widgetService = accessor.get(IChatWidgetService);
 		const widget = widgetService.lastFocusedWidget;
 		if (!widget?.viewModel) {
