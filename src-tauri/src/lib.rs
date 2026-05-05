@@ -30,9 +30,7 @@ mod ipc;
 /// fullscreen state, and session-based window restoration.
 mod window;
 
-/// Extension Host sidecar management — spawn Node.js, communicate via named pipe.
-///
-/// TODO(Phase 1-2): Replace PoC direct handshake with WebSocket relay + TypeScript IExtensionHost impl
+/// Extension Host sidecar management — spawn Bun, communicate via named pipe.
 mod exthost;
 
 /// Logging configuration — `tauri-plugin-log` with structured, AI-agent-readable format.

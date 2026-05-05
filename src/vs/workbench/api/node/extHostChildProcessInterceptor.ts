@@ -16,20 +16,14 @@ const nodeRequire = nodeModule.createRequire(import.meta.url);
  * Intercepts `child_process.fork()` calls made by extensions to:
  *
  * 1. Inject `--no-experimental-require-module` into child process `execArgv`.
- *    In the Tauri migration, the Extension Host sidecar runs with this flag,
- *    but `vscode-languageclient` explicitly sets `execArgv: []` when forking
- *    Language Server child processes (line 406 of main.js). Without this flag,
- *    Node.js 22+ enables `require(esm)` by default, which uses `Atomics.wait()`
- *    and can cause deadlocks or crashes in child processes.
+ *    `vscode-languageclient` explicitly sets `execArgv: []` when forking
+ *    Language Server child processes. Without this flag, Node.js 22+ enables
+ *    `require(esm)` by default, which uses `Atomics.wait()` and can cause
+ *    deadlocks or crashes in child processes.
  *
  * 2. Capture stderr from child processes and route to ILogService for debugging.
- *    Language Server crashes are otherwise silent because the VS Code Output Channel
- *    forwarding may not work in the Tauri dev environment.
  *
  * 3. Track child process lifecycle (spawn/exit) for monitoring and diagnostics.
- *
- * TODO(Phase 5-D): Consider extending to also intercept `child_process.spawn()`
- * for Language Servers that use `TransportKind.stdio` with a custom runtime.
  */
 export class ExtHostChildProcessInterceptor extends Disposable implements IExtHostChildProcessRegistry {
 

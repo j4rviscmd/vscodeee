@@ -38,12 +38,25 @@ VSCode の現在の機能を維持しつつ、以下を実現します：
 
 - **メモリ使用量の削減**: Electron → Tauri 2.0（バンドルされた Chromium の代わりにネイティブ WebView を使用）
 - **不要なテレメトリの削減**: Microsoft へのテレメトリ送信を廃止
-- **バイナリサイズの縮小**: Chromium をバンドルしない（システム WebView を使用）。拡張機能ホストサポートのため Node.js は引き続きバンドルします
+- **バイナリサイズの縮小**: Chromium をバンドルしない（システムWebViewを使用）。拡張機能ホストランタイムもNode.js（~65MB）からBun（~30MB）に移行し、さらに軽量化
 - **透明背景**（実験的）: ネイティブウィンドウの透明性サポート（macOS/Linux）— エディタ越しにデスクトップが見えます
   - 今後のリリースで、ウィンドウ全体の透明化やブラー効果など、さらに高度な外観オプションを検中
   - <img src="./docs/screenshots/settings_transparent.png" alt="透明エディタの設定" width="300">
 - [Vimmerのための設定やキーバインドの追加](#vscodeee独自の機能)
 - 定期的に本家VSCodeのアップストリームをマージし、最新の機能とセキュリティ修正を維持予定
+
+## パフォーマンス
+
+VSCodeee は Electron アーキテクチャを2つのレイヤーで置き換え、大幅なリソース削減を実現しています。
+
+| レイヤー              | Electron（本家VSCode） | VSCodeee                      | 効果                    |
+| --------------------- | ---------------------- | ----------------------------- | ----------------------- |
+| UI フレームワーク     | Chromium（バンドル）   | Tauri 2.0（システム WebView） | バンドルサイズ大幅削減  |
+| 拡張機能ホスト        | Node.js（~65MB）       | Bun（~30MB）                  | **-54%** バイナリサイズ |
+| 拡張機能ホスト起動    | ~200ms                 | ~50ms                         | **-75%** 起動時間       |
+| 拡張機能ホスト メモリ | ~40MB                  | ~20MB                         | **-50%** メモリ使用量   |
+
+> **Note**: 拡張機能ホストは VS Code 拡張機能（Language Server、デバッガ、リンター等）を実行するプロセスです。本家 VSCode では Electron に内包される Node.js がこの役割を担いますが、VSCodeee では Bun ランタイムをサイドカーとして起動し、WebSocket + Unix Pipe 経由で WebView と通信します。
 
 ---
 
@@ -72,11 +85,11 @@ VSCode の現在の機能を維持しつつ、以下を実現します：
 ## アーキテクチャ
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./docs/screenshots/vscodeee_architecture_dark.png">
-  <img src="./docs/screenshots/vscodeee_architecture_light.png" alt="VSCodeee Architecture">
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/screenshots/vscodeee_architecture_dark.svg">
+  <img src="./docs/screenshots/vscodeee_architecture_light.svg" alt="VSCodeee Architecture">
 </picture>
 
-> **Note**: Shared Process（VS Code のギャラリー、同期、テレメトリ用の非表示レンダラー）は VSCodeee では**排除**されています。そのサービスは WebView または Rust バックエンドで直接実装されています — [#88](https://github.com/j4rviscmd/vscodeee/issues/88) を参照。
+> **Note**: Shared Process（VS Code のギャラリー、同期、テレメトリ用の非表示レンダラー）は VSCodeee では**排除**されています。そのサービスは WebView または Rust バックエンドで直接実装されています — [#88](https://github.com/j4rviscmd/vscodeee/issues/88) を参照。また、拡張機能ホストランタイムは Node.js から Bun に移行済みです（[#256](https://github.com/j4rviscmd/vscodeee/issues/256)）。
 
 ---
 

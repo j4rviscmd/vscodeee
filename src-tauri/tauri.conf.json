@@ -7,7 +7,7 @@
   "build": {
     "frontendDist": "../out",
     "beforeDevCommand": "",
-    "beforeBuildCommand": "node scripts/download-node.mjs && node scripts/bundle-node-modules.mjs && node build/next/index.ts transpile --exclude-tests && node build/next/index.ts transpile-extensions && node build/next/index.ts package-extensions && node scripts/generate-css-modules.mjs"
+    "beforeBuildCommand": "node scripts/download-bun.mjs && node scripts/bundle-node-modules.mjs && node build/next/index.ts transpile --exclude-tests && node build/next/index.ts transpile-extensions && node build/next/index.ts package-extensions && node scripts/generate-css-modules.mjs"
   },
   "app": {
     "withGlobalTauri": true,
@@ -51,7 +51,7 @@
     "active": true,
     "createUpdaterArtifacts": true,
     "targets": "all",
-    "externalBin": ["binaries/node"],
+    "externalBin": ["binaries/bun"],
     "resources": ["css-modules.json", "../product.json", "../package.json", "../out", "../.build/extensions", "node_modules/"],
     "icon": [
       "icons/32x32.png",

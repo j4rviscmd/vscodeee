@@ -7,7 +7,7 @@
 //!
 //! # Shutdown phases (in order)
 //!
-//! 1. **Extensions** — Kill Extension Host sidecars (Node.js processes)
+//! 1. **Extensions** — Kill Extension Host sidecars (Bun processes)
 //! 2. **PTY** — Close pseudo-terminal instances (shell processes)
 //! 3. **FileWatchers** — Stop file system watcher threads
 //! 4. **SystemEvents** — Stop OS event monitor threads

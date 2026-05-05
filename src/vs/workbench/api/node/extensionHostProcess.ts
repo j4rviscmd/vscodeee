@@ -124,19 +124,6 @@ function patchProcess(allowExit: boolean) {
 		}
 	} as (code?: number) => never;
 
-	// override Electron's process.crash() method
-	// eslint-disable-next-line local/code-no-any-casts
-	(process as any /* bypass layer checker */).crash = function () {
-		const err = new Error('An extension called process.crash() and this was prevented.');
-		console.warn(err.stack);
-	};
-
-	// Set ELECTRON_RUN_AS_NODE environment variable for extensions that use
-	// child_process.spawn with process.execPath and expect to run as node process
-	// on the desktop.
-	// Refs https://github.com/microsoft/vscode/issues/151012#issuecomment-1156593228
-	process.env['ELECTRON_RUN_AS_NODE'] = '1';
-
 	// eslint-disable-next-line local/code-no-any-casts
 	process.on = <any>function (event: string, listener: (...args: unknown[]) => void) {
 		if (event === 'uncaughtException') {

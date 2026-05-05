@@ -356,6 +356,47 @@ pub fn get_product_json(app_handle: tauri::AppHandle) -> Result<ProductPackageJs
         }
     }
 
+    // Inject extension host runtime info for About dialog display.
+    // Detect by looking for the bundled Bun sidecar next to the executable.
+    let runtime_label = if let Some(bun_path) = std::env::current_exe()
+        .ok()
+        .as_ref()
+        .and_then(|exe| exe.parent())
+        .map(|dir| {
+            dir.join(if cfg!(target_os = "windows") {
+                "bun.exe"
+            } else {
+                "bun"
+            })
+        })
+    {
+        if bun_path.exists() {
+            if let Ok(output) = std::process::Command::new(&bun_path)
+                .arg("--version")
+                .output()
+            {
+                if output.status.success() {
+                    let ver = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    format!("Bun {ver}")
+                } else {
+                    "Bun".to_string()
+                }
+            } else {
+                "Bun".to_string()
+            }
+        } else {
+            "Unknown".to_string()
+        }
+    } else {
+        "Unknown".to_string()
+    };
+    if let Some(obj) = product.as_object_mut() {
+        obj.insert(
+            "extensionHostRuntime".to_string(),
+            serde_json::Value::String(runtime_label),
+        );
+    }
+
     Ok(ProductPackageJson { product, package })
 }
 
