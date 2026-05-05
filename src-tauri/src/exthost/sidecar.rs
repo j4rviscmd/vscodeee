@@ -28,8 +28,8 @@ use super::ExtHostError;
 fn resolve_runtime_binary() -> String {
     // 1. Explicit override via environment variable
     // VSCODEEE_NODE_PATH kept as fallback alias for backward compatibility
-    if let Ok(path) = std::env::var("VSCODEEE_RUNTIME_PATH")
-        .or_else(|_| std::env::var("VSCODEEE_NODE_PATH"))
+    if let Ok(path) =
+        std::env::var("VSCODEEE_RUNTIME_PATH").or_else(|_| std::env::var("VSCODEEE_NODE_PATH"))
     {
         log::info!(
             target: "vscodeee::exthost::sidecar",
@@ -62,11 +62,12 @@ fn resolve_runtime_binary() -> String {
     }
 
     // 3. System bun (development)
-    let which_cmd = if cfg!(target_os = "windows") { "where" } else { "which" };
-    if let Ok(output) = std::process::Command::new(which_cmd)
-        .arg("bun")
-        .output()
-    {
+    let which_cmd = if cfg!(target_os = "windows") {
+        "where"
+    } else {
+        "which"
+    };
+    if let Ok(output) = std::process::Command::new(which_cmd).arg("bun").output() {
         if output.status.success() {
             let bun_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !bun_path.is_empty() {
@@ -129,10 +130,8 @@ fn build_ext_node_modules_paths(app_root: &Path, resource_dir: &Path) -> String 
         // Each extension's own node_modules
         if let Ok(entries) = std::fs::read_dir(&extensions_dir) {
             let mut ext_paths: Vec<String> = entries
-                .filter_map(|e| e.ok())
-                .filter(|e| e.path().is_dir())
                 .filter_map(|e| {
-                    let nm = e.path().join("node_modules");
+                    let nm = e.ok()?.path().join("node_modules");
                     if nm.is_dir() {
                         Some(nm.to_string_lossy().into_owned())
                     } else {

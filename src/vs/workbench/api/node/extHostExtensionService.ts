@@ -22,30 +22,32 @@ import nodeModule from 'node:module';
 import { DisposableStore } from '../../../base/common/lifecycle.js';
 import { ExtHostChildProcessInterceptor } from './extHostChildProcessInterceptor.js';
 
-const require = nodeModule.createRequire(import.meta.url);
+const nodeRequire = nodeModule.createRequire(import.meta.url);
+const fs = nodeRequire('fs');
+const path = nodeRequire('path');
+const os = nodeRequire('os');
 
+/** Type signature for Node.js Module._resolveFilename, used by both the stored original and the replacement. */
+type ResolveFilenameFn = (request: string, parent: { filename?: string } | unknown, isMain: boolean, options?: { paths?: string[] }) => string;
+
+/**
+ * Node.js/Bun-specific require() interceptor for the extension host.
+ *
+ * Intercepts `Module._resolveFilename` so that when an extension calls
+ * `require('vscode')` (or other registered module names), the call is
+ * redirected to the per-extension API factory. On Bun, a per-module shim
+ * file mechanism is used because Bun does not invoke `Module._load`.
+ */
 class NodeModuleRequireInterceptor extends RequireInterceptor {
 
 	protected _installInterceptor(): void {
-		const that = this;
-		const node_module = require('module');
+		const node_module = nodeRequire('module');
 
 		this._installBunInterceptor(node_module);
 
 		const originalLookup = node_module._resolveLookupPaths;
 		node_module._resolveLookupPaths = (request: string, parent: unknown) => {
-			return originalLookup.call(this, applyAlternatives(request), parent);
-		};
-
-		const applyAlternatives = (request: string) => {
-			for (const alternativeModuleName of that._alternatives) {
-				const alternative = alternativeModuleName(request);
-				if (alternative) {
-					request = alternative;
-					break;
-				}
-			}
-			return request;
+			return originalLookup.call(this, this._applyAlternatives(request), parent);
 		};
 	}
 
@@ -63,9 +65,9 @@ class NodeModuleRequireInterceptor extends RequireInterceptor {
 	 * The shim calls a global loader function that has closure access to the
 	 * factories map and URI class, avoiding the need to import them in the shim.
 	 */
-	private _installBunInterceptor(node_module: any): void {
+	private _installBunInterceptor(node_module: Record<string, unknown>): void {
 		const that = this;
-		const originalResolveFilename = node_module._resolveFilename;
+		const originalResolveFilename = node_module._resolveFilename as ResolveFilenameFn;
 
 		// Global keys for Bun shim communication
 		const parentKey = '__VSCODEEE_BUN_PARENT__';
@@ -74,15 +76,15 @@ class NodeModuleRequireInterceptor extends RequireInterceptor {
 		// Expose a loader function globally. The shim files call this with
 		// the module name and receive the factory result. This keeps URI and
 		// factory references inside the closure — no need to import them in shims.
-		(globalThis as any)[parentKey] = '';
-		(globalThis as any)[loaderKey] = (moduleName: string, shimRequire: (id: string) => any): any => {
+		(globalThis as Record<string, unknown>)[parentKey] = '';
+		(globalThis as Record<string, unknown>)[loaderKey] = (moduleName: string, shimRequire: (id: string) => unknown): unknown => {
 			const factory = that._factories.get(moduleName);
-			const parentFilename = (globalThis as any)[parentKey] || 'unknown';
+			const parentFilename = (globalThis as Record<string, unknown>)[parentKey] as string || 'unknown';
 			if (factory) {
 				return factory.load(
 					moduleName,
 					URI.file(realpathSync(parentFilename)),
-					shimRequire
+					shimRequire as (id: string) => unknown
 				);
 			}
 			return {};
@@ -91,28 +93,28 @@ class NodeModuleRequireInterceptor extends RequireInterceptor {
 		// Create shim directory
 		const shimDir = this._createBunShimDir();
 
-		node_module._resolveFilename = function resolveFilename(request: string, parent: { filename?: string } | unknown, isMain: boolean, options?: { paths?: string[] }) {
+		node_module._resolveFilename = function resolveFilename(request: string, parent: { filename?: string } | unknown, isMain: boolean, options?: { paths?: string[] }): string {
 			request = that._applyAlternatives(request);
 
 			// Check if this module should be intercepted
 			if (that._factories.has(request)) {
 				// Store caller context for the shim to read synchronously
 				const parentFilename = (parent as { filename?: string })?.filename || 'unknown';
-				(globalThis as any)[parentKey] = parentFilename;
+				(globalThis as Record<string, unknown>)[parentKey] = parentFilename;
 
 				// Get or create the shim file for this module
 				const shimPath = that._getBunShimPath(shimDir, request, loaderKey);
 
 				// Delete from require cache so Bun re-evaluates the shim
 				// (otherwise it returns the cached result from the first call)
-				delete require.cache[shimPath];
+				delete nodeRequire.cache[shimPath];
 
 				return shimPath;
 			}
 
 			// vsda compatibility fix (same as Node.js)
 			if (request === 'vsda' && Array.isArray(options?.paths) && options.paths.length === 0) {
-				options.paths = node_module._nodeModulePaths(import.meta.dirname);
+				options.paths = (node_module._nodeModulePaths as (dir: string) => string[])(import.meta.dirname);
 			}
 
 			return originalResolveFilename.call(this, request, parent, isMain, options);
@@ -125,9 +127,6 @@ class NodeModuleRequireInterceptor extends RequireInterceptor {
 	 * from dead processes to prevent gradual disk accumulation.
 	 */
 	private _createBunShimDir(): string {
-		const fs = require('fs');
-		const path = require('path');
-		const os = require('os');
 		const tmpDir = os.tmpdir();
 		const shimDir = path.join(tmpDir, `vscodeee-bun-shims-${process.pid}`);
 		fs.mkdirSync(shimDir, { recursive: true });
@@ -176,9 +175,6 @@ class NodeModuleRequireInterceptor extends RequireInterceptor {
 	 * access to the factories map and URI class.
 	 */
 	private _getBunShimPath(shimDir: string, moduleName: string, loaderKey: string): string {
-		const fs = require('fs');
-		const path = require('path');
-
 		// Sanitize module name for use as filename
 		const safeName = moduleName.replace(/[^a-zA-Z0-9_-]/g, '_');
 		const shimPath = path.join(shimDir, `${safeName}.js`);
@@ -198,6 +194,11 @@ module.exports = loader ? loader('${moduleName}', require) : {};
 
 	/**
 	 * Apply alternative module name mappings.
+	 *
+	 * Iterates through the registered alternative module name mappers and
+	 * returns the first non-null mapping result, or the original request
+	 * string if no mapping applies.
+	 *
 	 * Extracted as instance method for use by both Node and Bun interceptors.
 	 */
 	private _applyAlternatives(request: string): string {
@@ -211,10 +212,20 @@ module.exports = loader ? loader('${moduleName}', require) : {};
 	}
 }
 
+/**
+ * ESM import interceptor for the Bun-based extension host.
+ *
+ * Since Bun does not support `module.register()` loader hooks, this class
+ * creates a physical `node_modules/vscode/` CJS package at well-known
+ * locations. Before each `import('vscode')`, the global API instance is
+ * updated and the CJS module cache is busted so the package re-evaluates
+ * with the correct per-extension API.
+ */
 class NodeModuleESMInterceptor extends RequireInterceptor {
 
 	private readonly _store = new DisposableStore();
 
+	/** Dispose registered cleanup handlers. */
 	dispose(): void {
 		this._store.dispose();
 	}
@@ -233,10 +244,6 @@ class NodeModuleESMInterceptor extends RequireInterceptor {
 	 * so the package re-evaluates with the new API.
 	 */
 	private _installBunESMInterceptor(): void {
-		const fs = require('fs');
-		const path = require('path');
-		const os = require('os');
-
 		// Create node_modules/vscode/ in the same shim directory as the CJS interceptor
 		const tmpDir = os.tmpdir();
 		const shimDir = path.join(tmpDir, `vscodeee-bun-shims-${process.pid}`);
@@ -262,20 +269,20 @@ module.exports = globalThis.__VSCODEEE_ESM_API__ || {};
 
 		// Register a global function that _doLoadModule calls before each ESM import.
 		// It looks up the per-extension API, sets the global, and busts the CJS cache.
-		(globalThis as any).__VSCODEEE_PREPARE_ESM__ = (moduleUri: string) => {
+		(globalThis as Record<string, unknown>).__VSCODEEE_PREPARE_ESM__ = (moduleUri: string) => {
 			const factory = this._factories.get('vscode');
 			if (!factory) {
 				return;
 			}
 			const uri = URI.parse(moduleUri);
 			const apiInstance = factory.load('_not_used', uri, () => { throw new Error('Cannot load module from here.'); });
-			(globalThis as any).__VSCODEEE_ESM_API__ = apiInstance;
+			(globalThis as Record<string, unknown>).__VSCODEEE_ESM_API__ = apiInstance;
 
 			// Clear CJS cache so the vscode module re-evaluates with the new API.
 			// Use the known path directly since require.resolve('vscode') may fail
 			// (the shim dir is not on NODE_PATH).
 			try {
-				delete require.cache[path.join(vscodeDir, 'index.js')];
+				delete nodeRequire.cache[path.join(vscodeDir, 'index.js')];
 			} catch {
 				// Module not yet loaded — first import will pick it up
 			}
@@ -298,9 +305,6 @@ module.exports = globalThis.__VSCODEEE_ESM_API__ || {};
 	 * ~/.vscodeee/extensions/, so we symlink at both roots.
 	 */
 	private _createBunESMSymlink(vscodeDir: string): void {
-		const fs = require('fs');
-		const path = require('path');
-
 		const createSymlink = (targetDir: string) => {
 			const nodeModulesDir = path.join(targetDir, 'node_modules');
 			const symlinkPath = path.join(nodeModulesDir, 'vscode');
@@ -316,17 +320,33 @@ module.exports = globalThis.__VSCODEEE_ESM_API__ || {};
 		createSymlink(path.join(process.cwd(), 'extensions'));
 
 		// User-installed extensions: ~/.vscodeee/extensions/node_modules/vscode
-		const homeExtDir = path.join(require('os').homedir(), '.vscodeee', 'extensions');
+		const homeExtDir = path.join(os.homedir(), '.vscodeee', 'extensions');
 		if (fs.existsSync(homeExtDir)) {
 			createSymlink(homeExtDir);
 		}
 	}
 }
 
+/**
+ * Node.js/Bun implementation of the extension host extension service.
+ *
+ * Manages the lifecycle of extensions in the extension host process,
+ * including console forwarding, proxy resolution, module interception
+ * (both CJS require() and ESM import()), and child process interception.
+ */
 export class ExtHostExtensionService extends AbstractExtHostExtensionService {
 
+	/** Indicates this extension host runs on the Node.js/Bun runtime. */
 	readonly extensionRuntime = ExtensionRuntime.Node;
 
+	/**
+	 * One-time initialization performed before extensions are activated.
+	 *
+	 * Sets up console forwarding, the extension API factory, download service,
+	 * CLI server (for remote extensions), local disk file system provider,
+	 * CJS and ESM module interceptors, child process interceptor, and
+	 * the proxy resolver.
+	 */
 	protected async _beforeAlmostReadyToRunExtensions(): Promise<void> {
 		// make sure console.log calls make it to the render
 		this._instaService.createInstance(ExtHostConsoleForwarder);
@@ -368,10 +388,23 @@ export class ExtHostExtensionService extends AbstractExtHostExtensionService {
 		performance.mark('code/extHost/didInitProxyResolver');
 	}
 
+	/** Return the CJS main entry point path from the extension manifest. */
 	protected _getEntryPoint(extensionDescription: IExtensionDescription): string | undefined {
 		return extensionDescription.main;
 	}
 
+	/**
+	 * Load a module using either ESM dynamic import or CJS require.
+	 *
+	 * For ESM modules, invokes the `__VSCODEEE_PREPARE_ESM__` global to set
+	 * the per-extension API instance before importing. Records performance
+	 * marks around the load and initializes localized messages for the extension.
+	 *
+	 * @param extension - The extension description, or `null` for non-extension modules.
+	 * @param module - The file-scheme URI of the module to load.
+	 * @param activationTimesBuilder - Builder for tracking extension activation timing.
+	 * @param mode - Whether to load as `'esm'` (dynamic import) or `'cjs'` (require).
+	 */
 	private async _doLoadModule<T>(extension: IExtensionDescription | null, module: URI, activationTimesBuilder: ExtensionActivationTimesBuilder, mode: 'esm' | 'cjs'): Promise<T> {
 		if (module.scheme !== Schemas.file) {
 			throw new Error(`Cannot load URI: '${module}', must be of file-scheme`);
@@ -389,10 +422,10 @@ export class ExtHostExtensionService extends AbstractExtHostExtensionService {
 				performance.mark(`code/extHost/willLoadExtensionCode/${extensionId}`);
 			}
 			if (mode === 'esm') {
-				(globalThis as any).__VSCODEEE_PREPARE_ESM__?.(module.toString(true));
+				((globalThis as Record<string, unknown>).__VSCODEEE_PREPARE_ESM__ as ((uri: string) => void) | undefined)?.(module.toString(true));
 				r = <T>await import(module.toString(true));
 			} else {
-				r = <T>require(module.fsPath);
+				r = <T>nodeRequire(module.fsPath);
 			}
 		} finally {
 			if (extensionId) {
@@ -403,14 +436,25 @@ export class ExtHostExtensionService extends AbstractExtHostExtensionService {
 		return r;
 	}
 
+	/** Load a CommonJS module via `require()`. */
 	protected async _loadCommonJSModule<T>(extension: IExtensionDescription | null, module: URI, activationTimesBuilder: ExtensionActivationTimesBuilder): Promise<T> {
 		return this._doLoadModule<T>(extension, module, activationTimesBuilder, 'cjs');
 	}
 
+	/** Load an ESM module via dynamic `import()`. */
 	protected async _loadESMModule<T>(extension: IExtensionDescription | null, module: URI, activationTimesBuilder: ExtensionActivationTimesBuilder): Promise<T> {
 		return this._doLoadModule<T>(extension, module, activationTimesBuilder, 'esm');
 	}
 
+	/**
+	 * Apply environment variable changes from the remote extension host connection.
+	 *
+	 * Sets or deletes process environment variables based on the provided map.
+	 * Values of `null` indicate the variable should be removed from `process.env`.
+	 * No-op when not running as a remote extension host.
+	 *
+	 * @param env - Map of environment variable names to their new values, or `null` to unset.
+	 */
 	public async $setRemoteEnvironment(env: { [key: string]: string | null }): Promise<void> {
 		if (!this._initData.remote.isRemote) {
 			return;
