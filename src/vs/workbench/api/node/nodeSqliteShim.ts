@@ -16,7 +16,8 @@ import nodeModule from 'node:module';
 const nodeRequire = nodeModule.createRequire(import.meta.url);
 
 // Use require() to import bun:sqlite since TypeScript cannot resolve its types
-const bunSqlite = nodeRequire('bun:sqlite') as { Database: new (...args: any[]) => any; Statement: new (...args: any[]) => any };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const bunSqlite = nodeRequire('bun:sqlite') as { Database: new (...args: unknown[]) => unknown; Statement: new (...args: unknown[]) => unknown };
 type BunDatabase = InstanceType<typeof bunSqlite.Database>;
 type BunStatement = InstanceType<typeof bunSqlite.Statement>;
 
@@ -51,7 +52,7 @@ function notSupported(method: string): never {
  * @returns `true` if the value is a plain object suitable for named parameters.
  */
 function isNamedParamObject(value: unknown): value is Record<string, SQLInputValue> {
-	return value != null
+	return value !== null
 		&& typeof value === 'object'
 		&& !(value instanceof ArrayBuffer)
 		&& !ArrayBuffer.isView(value)
