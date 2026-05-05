@@ -18,6 +18,8 @@ export interface IProductService extends Readonly<IProductConfiguration> {
 	readonly _serviceBrand: undefined;
 	/** Human-readable label for the extension host runtime (e.g. `"Bun 1.2.0"`). */
 	extensionHostRuntime?: string;
+	/** Tauri application version from tauri.conf.json (e.g. `"0.13.0"`). */
+	tauriAppVersion?: string;
 
 }
 

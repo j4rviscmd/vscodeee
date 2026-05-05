@@ -206,6 +206,7 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
         .manage(commands::updater::UpdaterState::default())
         .manage(shutdown::ShutdownCoordinator::new())
         .on_window_event(window::events::handle_window_event)
+        .on_menu_event(window::menu::on_menu_event)
         .register_asynchronous_uri_scheme_protocol("vscode-file", move |ctx, request, responder| {
             // On first call the state will have been initialized by setup().
             // If somehow called before setup (shouldn't happen), return 503.
@@ -390,6 +391,9 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
             use tauri::Manager;
 
             log::info!(target: "vscodeee", "Tauri app started");
+
+            // ── Application menu ──
+            window::menu::setup(app)?;
 
             // ── Initialize terminal state store ──
             {
