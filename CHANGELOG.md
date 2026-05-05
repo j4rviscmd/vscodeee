@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-05-05
+
+### Added
+
+- Migrate Extension Host runtime from Node.js to Bun ([#436](https://github.com/j4rviscmd/vscodeee/pull/436))
+- Add node:sqlite polyfill shim for Bun compatibility
+- Add node:sea polyfill shim for Bun compatibility ([#443](https://github.com/j4rviscmd/vscodeee/pull/443))
+
+### Fixed
+
+- Improve About dialog with custom menu and fork version display ([#438](https://github.com/j4rviscmd/vscodeee/pull/438))
+- Resolve ESLint warnings in node-sqlite shim
+- Add type definitions for bun:sqlite API
+
 ## [0.13.0] - 2026-05-04
 
 ### Added
