@@ -21,6 +21,7 @@ import { ExtHostDiskFileSystemProvider } from './extHostDiskFileSystemProvider.j
 import nodeModule from 'node:module';
 import { DisposableStore } from '../../../base/common/lifecycle.js';
 import { ExtHostChildProcessInterceptor } from './extHostChildProcessInterceptor.js';
+import { NodeSqliteModuleFactory } from './nodeSqliteModuleFactory.js';
 
 const nodeRequire = nodeModule.createRequire(import.meta.url);
 const fs = nodeRequire('fs');
@@ -265,7 +266,31 @@ module.exports = globalThis.__VSCODEEE_ESM_API__ || {};
 `);
 
 		// Place symlinks at locations Bun's ESM resolver will find.
-		this._createBunESMSymlink(vscodeDir);
+		this._createBunESMSymlink('vscode', vscodeDir);
+
+		// Create node_modules/node:sqlite/ for ESM import resolution.
+		// Unlike vscode, node:sqlite is not per-extension — the global is set once.
+		const sqliteFactory = this._factories.get('node:sqlite');
+		if (sqliteFactory) {
+			const sqliteDir = path.join(shimDir, 'node_modules', 'node:sqlite');
+			fs.mkdirSync(sqliteDir, { recursive: true });
+
+			fs.writeFileSync(path.join(sqliteDir, 'package.json'), JSON.stringify({
+				name: 'node:sqlite',
+				version: '0.0.0',
+				main: 'index.js'
+			}));
+
+			// Set the global once during initialization (no per-extension swap needed)
+			const sqliteModule = sqliteFactory.load('node:sqlite', URI.parse('file:///node:sqlite'), () => { throw new Error('Cannot load module from here.'); });
+			(globalThis as Record<string, unknown>).__VSCODEEE_NODE_SQLITE_MODULE__ = sqliteModule;
+
+			fs.writeFileSync(path.join(sqliteDir, 'index.js'), `'use strict';
+module.exports = globalThis.__VSCODEEE_NODE_SQLITE_MODULE__ || {};
+`);
+
+			this._createBunESMSymlink('node:sqlite', sqliteDir);
+		}
 
 		// Register a global function that _doLoadModule calls before each ESM import.
 		// It looks up the per-extension API, sets the global, and busts the CJS cache.
@@ -304,15 +329,15 @@ module.exports = globalThis.__VSCODEEE_ESM_API__ || {};
 	 * Built-in extensions live under extensions/ and user extensions under
 	 * ~/.vscodeee/extensions/, so we symlink at both roots.
 	 */
-	private _createBunESMSymlink(vscodeDir: string): void {
+	private _createBunESMSymlink(moduleName: string, packageDir: string): void {
 		const createSymlink = (targetDir: string) => {
 			const nodeModulesDir = path.join(targetDir, 'node_modules');
-			const symlinkPath = path.join(nodeModulesDir, 'vscode');
+			const symlinkPath = path.join(nodeModulesDir, moduleName);
 			try {
 				fs.mkdirSync(nodeModulesDir, { recursive: true });
 				// Remove stale symlink from a previous process and recreate
 				try { fs.rmSync(symlinkPath, { force: true }); } catch { /* not a symlink or doesn't exist */ }
-				fs.symlinkSync(vscodeDir, symlinkPath, 'junction');
+				fs.symlinkSync(packageDir, symlinkPath, 'junction');
 			} catch { /* best-effort: may fail due to permissions */ }
 		};
 
@@ -367,12 +392,15 @@ export class ExtHostExtensionService extends AbstractExtHostExtensionService {
 		this._instaService.createInstance(ExtHostDiskFileSystemProvider);
 
 		// Module loading tricks
-		await this._instaService.createInstance(NodeModuleRequireInterceptor, extensionApiFactory, { mine: this._myRegistry, all: this._globalRegistry })
-			.install();
+		const sqliteFactory = new NodeSqliteModuleFactory();
+		const requireInterceptor = this._instaService.createInstance(NodeModuleRequireInterceptor, extensionApiFactory, { mine: this._myRegistry, all: this._globalRegistry });
+		requireInterceptor.register(sqliteFactory);
+		await requireInterceptor.install();
 
 		// ESM loading tricks
-		await this._store.add(this._instaService.createInstance(NodeModuleESMInterceptor, extensionApiFactory, { mine: this._myRegistry, all: this._globalRegistry }))
-			.install();
+		const esmInterceptor = this._store.add(this._instaService.createInstance(NodeModuleESMInterceptor, extensionApiFactory, { mine: this._myRegistry, all: this._globalRegistry }));
+		esmInterceptor.register(sqliteFactory);
+		await esmInterceptor.install();
 
 		// Child process interceptor — injects --no-experimental-require-module
 		// into fork()ed child processes (vscode-languageclient resets execArgv to []),
