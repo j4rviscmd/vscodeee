@@ -22,6 +22,7 @@ import nodeModule from 'node:module';
 import { DisposableStore } from '../../../base/common/lifecycle.js';
 import { ExtHostChildProcessInterceptor } from './extHostChildProcessInterceptor.js';
 import { NodeSqliteModuleFactory } from './nodeSqliteModuleFactory.js';
+import { NodeSeaModuleFactory } from './nodeSeaModuleFactory.js';
 
 const nodeRequire = nodeModule.createRequire(import.meta.url);
 const fs = nodeRequire('fs');
@@ -30,6 +31,19 @@ const os = nodeRequire('os');
 
 /** Type signature for Node.js Module._resolveFilename, used by both the stored original and the replacement. */
 type ResolveFilenameFn = (request: string, parent: { filename?: string } | unknown, isMain: boolean, options?: { paths?: string[] }) => string;
+
+/**
+ * Register best-effort cleanup of a directory on process exit signals.
+ * Shared by both CJS and ESM interceptors.
+ */
+function registerProcessCleanup(dir: string): void {
+	const cleanup = () => {
+		try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best-effort */ }
+	};
+	process.on('exit', cleanup);
+	process.on('SIGTERM', cleanup);
+	process.on('SIGINT', cleanup);
+}
 
 /**
  * Node.js/Bun-specific require() interceptor for the extension host.
@@ -132,13 +146,7 @@ class NodeModuleRequireInterceptor extends RequireInterceptor {
 		const shimDir = path.join(tmpDir, `vscodeee-bun-shims-${process.pid}`);
 		fs.mkdirSync(shimDir, { recursive: true });
 
-		// Register cleanup on process exit
-		const cleanup = () => {
-			try { fs.rmSync(shimDir, { recursive: true, force: true }); } catch { /* best-effort */ }
-		};
-		process.on('exit', cleanup);
-		process.on('SIGTERM', cleanup);
-		process.on('SIGINT', cleanup);
+		registerProcessCleanup(shimDir);
 
 		// Remove stale shim directories from dead processes (best-effort)
 		try {
@@ -268,29 +276,10 @@ module.exports = globalThis.__VSCODEEE_ESM_API__ || {};
 		// Place symlinks at locations Bun's ESM resolver will find.
 		this._createBunESMSymlink('vscode', vscodeDir);
 
-		// Create node_modules/node:sqlite/ for ESM import resolution.
-		// Unlike vscode, node:sqlite is not per-extension — the global is set once.
-		const sqliteFactory = this._factories.get('node:sqlite');
-		if (sqliteFactory) {
-			const sqliteDir = path.join(shimDir, 'node_modules', 'node:sqlite');
-			fs.mkdirSync(sqliteDir, { recursive: true });
-
-			fs.writeFileSync(path.join(sqliteDir, 'package.json'), JSON.stringify({
-				name: 'node:sqlite',
-				version: '0.0.0',
-				main: 'index.js'
-			}));
-
-			// Set the global once during initialization (no per-extension swap needed)
-			const sqliteModule = sqliteFactory.load('node:sqlite', URI.parse('file:///node:sqlite'), () => { throw new Error('Cannot load module from here.'); });
-			(globalThis as Record<string, unknown>).__VSCODEEE_NODE_SQLITE_MODULE__ = sqliteModule;
-
-			fs.writeFileSync(path.join(sqliteDir, 'index.js'), `'use strict';
-module.exports = globalThis.__VSCODEEE_NODE_SQLITE_MODULE__ || {};
-`);
-
-			this._createBunESMSymlink('node:sqlite', sqliteDir);
-		}
+		// Register singleton modules (node:sqlite, node:sea) for ESM import resolution.
+		// These are not per-extension — the global is set once during initialization.
+		this._installBunESMSingletonModule(shimDir, 'node:sqlite', '__VSCODEEE_NODE_SQLITE_MODULE__');
+		this._installBunESMSingletonModule(shimDir, 'node:sea', '__VSCODEEE_NODE_SEA_MODULE__');
 
 		// Register a global function that _doLoadModule calls before each ESM import.
 		// It looks up the per-extension API, sets the global, and busts the CJS cache.
@@ -313,13 +302,39 @@ module.exports = globalThis.__VSCODEEE_NODE_SQLITE_MODULE__ || {};
 			}
 		};
 
-		// Register cleanup
-		const cleanup = () => {
-			try { fs.rmSync(shimDir, { recursive: true, force: true }); } catch { /* best-effort */ }
-		};
-		process.on('exit', cleanup);
-		process.on('SIGTERM', cleanup);
-		process.on('SIGINT', cleanup);
+		registerProcessCleanup(shimDir);
+	}
+
+	/**
+	 * Create a singleton ESM module package for a factory-registered module.
+	 *
+	 * Creates node_modules/<moduleName>/ with a package.json and index.js that
+	 * reads from a global variable, loads the module from the factory once,
+	 * and places symlinks for Bun's ESM resolver.
+	 */
+	private _installBunESMSingletonModule(shimDir: string, moduleName: string, globalKey: string): void {
+		const factory = this._factories.get(moduleName);
+		if (!factory) {
+			return;
+		}
+
+		const moduleDir = path.join(shimDir, 'node_modules', moduleName);
+		fs.mkdirSync(moduleDir, { recursive: true });
+
+		fs.writeFileSync(path.join(moduleDir, 'package.json'), JSON.stringify({
+			name: moduleName,
+			version: '0.0.0',
+			main: 'index.js'
+		}));
+
+		const loadedModule = factory.load(moduleName, URI.parse(`file:///${moduleName}`), () => { throw new Error('Cannot load module from here.'); });
+		(globalThis as Record<string, unknown>)[globalKey] = loadedModule;
+
+		fs.writeFileSync(path.join(moduleDir, 'index.js'), `'use strict';
+	module.exports = globalThis.${globalKey} || {};
+`);
+
+		this._createBunESMSymlink(moduleName, moduleDir);
 	}
 
 	/**
@@ -391,15 +406,18 @@ export class ExtHostExtensionService extends AbstractExtHostExtensionService {
 		// Register local file system shortcut
 		this._instaService.createInstance(ExtHostDiskFileSystemProvider);
 
-		// Module loading tricks
+		// Module loading tricks — register built-in Node.js module polyfills
 		const sqliteFactory = new NodeSqliteModuleFactory();
+		const seaFactory = new NodeSeaModuleFactory();
 		const requireInterceptor = this._instaService.createInstance(NodeModuleRequireInterceptor, extensionApiFactory, { mine: this._myRegistry, all: this._globalRegistry });
 		requireInterceptor.register(sqliteFactory);
+		requireInterceptor.register(seaFactory);
 		await requireInterceptor.install();
 
 		// ESM loading tricks
 		const esmInterceptor = this._store.add(this._instaService.createInstance(NodeModuleESMInterceptor, extensionApiFactory, { mine: this._myRegistry, all: this._globalRegistry }));
 		esmInterceptor.register(sqliteFactory);
+		esmInterceptor.register(seaFactory);
 		await esmInterceptor.install();
 
 		// Child process interceptor — injects --no-experimental-require-module
