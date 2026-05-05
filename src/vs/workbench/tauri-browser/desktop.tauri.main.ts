@@ -61,6 +61,7 @@ import { BrowserRequestService } from '../services/request/browser/requestServic
 import { mainWindow } from '../../base/browser/window.js';
 import { IWorkbenchLayoutService } from '../services/layout/browser/layoutService.js';
 import { IOpenerService } from '../../platform/opener/common/opener.js';
+import { ICommandService } from '../../platform/commands/common/commands.js';
 
 import { TauriIPCMainProcessService } from '../../platform/ipc/tauri-browser/mainProcessService.js';
 import { TauriNativeHostService } from '../../platform/native/tauri-browser/nativeHostService.js';
@@ -178,6 +179,12 @@ export class TauriDesktopMain extends Disposable {
       // and manages the status bar indicator.
       const windowZoomService = accessor.get(IWindowZoomService);
       windowZoomService.restoreZoom(); // fire and forget — zoom applies asynchronously
+
+      // macOS menu bar About → VS Code About dialog.
+      const commandService = accessor.get(ICommandService);
+      listen<void>('show-about-dialog', () => {
+        commandService.executeCommand('workbench.action.showAboutDialog');
+      }).then(unlisten => this._register({ dispose: unlisten }));
     });
   }
 
