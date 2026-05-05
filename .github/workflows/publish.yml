@@ -11,6 +11,7 @@
 #   4. publish-tauri       — cross-platform build matrix (macOS arm64/x64, Linux, Windows)
 #   5. build-reh           — build REH (Remote Extension Host) server for SSH remotes
 #   6. upload-stable-assets — upload fixed-name copies + publish draft release
+#   7. cleanup-on-failure  — delete draft release + tag when any build job fails
 name: Release
 
 on:
@@ -119,12 +120,7 @@ jobs:
             "src/vs/workbench/api/node/extensionHostProcess.ts"
           )
 
-          DIFF_ARGS=""
-          for p in "${REH_PATHS[@]}"; do
-            DIFF_ARGS="$DIFF_ARGS $p"
-          done
-
-          CHANGES=$(git diff --name-only "$PREV_TAG"...HEAD -- $DIFF_ARGS)
+          CHANGES=$(git diff --name-only "$PREV_TAG"...HEAD -- "${REH_PATHS[@]}")
           if [ -z "$CHANGES" ]; then
             echo "No REH-related changes detected. REH build will be skipped."
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -294,28 +290,32 @@ jobs:
       - name: Install system dependencies (Linux)
         if: matrix.platform == 'ubuntu-22.04'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxkbfile-dev pkg-config libkrb5-dev libxss1
+          . .github/scripts/retry.sh
+          retry 3 sudo apt-get update
+          retry 3 sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxkbfile-dev pkg-config libkrb5-dev libxss1
 
       - name: Install frontend dependencies
+        shell: bash
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
           ELECTRON_SKIP_BINARY_DOWNLOAD: 1
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          . .github/scripts/retry.sh
           # Create placeholder to prevent postinstall symlink error
           touch .github/copilot-instructions.md
-          npm ci
+          retry 3 npm ci
 
       - name: Download Bun sidecar binary
         shell: bash
         run: |
+          . .github/scripts/retry.sh
           # Extract --target value from args; fall back to host triple for native builds
           TARGET=$(echo "${{ matrix.args }}" | sed -n 's/.*--target \([^ ]*\).*/\1/p')
           if [ -z "$TARGET" ]; then
             TARGET=$(rustc --print host-tuple)
           fi
-          node scripts/download-bun.mjs --target "$TARGET"
+          retry 3 node scripts/download-bun.mjs --target "$TARGET"
 
       - name: Build and publish with Tauri
         uses: tauri-apps/tauri-action@v0
@@ -332,6 +332,7 @@ jobs:
           prerelease: false
           includeUpdaterJson: true
           updaterJsonPreferNsis: true
+          retryAttempts: 1
           args: ${{ matrix.args }}
 
   build-reh:
@@ -384,14 +385,11 @@ jobs:
           free -h
           df -h /
           # Remove large pre-installed tools that consume memory/cache
-          sudo rm -rf /usr/local/lib/android || true
-          sudo rm -rf /usr/share/dotnet || true
-          sudo rm -rf /opt/ghc || true
-          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
-          sudo rm -rf /opt/hostedtoolcache/go || true
-          sudo rm -rf /opt/hostedtoolcache/Ruby || true
-          sudo rm -rf /usr/local/share/powershell || true
-          sudo rm -rf /usr/local/share/chromium || true
+          for dir in /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /opt/hostedtoolcache/go /opt/hostedtoolcache/Ruby \
+            /usr/local/share/powershell /usr/local/share/chromium; do
+            sudo rm -rf "$dir" || true
+          done
           # Prune Docker images to free memory-mapped files
           sudo docker image prune --all --force || true
           # Drop filesystem caches to reclaim memory
@@ -403,8 +401,9 @@ jobs:
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libxkbfile-dev pkg-config libkrb5-dev libsecret-1-dev
+          . .github/scripts/retry.sh
+          retry 3 sudo apt-get update
+          retry 3 sudo apt-get install -y libxkbfile-dev pkg-config libkrb5-dev libsecret-1-dev
 
       # The gulp compilation step requires ~8GB memory (--max-old-space-size=8192)
       # but GitHub-hosted ubuntu runners only have 7GB RAM. Add swap to prevent OOM kills.
@@ -430,9 +429,10 @@ jobs:
           ELECTRON_SKIP_BINARY_DOWNLOAD: 1
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          . .github/scripts/retry.sh
           # Create placeholder to prevent postinstall symlink error
           touch .github/copilot-instructions.md
-          npm ci
+          retry 3 npm ci
 
       # The mangler spawns worker threads (default 4) each inheriting the main
       # process's V8 heap limit. On GitHub-hosted ubuntu-22.04 (15GB RAM + 8GB swap),
@@ -455,6 +455,7 @@ jobs:
       - name: Cross-compile remote dependencies (Linux ARM)
         if: matrix.os == 'linux' && matrix.arch != 'x64'
         run: |
+          . .github/scripts/retry.sh
           DEST="../vscode-reh-${{ matrix.os }}-${{ matrix.arch }}"
           DOCKER_PLATFORM="linux/${{ matrix.arch == 'armhf' && 'arm/v7' || matrix.arch }}"
 
@@ -462,7 +463,7 @@ jobs:
           rm -rf "$DEST/node_modules"
 
           # Reinstall for target arch via Docker + QEMU
-          docker run --rm \
+          retry 3 docker run --rm \
             --platform "$DOCKER_PLATFORM" \
             -e GITHUB_TOKEN \
             -v "$PWD/remote:/workspace" \
@@ -528,6 +529,57 @@ jobs:
             });
             core.info(`Uploaded ${assetName} to release ${releaseId}`);
 
+  cleanup-on-failure:
+    name: Cleanup — delete draft release and tag on failure
+    needs: [preflight, create-release, publish-tauri, build-reh]
+    if: |
+      !cancelled() &&
+      needs.preflight.outputs.skip != 'true' &&
+      needs.create-release.result == 'success' &&
+      (needs.publish-tauri.result == 'failure' || needs.build-reh.result == 'failure')
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete draft release and tag
+        uses: actions/github-script@v9
+        env:
+          TAG: ${{ needs.preflight.outputs.tag }}
+          RELEASE_ID: ${{ needs.create-release.outputs.release-id }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const tag = process.env.TAG;
+            const releaseId = Number(process.env.RELEASE_ID);
+
+            // Delete draft release
+            if (releaseId && !isNaN(releaseId)) {
+              try {
+                await github.rest.repos.deleteRelease({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  release_id: releaseId,
+                });
+                core.info(`Deleted draft release ${releaseId} (${tag})`);
+              } catch (e) {
+                core.warning(`Failed to delete release: ${e.message}`);
+              }
+            }
+
+            // Delete tag
+            try {
+              await github.rest.git.deleteRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `tags/${tag}`,
+              });
+              core.info(`Deleted tag ${tag}`);
+            } catch (e) {
+              core.warning(`Failed to delete tag: ${e.message}`);
+            }
+
+            core.info(`Cleanup complete. Next push to main will start a fresh release.`);
+
   upload-stable-assets:
     name: Upload fixed-name assets for README links
     needs: [preflight, publish-tauri, build-reh, create-release]
@@ -535,7 +587,8 @@ jobs:
       !cancelled() &&
       needs.preflight.outputs.skip != 'true' &&
       needs.publish-tauri.result == 'success' &&
-      needs.create-release.result == 'success'
+      needs.create-release.result == 'success' &&
+      needs.build-reh.result != 'failure'
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -684,12 +737,6 @@ jobs:
               });
               core.info(`Uploaded ${fixedName} (from ${asset.name})`);
             }
-
-      - name: Fail if REH build failed
-        if: needs.build-reh.result == 'failure'
-        run: |
-          echo "::error::REH build failed. Not publishing release."
-          exit 1
 
       - name: Verify all expected assets and publish release
         if: needs.build-reh.result != 'failure'
