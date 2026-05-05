@@ -643,7 +643,6 @@ jobs:
             const renames = [
               { match: `_${version}_aarch64.dmg`, fixedName: 'VSCodeee_macOS_arm64.dmg' },
               { match: `_${version}_x64.dmg`, fixedName: 'VSCodeee_macOS_x64.dmg' },
-              { match: `_${version}_amd64.AppImage`, fixedName: 'VSCodeee_Linux_x64.AppImage' },
               { match: `_${version}_amd64.deb`, fixedName: 'VSCodeee_Linux_x64.deb' },
               { match: `_${version}_x64-setup.exe`, fixedName: 'VSCodeee_Windows_x64-setup.exe' },
             ];
@@ -716,11 +715,11 @@ jobs:
 
             const assetNames = release.assets.map(a => a.name);
 
-            // Expected Tauri desktop assets (4 platforms)
+            // Expected Tauri desktop assets (3 platforms, Linux ships deb only)
             const expectedTauri = [
               `_${version}_aarch64.dmg`,
               `_${version}_x64.dmg`,
-              `_${version}_amd64.AppImage`,
+              `_${version}_amd64.deb`,
               `_${version}_x64-setup.exe`,
             ];
             // Expected REH server assets (5 targets)
