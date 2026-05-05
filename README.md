@@ -38,12 +38,25 @@ Maintain the current functionality of VSCode while achieving the following:
 
 - **Reduce memory usage**: Electron → Tauri 2.0 (native WebView instead of bundled Chromium)
 - **Reduce unnecessary metrics**: Stop sending telemetry to Microsoft
-- **Smaller binary size**: No bundled Chromium (system WebView is used instead). Node.js is still bundled for extension host support
+- **Smaller binary size**: No bundled Chromium (system WebView is used instead). Extension host runtime also migrated from Node.js (~65MB) to Bun (~30MB) for further size reduction
 - **Transparent background** (experimental): Native window transparency support (macOS/Linux) — see the desktop through your editor
   - Future releases will explore more advanced appearance options such as full window transparency and blur effects
   - <img src="./docs/screenshots/settings_transparent.png" alt="Transparent Editor Settings" width="300">
 - [Settings and keybindings for Vimmers](#vscodeee-original-features)
 - Regularly merge upstream VSCode to maintain the latest features and security patches
+
+## Performance
+
+VSCodeee replaces the Electron architecture at two layers, achieving significant resource savings.
+
+| Layer | Electron (upstream VSCode) | VSCodeee | Impact |
+| --- | --- | --- | --- |
+| UI framework | Chromium (bundled) | Tauri 2.0 (system WebView) | Major binary size reduction |
+| Extension Host | Node.js (~65MB) | Bun (~30MB) | **-54%** binary size |
+| Extension Host startup | ~200ms | ~50ms | **-75%** startup time |
+| Extension Host memory | ~40MB | ~20MB | **-50%** memory usage |
+
+> **Note**: The Extension Host is the process that runs VS Code extensions (Language Servers, debuggers, linters, etc.). Upstream VSCode uses Node.js bundled within Electron for this role, while VSCodeee launches a Bun runtime sidecar that communicates with the WebView via WebSocket + Unix Pipe.
 
 ---
 
@@ -72,11 +85,11 @@ Maintain the current functionality of VSCode while achieving the following:
 ## Architecture
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./docs/screenshots/vscodeee_architecture_dark.png">
-  <img src="./docs/screenshots/vscodeee_architecture_light.png" alt="VSCodeee Architecture">
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/screenshots/vscodeee_architecture_dark.svg">
+  <img src="./docs/screenshots/vscodeee_architecture_light.svg" alt="VSCodeee Architecture">
 </picture>
 
-> **Note**: Shared Process (upstream VS Code's hidden renderer for gallery, sync, telemetry) is **eliminated** in VSCodeee. Its services are implemented directly in the WebView or Rust backend — see [#88](https://github.com/j4rviscmd/vscodeee/issues/88).
+> **Note**: Shared Process (upstream VS Code's hidden renderer for gallery, sync, telemetry) is **eliminated** in VSCodeee. Its services are implemented directly in the WebView or Rust backend — see [#88](https://github.com/j4rviscmd/vscodeee/issues/88). The Extension Host runtime has also been migrated from Node.js to Bun ([#256](https://github.com/j4rviscmd/vscodeee/issues/256)).
 
 ---
 

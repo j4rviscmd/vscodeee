@@ -307,7 +307,7 @@ jobs:
           touch .github/copilot-instructions.md
           npm ci
 
-      - name: Download Node.js sidecar binary
+      - name: Download Bun sidecar binary
         shell: bash
         run: |
           # Extract --target value from args; fall back to host triple for native builds
@@ -315,7 +315,7 @@ jobs:
           if [ -z "$TARGET" ]; then
             TARGET=$(rustc --print host-tuple)
           fi
-          node scripts/download-node.mjs --target "$TARGET"
+          node scripts/download-bun.mjs --target "$TARGET"
 
       - name: Build and publish with Tauri
         uses: tauri-apps/tauri-action@v0

@@ -3,35 +3,13 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-//! Extension Host sidecar management — spawn Node.js, communicate via named pipe.
-//!
-//! # Phase 0-2 PoC Architecture (Minimal)
-//!
-//! Rust directly implements the VS Code wire protocol and runs the handshake
-//! state machine over a Unix domain socket / named pipe. The Extension Host
-//! process (`extensionHostProcess.ts`) is spawned as a plain Node.js child
-//! process — no Electron dependency.
-//!
-//! # TODO: Production Architecture (Clean Architecture — Phase 1-2)
-//!
-//! In production, replace the Rust-side protocol handling with a WebSocket↔Pipe
-//! byte relay. The TypeScript side (`TauriLocalProcessExtensionHost` implementing
-//! `IExtensionHost`) will handle the protocol via the existing `PersistentProtocol`
-//! class, connecting through a WebSocket to the Rust relay.
-//!
-//! Key components for production:
-//! - `SidecarManager` — multi-instance lifecycle orchestrator (replaces single spawn)
-//! - `WsRelay` — bidirectional byte relay (WebSocket ↔ named pipe)
-//! - `TauriLocalProcessExtensionHost` — TypeScript IExtensionHost implementation
-//! - `TauriExtensionService` — TypeScript extension service with factory
-//!
-//! See: `src/vs/workbench/services/extensions/tauri-browser/` (to be created)
+//! Extension Host sidecar management — spawn Bun runtime, communicate via named pipe.
 
 pub mod init_data;
 pub mod protocol;
 
 // Handshake and sidecar use Unix domain sockets (tokio::net::UnixListener).
-// Windows named pipe support requires tokio::net::windows::named_pipe (Phase 1+).
+// Windows named pipe support requires tokio::net::windows::named_pipe.
 #[cfg(unix)]
 pub mod handshake;
 #[cfg(unix)]
@@ -44,7 +22,7 @@ pub mod ws_relay;
 pub enum ExtHostError {
     /// Failed to create the Unix domain socket / named pipe.
     PipeCreation(std::io::Error),
-    /// Failed to spawn the Node.js child process.
+    /// Failed to spawn the Bun child process.
     Spawn(std::io::Error),
     /// Timeout waiting for ExtHost to connect or complete handshake.
     Timeout,
@@ -65,7 +43,7 @@ impl std::fmt::Display for ExtHostError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::PipeCreation(e) => write!(f, "Pipe creation failed: {e}"),
-            Self::Spawn(e) => write!(f, "Node.js spawn failed: {e}"),
+            Self::Spawn(e) => write!(f, "Bun spawn failed: {e}"),
             Self::Timeout => write!(f, "Handshake timeout (30s)"),
             Self::ChildExited { status, stderr } => {
                 write!(f, "ExtHost process exited prematurely: {status}")?;

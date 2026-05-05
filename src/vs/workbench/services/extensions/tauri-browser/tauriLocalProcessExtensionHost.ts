@@ -34,7 +34,7 @@ interface IExtHostSpawnResult {
   readonly instanceId: number;
   /** WebSocket port on which the Rust relay is listening. */
   readonly wsPort: number;
-  /** PID of the spawned Node.js Extension Host child process. */
+  /** PID of the spawned Bun Extension Host child process. */
   readonly extHostPid: number;
   /** Unix domain socket path used for IPC with the Extension Host. */
   readonly pipePath: string;
@@ -55,8 +55,8 @@ export interface ITauriLocalProcessExtensionHostDataProvider {
  * IExtensionHost implementation for the Tauri local process extension host.
  *
  * Communication flow:
- *   TS (WebView) → invoke('spawn_exthost_with_relay') → Rust spawns Node.js + WS relay
- *   TS → WebSocket ws://127.0.0.1:{port} → Rust relay → Unix pipe → Node.js ExtHost
+ *   TS (WebView) → invoke('spawn_exthost_with_relay') → Rust spawns Bun + WS relay
+ *   TS → WebSocket ws://127.0.0.1:{port} → Rust relay → Unix pipe → Bun ExtHost
  *   PersistentProtocol manages the full VS Code extension host protocol over this socket.
  */
 export class TauriLocalProcessExtensionHost extends Disposable implements IExtensionHost {
@@ -108,7 +108,7 @@ export class TauriLocalProcessExtensionHost extends Disposable implements IExten
 	 * Start the extension host process and establish a protocol connection.
 	 *
 	 * Performs the following steps:
-	 * 1. Invokes the Rust `spawn_exthost_with_relay` command to spawn Node.js
+	 * 1. Invokes the Rust `spawn_exthost_with_relay` command to spawn Bun
 	 *    and start the WebSocket relay
 	 * 2. Connects a WebSocket to the relay at `ws://127.0.0.1:{port}`
 	 * 3. Wraps the socket in a {@link PersistentProtocol}
@@ -121,7 +121,7 @@ export class TauriLocalProcessExtensionHost extends Disposable implements IExten
 	 * @throws If the handshake does not complete within 60 seconds.
 	 */
   public async start(): Promise<IMessagePassingProtocol> {
-    // 1) Ask Rust to spawn Node.js ExtHost + WS relay
+    // 1) Ask Rust to spawn Bun ExtHost + WS relay
     this._logService.info('[TauriExtHost] Spawning extension host with WS relay...');
     const result = await invoke<IExtHostSpawnResult>('spawn_exthost_with_relay');
     this.pid = result.extHostPid;

@@ -3,20 +3,12 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-//! Named pipe creation and Node.js Extension Host process spawning.
+//! Named pipe creation and Bun Extension Host process spawning.
 //!
 //! Replicates the pattern from `src/vs/server/node/extensionHostConnection.ts:247-335`:
 //! 1. Create Unix domain socket server (`_listenOnPipe()`)
-//! 2. Spawn `node out/bootstrap-fork.js --type=extensionHost` with correct env vars
+//! 2. Spawn `bun out/bootstrap-fork.js --type=extensionHost` with correct env vars
 //! 3. Wait for the ExtHost to connect back to our socket
-//!
-//! # TODO: Production (Phase 1-2)
-//!
-//! Replace this with a `SidecarManager` that:
-//! - Manages multiple ExtHost instances (multi-window support)
-//! - Tracks state via a state machine (Starting→PipeReady→Connected→Running→Stopped)
-//! - Supports bundled Node.js binary (not just system `node`)
-//! - Integrates with Tauri managed state for WebView access
 
 use std::path::Path;
 use std::sync::Arc;
@@ -27,65 +19,80 @@ use tokio::sync::Mutex;
 
 use super::ExtHostError;
 
-/// Resolve the Node.js binary path for the Extension Host process.
+/// Resolve the Bun runtime binary path.
 ///
 /// Resolution order:
-/// 1. `VSCODEEE_NODE_PATH` environment variable (explicit override)
-/// 2. Bundled sidecar binary next to the current executable (production builds)
-/// 3. System `node` from PATH (development)
-///
-/// In production, `tauri build` bundles Node.js via `externalBin` into the same
-/// directory as the main executable. Tauri strips the target-triple suffix during
-/// bundling, so the binary is named simply `node` (or `node.exe` on Windows).
-fn resolve_node_binary() -> String {
+/// 1. `VSCODEEE_RUNTIME_PATH` environment variable (explicit override)
+/// 2. Bundled Bun sidecar next to the current executable (production)
+/// 3. System `bun` from PATH (development)
+fn resolve_runtime_binary() -> String {
     // 1. Explicit override via environment variable
-    if let Ok(path) = std::env::var("VSCODEEE_NODE_PATH") {
+    // VSCODEEE_NODE_PATH kept as fallback alias for backward compatibility
+    if let Ok(path) =
+        std::env::var("VSCODEEE_RUNTIME_PATH").or_else(|_| std::env::var("VSCODEEE_NODE_PATH"))
+    {
         log::info!(
             target: "vscodeee::exthost::sidecar",
-            "Using Node.js from VSCODEEE_NODE_PATH: {path}"
+            "Using runtime from env override: {path}"
         );
         return path;
     }
 
-    // 2. Bundled sidecar binary (production Tauri build)
-    // Tauri's externalBin strips the target-triple suffix when bundling,
-    // so `binaries/node-aarch64-apple-darwin` becomes `Contents/MacOS/node`.
+    // 2. Bundled Bun sidecar (production Tauri build)
     if let Some(sidecar_path) = std::env::current_exe()
         .ok()
         .as_ref()
         .and_then(|exe| exe.parent())
         .map(|dir| {
             dir.join(if cfg!(target_os = "windows") {
-                "node.exe"
+                "bun.exe"
             } else {
-                "node"
+                "bun"
             })
         })
     {
         if sidecar_path.exists() {
             log::info!(
                 target: "vscodeee::exthost::sidecar",
-                "Using bundled Node.js sidecar: {}",
+                "Using bundled Bun sidecar: {}",
                 sidecar_path.display()
             );
             return sidecar_path.to_string_lossy().to_string();
         }
     }
 
-    // 3. System node (development fallback)
-    log::info!(
+    // 3. System bun (development)
+    let which_cmd = if cfg!(target_os = "windows") {
+        "where"
+    } else {
+        "which"
+    };
+    if let Ok(output) = std::process::Command::new(which_cmd).arg("bun").output() {
+        if output.status.success() {
+            let bun_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !bun_path.is_empty() {
+                log::info!(
+                    target: "vscodeee::exthost::sidecar",
+                    "Using system Bun from PATH: {bun_path}"
+                );
+                return bun_path;
+            }
+        }
+    }
+
+    log::error!(
         target: "vscodeee::exthost::sidecar",
-        "Using system Node.js from PATH"
+        "No Bun runtime found. Set VSCODEEE_RUNTIME_PATH or install Bun."
     );
-    "node".to_string()
+    "bun".to_string()
 }
 
 /// Build extension node_modules paths for the Extension Host child process.
 ///
-/// In production, Node.js modules are bundled under `{resource_dir}/node_modules/`.
+/// In production, modules are bundled under `{resource_dir}/node_modules/`.
 /// In development, extensions live at `{app_root}/extensions/*/` with their own
 /// `node_modules/` directories, but the Extension Host loads compiled code from
-/// `.build/extensions/*/out/` where no `node_modules` exist. Node.js walks up
+/// `.build/extensions/*/out/` where no `node_modules` exist. Bun walks up
 /// from the extension's location and never finds the source tree's packages.
 ///
 /// This function constructs a colon/semicolon-separated list of paths that includes
@@ -94,7 +101,7 @@ fn resolve_node_binary() -> String {
 /// resolve.
 ///
 /// The paths are set as both `NODE_PATH` and `VSCODEEE_EXT_NODE_MODULES_PATHS`:
-/// - `NODE_PATH`: Node.js adds these to `Module.globalPaths` at process startup.
+/// - `NODE_PATH`: Bun adds these to `Module.globalPaths` at process startup.
 ///   Since `removeGlobalNodeJsModuleLookupPaths()` in `bootstrap-node.ts` is skipped
 ///   when `VSCODEEE_EXT_NODE_MODULES_PATHS` is set, the paths survive module resolution.
 /// - `VSCODEEE_EXT_NODE_MODULES_PATHS`: Triggers the skip in
@@ -123,10 +130,8 @@ fn build_ext_node_modules_paths(app_root: &Path, resource_dir: &Path) -> String 
         // Each extension's own node_modules
         if let Ok(entries) = std::fs::read_dir(&extensions_dir) {
             let mut ext_paths: Vec<String> = entries
-                .filter_map(|e| e.ok())
-                .filter(|e| e.path().is_dir())
                 .filter_map(|e| {
-                    let nm = e.path().join("node_modules");
+                    let nm = e.ok()?.path().join("node_modules");
                     if nm.is_dir() {
                         Some(nm.to_string_lossy().into_owned())
                     } else {
@@ -197,7 +202,7 @@ fn build_exthost_path() -> String {
 /// Owns the child process handle and the socket path. When dropped,
 /// the Unix socket file and any augmented product.json are cleaned up.
 pub struct ExtHostSidecar {
-    /// Handle to the spawned Node.js child process.
+    /// Handle to the spawned Bun child process.
     pub child: Child,
     /// Path to the Unix domain socket used for IPC with the Extension Host.
     pub pipe_path: String,
@@ -368,12 +373,12 @@ fn augment_product_json(app_root: &Path) -> Option<(std::path::PathBuf, String)>
     }
 }
 
-/// Spawn the Extension Host as a Node.js sidecar, returning the connected stream.
+/// Spawn the Extension Host as a Bun sidecar, returning the connected stream.
 ///
 /// This replicates the pattern from `extensionHostConnection.ts:247-327`:
 /// 1. Augment `product.json` with `commit`/`version` for extensions
 /// 2. Create Unix domain socket server
-/// 3. Spawn `node out/bootstrap-fork.js --type=extensionHost`
+/// 3. Spawn `bun out/bootstrap-fork.js --type=extensionHost`
 /// 4. Wait for the ExtHost to connect back to our socket (30s timeout)
 ///
 /// # Arguments
@@ -398,7 +403,7 @@ pub async fn spawn(
 
     log::info!(target: "vscodeee::exthost::sidecar", "Listening on pipe: {pipe_path}");
 
-    // Step 2: Spawn the Node.js process
+    // Step 2: Spawn the Bun process
     // If spawn or accept fails, clean up the socket file before returning.
     let result = spawn_and_connect(app_root, resource_dir, &pipe_path, &listener, augmented).await;
     if result.is_err() {
@@ -410,11 +415,11 @@ pub async fn spawn(
     result
 }
 
-/// Spawn the Node.js Extension Host process and wait for it to connect back.
+/// Spawn the Extension Host process and wait for it to connect back.
 ///
 /// This is the inner implementation called by [`spawn`] after the Unix listener
 /// has been created. It handles:
-/// 1. Spawning `node out/bootstrap-fork.js --type=extensionHost` with the
+/// 1. Spawning `bun out/bootstrap-fork.js --type=extensionHost` with the
 ///    required environment variables (mirrors `extensionHostConnection.ts:272-288`)
 /// 2. Draining the child's stderr to a background log task
 /// 3. Waiting up to 30 seconds for the Extension Host to connect back to the pipe
@@ -432,9 +437,8 @@ async fn spawn_and_connect(
     listener: &UnixListener,
     augmented: Option<(std::path::PathBuf, String)>,
 ) -> Result<(ExtHostSidecar, tokio::net::UnixStream), ExtHostError> {
-    // Resolve the Node.js binary: bundled sidecar in production, system node in dev.
-    // See resolve_node_binary() for the full resolution order.
-    let node_bin = resolve_node_binary();
+    // Resolve the runtime binary (Bun only).
+    let runtime_bin = resolve_runtime_binary();
 
     // Enrich PATH so child processes (e.g., `git` extension calling `which git`)
     // can find tools installed in non-default locations. This is critical on
@@ -447,19 +451,15 @@ async fn spawn_and_connect(
 
     let ext_nm_paths = build_ext_node_modules_paths(app_root, resource_dir);
 
-    let mut child = Command::new(node_bin)
-        .arg("--dns-result-order=ipv4first")
-        // Node.js 22+ enables require(esm) by default, which uses Atomics.wait()
-        // in the CJS→ESM bridge. This deadlocks with VS Code's ESM loader hooks
-        // (NodeModuleESMInterceptor) that communicate via MessagePort — the main
-        // thread blocks on Atomics.wait() and cannot process the port message.
-        .arg("--no-experimental-require-module")
+    let mut cmd = Command::new(&runtime_bin);
+
+    let mut child = cmd
         .arg("out/bootstrap-fork.js")
         .arg("--type=extensionHost")
         .current_dir(app_root)
         .env("PATH", &enriched_path)
         // NODE_PATH for extension module resolution.
-        // Node.js adds NODE_PATH entries to Module.globalPaths at startup.
+        // Bun adds NODE_PATH entries to Module.globalPaths at startup.
         // Since removeGlobalNodeJsModuleLookupPaths() is skipped when
         // VSCODEEE_EXT_NODE_MODULES_PATHS is set (see bootstrap-node.ts),
         // the globalPaths are never stripped and resolution works natively.
@@ -470,7 +470,7 @@ async fn spawn_and_connect(
             "VSCODE_ESM_ENTRYPOINT",
             "vs/workbench/api/node/extensionHostProcess",
         )
-        // NOT setting VSCODE_HANDLES_UNCAUGHT_ERRORS — let Node.js use its
+        // NOT setting VSCODE_HANDLES_UNCAUGHT_ERRORS — let the runtime use its
         // default error handler which writes to stderr, so Rust can capture
         // and relay the actual startup error instead of failing silently.
         .env("VSCODE_PARENT_PID", std::process::id().to_string())
@@ -479,6 +479,9 @@ async fn spawn_and_connect(
             "VSCODE_NLS_CONFIG",
             r#"{"locale":"en","osLocale":"en","availableLanguages":{}}"#,
         )
+        // Signal to the TypeScript layer that Bun is the runtime.
+        // Used by bootstrap-fork.js for runtime-specific behavior.
+        .env("VSCODEEE_RUNTIME", "bun")
         // NOT set (selecting wrong transport):
         // VSCODE_WILL_SEND_MESSAGE_PORT — Electron MessagePort path
         // VSCODE_EXTHOST_WILL_SEND_SOCKET — process.send() socket path
@@ -491,7 +494,7 @@ async fn spawn_and_connect(
     let pid = child.id().unwrap_or(0);
     log::info!(
         target: "vscodeee::exthost::sidecar",
-        "Spawned Node.js ExtHost process (PID: {pid})"
+        "Spawned Bun ExtHost process (PID: {pid})"
     );
     log::info!(
         target: "vscodeee::exthost::sidecar",
@@ -548,7 +551,7 @@ async fn spawn_and_connect(
     }
 
     // Step 3: Wait for the ExtHost to connect back (30s timeout).
-    // Concurrently monitor the child process for early exit — if the Node.js
+    // Concurrently monitor the child process for early exit — if the Bun
     // process crashes before connecting, we can report the stderr output
     // instead of waiting the full 30 seconds.
     let accept_result = tokio::select! {

@@ -356,6 +356,16 @@ pub fn get_product_json(app_handle: tauri::AppHandle) -> Result<ProductPackageJs
         }
     }
 
+    // Inject extension host runtime info for About dialog display.
+    // Detect by looking for the bundled Bun sidecar next to the executable.
+    let runtime_label = detect_runtime_label();
+    if let Some(obj) = product.as_object_mut() {
+        obj.insert(
+            "extensionHostRuntime".to_string(),
+            serde_json::Value::String(runtime_label),
+        );
+    }
+
     Ok(ProductPackageJson { product, package })
 }
 
@@ -404,6 +414,39 @@ pub fn list_css_modules(app_handle: tauri::AppHandle) -> Vec<String> {
     }
 
     Vec::new()
+}
+
+/// Detect the extension host runtime and return a human-readable label.
+///
+/// Looks for the bundled Bun sidecar next to the current executable.
+/// If found, queries its version. Returns `"Bun <version>"`, `"Bun"`,
+/// or `"Unknown"` if no bundled runtime is detected.
+fn detect_runtime_label() -> String {
+    let bun_path = match std::env::current_exe()
+        .ok()
+        .as_ref()
+        .and_then(|exe| exe.parent())
+        .map(|dir| {
+            dir.join(if cfg!(target_os = "windows") {
+                "bun.exe"
+            } else {
+                "bun"
+            })
+        }) {
+        Some(p) if p.exists() => p,
+        _ => return "Unknown".to_string(),
+    };
+
+    match std::process::Command::new(&bun_path)
+        .arg("--version")
+        .output()
+    {
+        Ok(output) if output.status.success() => {
+            let ver = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            format!("Bun {ver}")
+        }
+        _ => "Bun".to_string(),
+    }
 }
 
 // ── Theme color cache for splash screen ──────────────────────────────────

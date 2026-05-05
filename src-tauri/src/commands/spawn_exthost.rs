@@ -6,8 +6,8 @@
 //! Tauri commands for Extension Host sidecar lifecycle.
 //!
 //! Provides two modes:
-//! 1. **PoC mode** (`spawn_extension_host`): Spawn + handshake + kill (Phase 0-2 verification)
-//! 2. **Production mode** (`spawn_exthost_with_relay`): Spawn + WS relay (Phase 5+)
+//! 1. **PoC mode** (`spawn_extension_host`): Spawn + handshake + kill (for testing)
+//! 2. **Production mode** (`spawn_exthost_with_relay`): Spawn + WS relay
 //!    Returns a WebSocket port for TypeScript to connect and run the protocol.
 //!
 //! Multiple Extension Host instances can run concurrently (e.g., VS Code places
@@ -30,7 +30,7 @@ pub struct ExtHostHandshakeResult {
     pub success: bool,
     /// The named pipe / Unix socket path used for communication.
     pub pipe_path: String,
-    /// PID of the spawned Node.js Extension Host process.
+    /// PID of the spawned Bun Extension Host process.
     pub ext_host_pid: u32,
     /// Time taken for the handshake in milliseconds.
     pub handshake_duration_ms: u64,
@@ -48,7 +48,7 @@ pub struct ExtHostSpawnResult {
     pub instance_id: u32,
     /// WebSocket port for the TypeScript side to connect.
     pub ws_port: u16,
-    /// PID of the spawned Node.js Extension Host process.
+    /// PID of the spawned Bun Extension Host process.
     pub ext_host_pid: u32,
     /// The named pipe / Unix socket path.
     pub pipe_path: String,
@@ -100,7 +100,7 @@ impl ExtHostState {
     ///
     /// Same logic as the `kill_all_exthosts` command, but callable from
     /// non-command contexts (e.g., shutdown coordinator).
-    // TODO(Phase 3): Remove allow(dead_code) when this is wired up
+    // TODO: Remove allow(dead_code) when PoC mode is removed
     #[allow(dead_code)]
     #[cfg(unix)]
     pub async fn shutdown_all(&self) {
@@ -172,7 +172,7 @@ impl ExtHostState {
 
 /// Spawn an Extension Host with a WebSocket relay for production use.
 ///
-/// Creates a named pipe, spawns `node out/bootstrap-fork.js --type=extensionHost`,
+/// Creates a named pipe, spawns `bun out/bootstrap-fork.js --type=extensionHost`,
 /// starts a WebSocket relay on `127.0.0.1:0`, and returns the port + PID.
 /// TypeScript will connect via WebSocket and run PersistentProtocol over it.
 #[tauri::command]
@@ -180,7 +180,7 @@ pub async fn spawn_exthost_with_relay(
     app_handle: tauri::AppHandle,
     exthost_state: tauri::State<'_, Arc<ExtHostState>>,
 ) -> Result<ExtHostSpawnResult, String> {
-    // TODO(Phase 5+): Add Windows named pipe support via tokio::net::windows::named_pipe.
+    // TODO: Add Windows named pipe support via tokio::net::windows::named_pipe.
     #[cfg(not(unix))]
     {
         let _ = (app_handle, exthost_state);
@@ -198,7 +198,7 @@ pub async fn spawn_exthost_with_relay(
 /// Unix-specific implementation of [`spawn_exthost_with_relay`].
 ///
 /// Resolves the application root, verifies `out/bootstrap-fork.js` exists,
-/// spawns a new Node.js Extension Host, starts a WebSocket relay, stores state
+/// spawns a new Bun Extension Host, starts a WebSocket relay, stores state
 /// for later cleanup, and starts a background task to monitor the child process
 /// for unexpected exit. Multiple instances can run concurrently.
 #[cfg(unix)]
@@ -223,7 +223,7 @@ async fn spawn_exthost_with_relay_unix(
     // Allocate a unique instance ID for this ExtHost
     let instance_id = exthost_state.next_id.fetch_add(1, Ordering::Relaxed);
 
-    // Step 1+2: Create pipe + spawn Node.js
+    // Step 1+2: Create pipe + spawn Bun
     let (sidecar, unix_stream) = exthost::sidecar::spawn(&app_root, &resource_dir)
         .await
         .map_err(|e| format!("ExtHost spawn failed: {e}"))?;
@@ -311,7 +311,7 @@ async fn spawn_exthost_with_relay_unix(
 
 /// Kill a specific Extension Host instance by its instance ID.
 ///
-/// Terminates the Node.js child process, aborts the WebSocket relay task,
+/// Terminates the Bun child process, aborts the WebSocket relay task,
 /// and removes the instance from managed state. This is called from TypeScript
 /// when a `TauriLocalProcessExtensionHost` is disposed.
 ///
@@ -390,16 +390,16 @@ pub async fn kill_all_exthosts(
     }
 }
 
-/// Spawn an Extension Host process as a Node.js sidecar and run the handshake (PoC mode).
+/// Spawn an Extension Host process as a Bun sidecar and run the handshake (PoC mode).
 ///
-/// Creates a named pipe, spawns `node out/bootstrap-fork.js --type=extensionHost`,
+/// Creates a named pipe, spawns `bun out/bootstrap-fork.js --type=extensionHost`,
 /// and executes the Ready→InitData→Initialized handshake protocol.
 /// After a successful handshake, the ExtHost process is killed (PoC cleanup).
 #[tauri::command]
 pub async fn spawn_extension_host(
     app_handle: tauri::AppHandle,
 ) -> Result<ExtHostHandshakeResult, String> {
-    // TODO(Phase 5+): Add Windows named pipe support via tokio::net::windows::named_pipe.
+    // TODO: Add Windows named pipe support via tokio::net::windows::named_pipe.
     #[cfg(not(unix))]
     {
         let _ = app_handle;
@@ -451,14 +451,14 @@ async fn spawn_extension_host_unix(
 /// Spawn the Extension Host sidecar and run the full handshake protocol (PoC).
 ///
 /// After a successful handshake, the child process is killed and reaped to
-/// avoid zombie processes. This is intended for Phase 0-2 verification only.
+/// avoid zombie processes. This is intended for testing only.
 #[cfg(unix)]
 async fn spawn_and_handshake(
     app_root: &std::path::Path,
     resource_dir: &std::path::Path,
 ) -> Result<ExtHostHandshakeResult, crate::exthost::ExtHostError> {
     use crate::exthost;
-    // Step 1+2: Create pipe + spawn Node.js
+    // Step 1+2: Create pipe + spawn Bun
     let (mut sidecar, mut stream) = exthost::sidecar::spawn(app_root, resource_dir).await?;
 
     let pid = sidecar.child.id().unwrap_or(0);
