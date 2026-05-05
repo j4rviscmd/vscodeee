@@ -15,11 +15,49 @@ import nodeModule from 'node:module';
 
 const nodeRequire = nodeModule.createRequire(import.meta.url);
 
+/**
+ * Minimal type definitions for bun:sqlite API.
+ * These match the actual API surface of bun:sqlite.
+ */
+interface BunSqliteStatement {
+	/** Execute statement and return all matching rows. */
+	all(params?: unknown[] | Record<string, unknown>): Record<string, unknown>[];
+	all(...params: unknown[]): Record<string, unknown>[];
+	/** Execute statement and return first matching row. */
+	get(params?: unknown[] | Record<string, unknown>): Record<string, unknown> | undefined;
+	get(...params: unknown[]): Record<string, unknown> | undefined;
+	/** Execute statement as write operation. */
+	run(params?: unknown[] | Record<string, unknown>): { changes: number; lastInsertRowid: number };
+	run(...params: unknown[]): { changes: number; lastInsertRowid: number };
+	/** Execute statement and return row iterator. */
+	iterate(params?: unknown[] | Record<string, unknown>): IterableIterator<Record<string, unknown>>;
+	iterate(...params: unknown[]): IterableIterator<Record<string, unknown>>;
+	/** Column names from the prepared statement. */
+	readonly columnNames: string[];
+	/** Convert statement to string. */
+	toString(): string;
+}
+
+interface BunSqliteDatabase {
+	/** Create a prepared statement. */
+	prepare(sql: string): BunSqliteStatement;
+	/** Execute a SQL statement directly. */
+	run(sql: string, ...params: unknown[]): { changes: number; lastInsertRowid: number };
+	/** Load a native SQLite extension. */
+	loadExtension(path: string): void;
+	/** Close the database connection. */
+	close(): void;
+}
+
+interface BunSqliteModule {
+	Database: new (path: string, options?: Record<string, unknown>) => BunSqliteDatabase;
+	Statement: new (sql: string) => BunSqliteStatement;
+}
+
 // Use require() to import bun:sqlite since TypeScript cannot resolve its types
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const bunSqlite = nodeRequire('bun:sqlite') as { Database: new (...args: unknown[]) => unknown; Statement: new (...args: unknown[]) => unknown };
-type BunDatabase = InstanceType<typeof bunSqlite.Database>;
-type BunStatement = InstanceType<typeof bunSqlite.Statement>;
+const bunSqlite = nodeRequire('bun:sqlite') as BunSqliteModule;
+type BunDatabase = BunSqliteDatabase;
+type BunStatement = BunSqliteStatement;
 
 /** Supported value types that can be bound as SQL parameters. */
 type SQLInputValue = null | number | bigint | string | NodeJS.ArrayBufferView;
@@ -185,10 +223,11 @@ export class StatementSync {
 	 * @returns The result of the underlying method call.
 	 */
 	private _callWithParams<T>(method: 'all' | 'get' | 'iterate', params: ResolvedParams): T {
+		const stmt = this._stmt as BunSqliteStatement;
 		if (Array.isArray(params)) {
-			return (this._stmt[method] as (...p: SQLInputValue[]) => T)(...params);
+			return (stmt[method] as (...p: unknown[]) => T)(...(params as unknown[]));
 		}
-		return (this._stmt[method] as (p: Record<string, SQLInputValue>) => T)(params);
+		return (stmt[method] as (p: Record<string, unknown>) => T)(params);
 	}
 
 	/**
@@ -248,9 +287,10 @@ export class StatementSync {
 	run(namedParameters: Record<string, SQLInputValue>, ...anonymousParameters: SQLInputValue[]): StatementResultingChanges;
 	run(...args: (SQLInputValue | Record<string, SQLInputValue>)[]): StatementResultingChanges {
 		const params = this._resolveParams(args);
+		const stmt = this._stmt as BunSqliteStatement;
 		const result = Array.isArray(params)
-			? this._stmt.run(...params)
-			: this._stmt.run(params);
+			? stmt.run(...(params as unknown[]))
+			: stmt.run(params);
 		return {
 			changes: this._readBigInts ? BigInt(result.changes) : result.changes,
 			lastInsertRowid: this._readBigInts ? BigInt(result.lastInsertRowid) : result.lastInsertRowid,
@@ -284,7 +324,8 @@ export class StatementSync {
 	 * @returns An array of column metadata objects.
 	 */
 	columns(): StatementColumnMetadata[] {
-		const names = (this._stmt as unknown as { columnNames: string[] }).columnNames;
+		const stmt = this._stmt as BunSqliteStatement;
+		const names = stmt.columnNames;
 		return names.map(name => ({
 			column: null,
 			database: null,
@@ -301,7 +342,7 @@ export class StatementSync {
 
 	/** The expanded SQL string with bound parameters substituted. */
 	get expandedSQL(): string {
-		return this._stmt.toString();
+		return (this._stmt as BunSqliteStatement).toString();
 	}
 
 	/**
@@ -415,7 +456,7 @@ export class DatabaseSync implements Disposable {
 		if (this._options.readBigInts) {
 			opts.safeIntegers = true;
 		}
-		const db = new bunSqlite.Database(this._path, Object.keys(opts).length > 0 ? opts : undefined);
+		const db = new bunSqlite.Database(this._path, Object.keys(opts).length > 0 ? opts : undefined) as BunDatabase;
 
 		if (this._options.enableForeignKeyConstraints !== false) {
 			db.run('PRAGMA foreign_keys = ON');
@@ -474,8 +515,9 @@ export class DatabaseSync implements Disposable {
 	 * @throws {Error} If the database is not open.
 	 */
 	prepare(sql: string): StatementSync {
-		const stmt = this._ensureOpen().prepare(sql);
-		return new StatementSync(stmt, sql);
+		const db = this._ensureOpen() as BunDatabase;
+		const stmt = db.prepare(sql);
+		return new StatementSync(stmt as BunStatement, sql);
 	}
 
 	/**
@@ -491,7 +533,8 @@ export class DatabaseSync implements Disposable {
 		if (!this._allowExtension) {
 			throw new Error('[node:sqlite shim] Extension loading is not allowed. Set allowExtension: true when constructing the database.');
 		}
-		this._ensureOpen().loadExtension(path);
+		const db = this._ensureOpen() as BunDatabase;
+		db.loadExtension(path);
 	}
 
 	/**
