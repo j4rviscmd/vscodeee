@@ -54,7 +54,10 @@ export class ChatStatusBarEntry extends Disposable implements IWorkbenchContribu
 
 	private update(): void {
 		const sentiment = this.chatEntitlementService.sentiment;
-		if (!sentiment.hidden) {
+		// When chat is hidden at the product level (product.chatHidden), we still show
+		// the status bar entry to display auth state and inline completions status.
+		// Only hide when the extension is truly unsupported (no shim available).
+		if (!sentiment.hidden || product.chatHidden) {
 			const props = this.getEntryProps();
 			if (this.entry) {
 				this.entry.update(props);

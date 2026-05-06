@@ -37,7 +37,8 @@ import product from '../../../../platform/product/common/product.js';
 // --- Chat Container &  View Registration
 
 // Skip chat view registration entirely if the default chat agent extension is unsupported
-const isChatExtensionUnsupported = product.unsupportedExtensions?.some(
+// or if chat is explicitly hidden at the product level
+const isChatExtensionUnsupported = product.chatHidden || product.unsupportedExtensions?.some(
 	ext => ext.id.toLowerCase() === product.defaultChatAgent?.chatExtensionId?.toLowerCase()
 );
 

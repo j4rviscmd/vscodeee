@@ -347,6 +347,15 @@ export class ChatEntitlementService extends Disposable implements IChatEntitleme
 			return;
 		}
 
+		// Hide Chat UI at the product level (e.g., chat is disabled but other Copilot features like
+		// inline completions, NES, SCM commit messages remain functional).
+		// Unlike the unsupported extension check above, we do NOT return early here so that
+		// the entitlement service continues to initialize — this keeps the status bar entry
+		// and authentication flow working.
+		if (productService.chatHidden) {
+			ChatEntitlementContextKeys.Setup.hidden.bindTo(this.contextKeyService).set(true);
+		}
+
 		const context = this.context = new Lazy(() => this._register(instantiationService.createInstance(ChatEntitlementContext)));
 		this.requests = new Lazy(() => this._register(instantiationService.createInstance(ChatEntitlementRequests, context.value, {
 			clearQuotas: () => this.clearQuotas(),
