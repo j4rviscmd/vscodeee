@@ -230,6 +230,8 @@ export interface IProductConfiguration {
 	readonly chatSessionRecommendations?: IChatSessionRecommendation[];
 	readonly emergencyAlertUrl?: string;
 
+	readonly chatHidden?: boolean;
+
 	readonly unsupportedExtensions?: ReadonlyArray<{
 		readonly id: string;
 		readonly reason?: string;
