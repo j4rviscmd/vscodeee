@@ -24,12 +24,18 @@ import { coalesce } from '../../../../base/common/arrays.js';
 /**
  * Configuration shape for VSCodeEE-specific editor settings.
  * Nested under `vscodeee.workbench.editor` in settings.json.
+ *
+ * These settings allow users to override VSCodeEE's opt-out defaults
+ * for editor part behavior. When defined, they take precedence over
+ * the corresponding properties in `DEFAULT_EDITOR_PART_OPTIONS`.
  */
 interface IVSCodeEEEditorConfiguration {
 	vscodeee?: {
 		workbench?: {
 			editor?: {
+				/** When `true`, editor groups automatically expand/unmaximize on focus (default: `false`). */
 				autoMaximizeOnFocus?: boolean;
+				/** When `true`, displays the group index prefix on the active tab (default: `true`). */
 				editorGroupIndexInTab?: boolean;
 			};
 		};
@@ -58,6 +64,11 @@ export const DEFAULT_EDITOR_MAX_DIMENSIONS = new Dimension(Number.POSITIVE_INFIN
  * Default editor part options. These values are used as fallbacks
  * when no user configuration is provided. Properties that are objects
  * are defined as getters to prevent consumers from mutating the defaults.
+ *
+ * Note: Several defaults differ from upstream VS Code to align with
+ * VSCodeEE's opt-out philosophy:
+ * - `editorGroupIndexInTab` defaults to `true` (upstream: `false`)
+ * - `autoMaximizeOnFocus` defaults to `false` (upstream: `true`)
  */
 export const DEFAULT_EDITOR_PART_OPTIONS: IEditorPartOptions = {
 	showTabs: 'multiple',
@@ -66,7 +77,7 @@ export const DEFAULT_EDITOR_PART_OPTIONS: IEditorPartOptions = {
 	tabActionCloseVisibility: true,
 	tabActionUnpinVisibility: true,
 	showTabIndex: false,
-	editorGroupIndexInTab: false,
+	editorGroupIndexInTab: true,
 	alwaysShowEditorActions: false,
 	tabSizing: 'fit',
 	tabSizingFixedMinWidth: 50,
@@ -91,7 +102,7 @@ export const DEFAULT_EDITOR_PART_OPTIONS: IEditorPartOptions = {
 	dragToOpenWindow: true,
 	centeredLayoutFixedWidth: false,
 	doubleClickTabToToggleEditorGroupSizes: 'expand',
-	autoMaximizeOnFocus: true,
+	autoMaximizeOnFocus: false,
 	editorActionsLocation: 'default',
 	wrapTabs: false,
 	enablePreviewFromQuickOpen: false,
@@ -130,6 +141,12 @@ export function impactsEditorPartOptions(event: IConfigurationChangeEvent): bool
  * with the default options. Handles special cases like `autoLockGroups` object
  * conversion, `window.density.editorTabHeight` override, and the
  * `vscodeee.workbench.editor` settings.
+ *
+ * The merge order is: `DEFAULT_EDITOR_PART_OPTIONS` -> `workbench.editor` (user)
+ * -> `window.density.editorTabHeight` -> `vscodeee.workbench.editor` (user).
+ * The `vscodeee` settings act as a final override layer, allowing users to
+ * fine-tune VSCodeEE-specific defaults independently of the standard
+ * `workbench.editor` configuration.
  *
  * @param configurationService - The configuration service to read settings from.
  * @param themeService - The theme service to determine icon availability.

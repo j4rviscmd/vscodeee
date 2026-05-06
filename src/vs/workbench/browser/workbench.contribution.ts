@@ -1106,6 +1106,14 @@ Registry.as<IConfigurationMigrationRegistry>(Extensions.ConfigurationMigration)
  * These settings extend the standard VS Code configuration with behaviors
  * specific to the Tauri-based VSCodeEE fork. Settings are scoped under the
  * `vscodeee` prefix to distinguish them from upstream VS Code settings.
+ *
+ * The registered defaults here are kept in sync with `DEFAULT_EDITOR_PART_OPTIONS`
+ * in `editor.ts`. They follow VSCodeEE's opt-out philosophy, which differs from
+ * upstream VS Code for certain settings (e.g., `editorGroupIndexInTab` defaults to
+ * `true`, `autoMaximizeOnFocus` defaults to `false`).
+ *
+ * Users can override these via `vscodeee.workbench.editor.*` in settings.json,
+ * which takes final precedence in {@link getEditorPartOptions}.
  */
 // VSCodeEE: Workbench editor settings
 registry.registerConfiguration({
@@ -1116,12 +1124,12 @@ registry.registerConfiguration({
 	'properties': {
 		'vscodeee.workbench.editor.autoMaximizeOnFocus': {
 			'type': 'boolean',
-			'default': true,
+			'default': false,
 			'description': localize('autoMaximizeOnFocus', "Controls whether editor groups are automatically expanded or unmaximized when receiving focus. When disabled, minimized editor groups stay minimized and other groups stay maximized when focus moves between them.")
 		},
 		'vscodeee.workbench.editor.editorGroupIndexInTab': {
 			'type': 'boolean',
-			'default': false,
+			'default': true,
 			'description': localize('editorGroupIndexInTab', "When enabled, shows the editor group index prefix (e.g., [1]) on the active tab of each editor group. Only appears when 2 or more editor groups are open.")
 		}
 	}
