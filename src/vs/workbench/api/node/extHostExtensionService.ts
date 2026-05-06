@@ -83,6 +83,7 @@ class NodeModuleRequireInterceptor extends RequireInterceptor {
 	private _installBunInterceptor(node_module: Record<string, unknown>): void {
 		const that = this;
 		const originalResolveFilename = node_module._resolveFilename as ResolveFilenameFn;
+		const g = globalThis as Record<string, unknown>;
 
 		// Global keys for Bun shim communication
 		const parentKey = '__VSCODEEE_BUN_PARENT__';
@@ -91,10 +92,10 @@ class NodeModuleRequireInterceptor extends RequireInterceptor {
 		// Expose a loader function globally. The shim files call this with
 		// the module name and receive the factory result. This keeps URI and
 		// factory references inside the closure — no need to import them in shims.
-		(globalThis as Record<string, unknown>)[parentKey] = '';
-		(globalThis as Record<string, unknown>)[loaderKey] = (moduleName: string, shimRequire: (id: string) => unknown): unknown => {
+		g[parentKey] = '';
+		g[loaderKey] = (moduleName: string, shimRequire: (id: string) => unknown): unknown => {
 			const factory = that._factories.get(moduleName);
-			const parentFilename = (globalThis as Record<string, unknown>)[parentKey] as string || 'unknown';
+			const parentFilename = g[parentKey] as string || 'unknown';
 			if (factory) {
 				return factory.load(
 					moduleName,
@@ -115,7 +116,7 @@ class NodeModuleRequireInterceptor extends RequireInterceptor {
 			if (that._factories.has(request)) {
 				// Store caller context for the shim to read synchronously
 				const parentFilename = (parent as { filename?: string })?.filename || 'unknown';
-				(globalThis as Record<string, unknown>)[parentKey] = parentFilename;
+				g[parentKey] = parentFilename;
 
 				// Get or create the shim file for this module
 				const shimPath = that._getBunShimPath(shimDir, request, loaderKey);
@@ -253,6 +254,7 @@ class NodeModuleESMInterceptor extends RequireInterceptor {
 	 * so the package re-evaluates with the new API.
 	 */
 	private _installBunESMInterceptor(): void {
+		const g = globalThis as Record<string, unknown>;
 		// Create node_modules/vscode/ in the same shim directory as the CJS interceptor
 		const tmpDir = os.tmpdir();
 		const shimDir = path.join(tmpDir, `vscodeee-bun-shims-${process.pid}`);
@@ -283,14 +285,14 @@ module.exports = globalThis.__VSCODEEE_ESM_API__ || {};
 
 		// Register a global function that _doLoadModule calls before each ESM import.
 		// It looks up the per-extension API, sets the global, and busts the CJS cache.
-		(globalThis as Record<string, unknown>).__VSCODEEE_PREPARE_ESM__ = (moduleUri: string) => {
+		g.__VSCODEEE_PREPARE_ESM__ = (moduleUri: string) => {
 			const factory = this._factories.get('vscode');
 			if (!factory) {
 				return;
 			}
 			const uri = URI.parse(moduleUri);
 			const apiInstance = factory.load('_not_used', uri, () => { throw new Error('Cannot load module from here.'); });
-			(globalThis as Record<string, unknown>).__VSCODEEE_ESM_API__ = apiInstance;
+			g.__VSCODEEE_ESM_API__ = apiInstance;
 
 			// Clear CJS cache so the vscode module re-evaluates with the new API.
 			// Use the known path directly since require.resolve('vscode') may fail
@@ -317,6 +319,7 @@ module.exports = globalThis.__VSCODEEE_ESM_API__ || {};
 		if (!factory) {
 			return;
 		}
+		const g = globalThis as Record<string, unknown>;
 
 		const moduleDir = path.join(shimDir, 'node_modules', moduleName);
 		fs.mkdirSync(moduleDir, { recursive: true });
@@ -328,7 +331,7 @@ module.exports = globalThis.__VSCODEEE_ESM_API__ || {};
 		}));
 
 		const loadedModule = factory.load(moduleName, URI.parse(`file:///${moduleName}`), () => { throw new Error('Cannot load module from here.'); });
-		(globalThis as Record<string, unknown>)[globalKey] = loadedModule;
+		g[globalKey] = loadedModule;
 
 		fs.writeFileSync(path.join(moduleDir, 'index.js'), `'use strict';
 	module.exports = globalThis.${globalKey} || {};
@@ -338,11 +341,13 @@ module.exports = globalThis.__VSCODEEE_ESM_API__ || {};
 	}
 
 	/**
-	 * Create symlinks to the vscode package at locations Bun's ESM resolver searches.
+	 * Create symlinks to the module at locations Bun's ESM resolver searches.
 	 *
-	 * Bun walks up the directory tree looking for node_modules/vscode/.
-	 * Built-in extensions live under extensions/ and user extensions under
-	 * ~/.vscodeee/extensions/, so we symlink at both roots.
+	 * Bun walks up the directory tree looking for node_modules/<name>/.
+	 * In development, built-in extensions live under cwd/extensions/.
+	 * In production, they are at cwd/.build/extensions/ (Tauri maps ../
+	 * resources to _up_/ inside the .app bundle). User extensions are under
+	 * ~/.vscodeee/extensions/. We symlink at all three roots.
 	 */
 	private _createBunESMSymlink(moduleName: string, packageDir: string): void {
 		const createSymlink = (targetDir: string) => {
@@ -356,10 +361,16 @@ module.exports = globalThis.__VSCODEEE_ESM_API__ || {};
 			} catch { /* best-effort: may fail due to permissions */ }
 		};
 
-		// Built-in extensions: extensions/node_modules/vscode
+		// Built-in extensions: extensions/node_modules/<module> (development)
 		createSymlink(path.join(process.cwd(), 'extensions'));
 
-		// User-installed extensions: ~/.vscodeee/extensions/node_modules/vscode
+		// Built-in extensions: .build/extensions/node_modules/<module> (production)
+		const buildExtDir = path.join(process.cwd(), '.build', 'extensions');
+		if (fs.existsSync(buildExtDir)) {
+			createSymlink(buildExtDir);
+		}
+
+		// User-installed extensions: ~/.vscodeee/extensions/node_modules/<module>
 		const homeExtDir = path.join(os.homedir(), '.vscodeee', 'extensions');
 		if (fs.existsSync(homeExtDir)) {
 			createSymlink(homeExtDir);
