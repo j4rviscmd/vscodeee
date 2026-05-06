@@ -106,6 +106,13 @@ VSCodeee replaces the Electron architecture at two layers, achieving significant
 - Suppress auto-maximize when focusing the smallest pane
   - `"vscodeee.workbench.editor.autoMaximizeOnFocus": false`
   - Upstream VSCode [issue#85309](https://github.com/microsoft/vscode/issues/85309)
+- Cursor auto-hide after inactivity
+  - `"vscodeee.cursorAutoHide.enabled": true`
+  - `"vscodeee.cursorAutoHide.delay": 3000` (ms)
+- Active pane border highlight (tmux-like)
+  - `"vscodeee.activePaneBorder.enabled": true`
+  - `"vscodeee.activePaneBorder.color": ""` (empty = theme focusBorder)
+  - `"vscodeee.activePaneBorder.width": 1` (px, 1–5)
 
 ---
 

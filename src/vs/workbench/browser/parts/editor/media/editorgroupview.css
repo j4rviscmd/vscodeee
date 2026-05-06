@@ -58,6 +58,17 @@
 
 .monaco-workbench .part.editor > .content .editor-group-container {
 	height: 100%;
+	position: relative;
+}
+
+/* Active pane border (tmux-like) */
+.monaco-workbench .part.editor > .content .editor-group-container.active-pane-border::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	border: var(--active-pane-border-width, 1px) solid var(--active-pane-border-color, transparent);
+	pointer-events: none;
+	z-index: 100;
 }
 
 .monaco-workbench .part.editor > .content .editor-group-container.empty  {

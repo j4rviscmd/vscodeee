@@ -17,7 +17,7 @@ import { IContextKeyService } from '../../../../platform/contextkey/common/conte
 import { ProgressBar } from '../../../../base/browser/ui/progressbar/progressbar.js';
 import { IThemeService, Themable } from '../../../../platform/theme/common/themeService.js';
 import { editorBackground, contrastBorder } from '../../../../platform/theme/common/colorRegistry.js';
-import { EDITOR_GROUP_HEADER_TABS_BACKGROUND, EDITOR_GROUP_HEADER_NO_TABS_BACKGROUND, EDITOR_GROUP_EMPTY_BACKGROUND, EDITOR_GROUP_HEADER_BORDER } from '../../../common/theme.js';
+import { EDITOR_GROUP_HEADER_TABS_BACKGROUND, EDITOR_GROUP_HEADER_NO_TABS_BACKGROUND, EDITOR_GROUP_EMPTY_BACKGROUND, EDITOR_GROUP_HEADER_BORDER, EDITOR_GROUP_ACTIVE_BORDER } from '../../../common/theme.js';
 import { ICloseEditorsFilter, GroupsOrder, ICloseEditorOptions, ICloseAllEditorsOptions, IEditorReplacement, IActiveEditorActions } from '../../../services/editor/common/editorGroupsService.js';
 import { EditorPanes } from './editorPanes.js';
 import { IEditorProgressService } from '../../../../platform/progress/common/progress.js';
@@ -44,6 +44,7 @@ import { Schemas } from '../../../../base/common/network.js';
 import { EditorActivation, IEditorOptions } from '../../../../platform/editor/common/editor.js';
 import { IFileDialogService, ConfirmResult, IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
 import { IFilesConfigurationService, AutoSaveMode } from '../../../services/filesConfiguration/common/filesConfigurationService.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { URI } from '../../../../base/common/uri.js';
 import { IUriIdentityService } from '../../../../platform/uriIdentity/common/uriIdentity.js';
 import { isLinux, isMacintosh, isNative, isWindows } from '../../../../base/common/platform.js';
@@ -156,6 +157,7 @@ export class EditorGroupView extends Themable implements IEditorGroupView {
 		@IFileDialogService private readonly fileDialogService: IFileDialogService,
 		@IEditorService private readonly editorService: EditorServiceImpl,
 		@IFilesConfigurationService private readonly filesConfigurationService: IFilesConfigurationService,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IUriIdentityService private readonly uriIdentityService: IUriIdentityService,
 		@ILogService private readonly logService: ILogService,
 		@IEditorResolverService private readonly editorResolverService: IEditorResolverService,
@@ -594,6 +596,10 @@ export class EditorGroupView extends Themable implements IEditorGroupView {
 
 		// Focus
 		this._register(this.onDidFocus(() => this.onDidGainFocus()));
+
+		// Active pane border configuration changes
+		const onDidChangeActivePaneBorder = Event.filter(this.configurationService.onDidChangeConfiguration, e => e.affectsConfiguration('vscodeee.activePaneBorder'));
+		this._register(onDidChangeActivePaneBorder(() => this.updateStyles()));
 	}
 
 	private onDidGroupModelChange(e: IGroupModelChangeEvent): void {
@@ -2157,6 +2163,28 @@ export class EditorGroupView extends Themable implements IEditorGroupView {
 
 		// Editor container
 		this.editorContainer.style.backgroundColor = this.getColor(editorBackground) || '';
+
+		// Active pane border (tmux-like): only show when multiple groups exist
+		const activePaneBorderEnabled = this.configurationService.getValue<boolean>('vscodeee.activePaneBorder.enabled') ?? true;
+		const hasMultipleGroups = this.groupsView.groups.length > 1;
+		if (activePaneBorderEnabled && hasMultipleGroups && this.active) {
+			const colorOverride = this.configurationService.getValue<string>('vscodeee.activePaneBorder.color');
+			const activeBorderColor = colorOverride || this.getColor(EDITOR_GROUP_ACTIVE_BORDER);
+			if (activeBorderColor) {
+				this.element.classList.add('active-pane-border');
+				this.element.style.setProperty('--active-pane-border-color', activeBorderColor);
+				const widthValue = this.configurationService.getValue<number>('vscodeee.activePaneBorder.width') ?? 1;
+				this.element.style.setProperty('--active-pane-border-width', `${widthValue}px`);
+			} else {
+				this.element.classList.remove('active-pane-border');
+				this.element.style.removeProperty('--active-pane-border-color');
+				this.element.style.removeProperty('--active-pane-border-width');
+			}
+		} else {
+			this.element.classList.remove('active-pane-border');
+			this.element.style.removeProperty('--active-pane-border-color');
+			this.element.style.removeProperty('--active-pane-border-width');
+		}
 	}
 
 	//#endregion

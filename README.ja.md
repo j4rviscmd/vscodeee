@@ -106,6 +106,13 @@ VSCodeee は Electron アーキテクチャを2つのレイヤーで置き換え
 - 最小Paneにフォーカスすると自動的に対象Paneが最大化されることを抑制する
   - `"vscodeee.workbench.editor.autoMaximizeOnFocus": false`
   - 本家VSCodeの[issue#85309](https://github.com/microsoft/vscode/issues/85309)
+- 一定時間操作がないとマウスカーソルを自動非表示
+  - `"vscodeee.cursorAutoHide.enabled": true`
+  - `"vscodeee.cursorAutoHide.delay": 3000` (ミリ秒)
+- アクティブペインのボーダーハイライト（tmuxライク）
+  - `"vscodeee.activePaneBorder.enabled": true`
+  - `"vscodeee.activePaneBorder.color": ""` (空文字 = テーマのfocusBorder色)
+  - `"vscodeee.activePaneBorder.width": 1` (px, 1〜5)
 
 ---
 

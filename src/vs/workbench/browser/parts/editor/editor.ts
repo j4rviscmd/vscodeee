@@ -384,6 +384,11 @@ export interface IEditorGroupView extends IDisposable, ISerializableView, IEdito
 	 */
 	updateEditorGroupIndex(): void;
 
+	/**
+	 * Updates the visual styles of this editor group (e.g. active pane border).
+	 */
+	updateStyles(): void;
+
 	openEditor(editor: EditorInput, options?: IEditorOptions, internalOptions?: IInternalEditorOpenOptions): Promise<IEditorPane | undefined>;
 
 	relayout(): void;

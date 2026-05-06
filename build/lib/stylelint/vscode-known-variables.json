@@ -916,6 +916,8 @@
 		"--vscode-window-inactiveBorder"
 	],
 	"others": [
+		"--active-pane-border-color",
+		"--active-pane-border-width",
 		"--activity-bar-action-height",
 		"--activity-bar-icon-size",
 		"--activity-bar-width",
