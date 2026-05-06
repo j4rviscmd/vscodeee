@@ -1019,6 +1019,7 @@ export class TestEditorGroupView implements IEditorGroupView {
 	relayout() { }
 	createEditorActions(_menuDisposable: IDisposable): { actions: IToolbarActions; onDidChange: Event<IMenuChangeEvent> } { throw new Error('not implemented'); }
 	updateEditorGroupIndex(): void { }
+	updateStyles(): void { }
 }
 
 export class TestEditorGroupAccessor implements IEditorGroupsView {

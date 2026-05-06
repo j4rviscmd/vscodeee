@@ -216,6 +216,10 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		// Update editor group index indicator when groups are added/removed
 		this._register(this.onDidAddGroup(() => this.updateAllGroupIndexIndicators()));
 		this._register(this.onDidRemoveGroup(() => this.updateAllGroupIndexIndicators()));
+
+		// Update active pane border styles when group count changes
+		this._register(this.onDidAddGroup(() => this.updateAllGroupStyles()));
+		this._register(this.onDidRemoveGroup(() => this.updateAllGroupStyles()));
 	}
 
 	private onConfigurationUpdated(event: IConfigurationChangeEvent): void {
@@ -250,6 +254,12 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 	private updateAllGroupIndexIndicators(): void {
 		for (const groupView of this.groupViews.values()) {
 			groupView.updateEditorGroupIndex();
+		}
+	}
+
+	private updateAllGroupStyles(): void {
+		for (const groupView of this.groupViews.values()) {
+			groupView.updateStyles();
 		}
 	}
 
