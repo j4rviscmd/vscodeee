@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-05-06
+
+### Added
+
+- Add configurable terminal horizontal padding setting (#465)
+- Block Remote-SSH and Remote-Tunnels extensions via unsupportedExtensions (#463)
+
+### Changed
+
+- Remove unused native message box dialog code (#464)
+
 ## [0.17.0] - 2026-05-06
 
 ### Added
