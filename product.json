@@ -211,6 +211,14 @@
     {
       "id": "GitHub.copilot-chat",
       "reason": "This extension is not compatible with VS Codeee's Bun runtime."
+    },
+    {
+      "id": "ms-vscode-remote.remote-ssh",
+      "reason": "Remote-SSH is not compatible with VS Codeee's Tauri architecture. Electron-based remote extensions are not supported."
+    },
+    {
+      "id": "ms-vscode.remote-server",
+      "reason": "Remote-Tunnels is not compatible with VS Codeee's Tauri architecture. Electron-based remote extensions are not supported."
     }
   ],
   "win32ShellNameShort": "V&S Codeee",
