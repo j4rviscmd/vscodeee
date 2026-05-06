@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-05-06
+
+### Added
+
+- Add tmux-like active pane border highlighting with configurable color and width (`vscodeee.activePaneBorder.*` settings)
+
+### Fixed
+
+- Register CSS variables (`--active-pane-border-color`, `--active-pane-border-width`) in stylelint known-variables
+
 ## [0.16.0] - 2026-05-06
 
 ### Added
