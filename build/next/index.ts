@@ -1221,6 +1221,15 @@ async function packageExtensions(): Promise<void> {
 
 	console.log(`[package-extensions] Packaged ${totalFiles} files (${(totalSize / 1024 / 1024).toFixed(1)} MB) into .build/extensions/`);
 	console.log(`[package-extensions]   dist-bundled: ${distCount}, fallback (out+node_modules): ${fallbackCount}`);
+
+	// Clean up top-level node_modules in .build/extensions/ that may be created
+	// by fallback-mode extensions. These contain Node.js built-in stubs (e.g., node:sqlite)
+	// whose colon-prefixed paths break Tauri's resource bundling.
+	const buildExtNodeModules = path.join(REPO_ROOT, '.build', 'extensions', 'node_modules');
+	if (fs.existsSync(buildExtNodeModules)) {
+		await fs.promises.rm(buildExtNodeModules, { recursive: true });
+		console.log('[package-extensions] Cleaned up .build/extensions/node_modules/ (breaks Tauri resource bundling)');
+	}
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
