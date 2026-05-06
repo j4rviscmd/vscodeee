@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-05-06
+
+### Added
+
+- Auto-apply solarized-deep theme on first launch
+- Add cursor auto-hide after inactivity
+- Change vscodeee editor defaults to opt-out model (editorGroupIndexInTab: true, autoMaximizeOnFocus: false) ([#459](https://github.com/j4rviscmd/vscodeee/pull/459))
+
+### Fixed
+
+- Use mainWindow for multi-window support and register i18n resource
+- Use single quotes for non-externalized strings (ESLint fix)
+
+### Changed
+
+- Bump actions/add-to-project from 1.0.2 to 2.0.0
+
 ## [0.15.0] - 2026-05-06
 
 ### Added
