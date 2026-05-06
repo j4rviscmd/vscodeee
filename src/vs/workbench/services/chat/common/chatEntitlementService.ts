@@ -341,6 +341,12 @@ export class ChatEntitlementService extends Disposable implements IChatEntitleme
 			return; // we need a default chat agent configured going forward from here
 		}
 
+		// Hide Chat UI if the default chat agent extension is unsupported (e.g., incompatible with Bun runtime)
+		if (productService.unsupportedExtensions?.some(ext => ext.id.toLowerCase() === productService.defaultChatAgent.chatExtensionId.toLowerCase())) {
+			ChatEntitlementContextKeys.Setup.hidden.bindTo(this.contextKeyService).set(true);
+			return;
+		}
+
 		const context = this.context = new Lazy(() => this._register(instantiationService.createInstance(ChatEntitlementContext)));
 		this.requests = new Lazy(() => this._register(instantiationService.createInstance(ChatEntitlementRequests, context.value, {
 			clearQuotas: () => this.clearQuotas(),

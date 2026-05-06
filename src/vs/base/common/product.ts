@@ -230,6 +230,11 @@ export interface IProductConfiguration {
 	readonly chatSessionRecommendations?: IChatSessionRecommendation[];
 	readonly emergencyAlertUrl?: string;
 
+	readonly unsupportedExtensions?: ReadonlyArray<{
+		readonly id: string;
+		readonly reason?: string;
+	}>;
+
 	readonly remoteDefaultExtensionsIfInstalledLocally?: string[];
 
 	readonly extensionConfigurationPolicy?: IStringDictionary<IPolicy>;

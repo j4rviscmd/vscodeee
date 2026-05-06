@@ -1934,12 +1934,17 @@ export abstract class AbstractExtensionGalleryService implements IExtensionGalle
 	async getExtensionsControlManifest(): Promise<IExtensionsControlManifest> {
 		const manifest = await this.extensionGalleryManifestService.getExtensionGalleryManifest();
 		if (!manifest) {
-			throw new Error('No extension gallery service configured.');
+			// No gallery service configured — still return unsupported extensions from product.json
+			const deprecated: IStringDictionary<IDeprecationInfo> = {};
+			this.addUnsupportedExtensions(deprecated);
+			return { malicious: [], deprecated, search: [], autoUpdate: {} };
 		}
 
 
 		if (!this.extensionsControlUrl) {
-			return { malicious: [], deprecated: {}, search: [], autoUpdate: {} };
+			const deprecated: IStringDictionary<IDeprecationInfo> = {};
+			this.addUnsupportedExtensions(deprecated);
+			return { malicious: [], deprecated, search: [], autoUpdate: {} };
 		}
 
 		const context = await this.requestService.request({
@@ -2005,7 +2010,21 @@ export abstract class AbstractExtensionGalleryService implements IExtensionGalle
 			}
 		};
 
+		this.addUnsupportedExtensions(deprecated);
+
 		return { malicious, deprecated, search, autoUpdate };
+	}
+
+	private addUnsupportedExtensions(deprecated: IStringDictionary<IDeprecationInfo>): void {
+		const unsupported = this.productService.unsupportedExtensions;
+		if (unsupported) {
+			for (const ext of unsupported) {
+				deprecated[ext.id.toLowerCase()] = {
+					disallowInstall: true,
+					additionalInfo: ext.reason
+				};
+			}
+		}
 	}
 
 	private getRequestTimeout(): number {
