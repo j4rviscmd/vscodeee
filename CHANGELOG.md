@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-05-06
+
+### Added
+
+- Hide Chat UI while keeping non-chat Copilot features functional (#468)
+  - Add `product.chatHidden` flag to hide Chat View and Activity Bar tab
+  - Auto-install copilot-chat extension from gallery on startup
+  - Preserve inline completions, NES, and SCM commit message generation
+
 ## [0.18.0] - 2026-05-06
 
 ### Added
