@@ -113,6 +113,8 @@ VSCodeee replaces the Electron architecture at two layers, achieving significant
   - `"vscodeee.activePaneBorder.enabled": true`
   - `"vscodeee.activePaneBorder.color": ""` (empty = theme focusBorder)
   - `"vscodeee.activePaneBorder.width": 1` (px, 1–5)
+  - Terminal horizontal padding
+  - `"vscodeee.terminal.horizontalPadding": 20` (px, 0–100)
 
 ---
 

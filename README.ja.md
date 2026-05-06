@@ -113,6 +113,8 @@ VSCodeee は Electron アーキテクチャを2つのレイヤーで置き換え
   - `"vscodeee.activePaneBorder.enabled": true`
   - `"vscodeee.activePaneBorder.color": ""` (空文字 = テーマのfocusBorder色)
   - `"vscodeee.activePaneBorder.width": 1` (px, 1〜5)
+  - ターミナルの水平パディング
+  - `"vscodeee.terminal.horizontalPadding": 20` (px, 0〜100)
 
 ---
 

@@ -399,6 +399,7 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 
 		this._wrapperElement = document.createElement('div');
 		this._wrapperElement.classList.add('terminal-wrapper');
+		this._applyTerminalHorizontalPadding();
 
 		this._widgetManager = this._register(instantiationService.createInstance(TerminalWidgetManager));
 
@@ -588,9 +589,13 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 				TerminalSettingId.FontWeightBold,
 				TerminalSettingId.LetterSpacing,
 				TerminalSettingId.LineHeight,
-				'editor.fontFamily'
+				'editor.fontFamily',
+				'vscodeee.terminal.horizontalPadding'
 			];
 			if (layoutSettings.some(id => e.affectsConfiguration(id))) {
+				if (e.affectsConfiguration('vscodeee.terminal.horizontalPadding')) {
+					this._applyTerminalHorizontalPadding();
+				}
 				this._layoutSettingsChanged = true;
 				await this._resize();
 			}
@@ -747,6 +752,32 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 		this._onMaximumDimensionsChanged.fire();
 	}
 
+	/**
+	 * Applies the user-configured horizontal padding to the terminal wrapper element.
+	 *
+	 * Reads the `vscodeee.terminal.horizontalPadding` setting and sets it as the
+	 * `--vscodeee-terminal-hpadding` CSS custom property on the terminal wrapper
+	 * DOM element. This value is consumed by `terminal.css` to control the left and
+	 * right padding of the xterm.js canvas.
+	 */
+	private _applyTerminalHorizontalPadding(): void {
+		const padding = this._configurationService.getValue<number>('vscodeee.terminal.horizontalPadding') ?? 20;
+		this._wrapperElement.style.setProperty('--vscodeee-terminal-hpadding', `${padding}px`);
+	}
+
+	/**
+	 * Calculates the available canvas dimensions for the terminal, accounting for
+	 * CSS padding (including the configurable horizontal padding) and scrollbar space.
+	 *
+	 * The computed CSS padding values are read from the xterm.js element so that any
+	 * dynamically applied padding (e.g. `vscodeee.terminal.horizontalPadding`) is
+	 * automatically reflected in the grid size calculation.
+	 *
+	 * @param width - The total available width in pixels (container width)
+	 * @param height - The total available height in pixels (container height)
+	 * @returns The canvas dimensions clamped to `MaxCanvasWidth`, or `undefined` if
+	 *          the font has not been initialized or the xterm element is not available
+	 */
 	private _getDimension(width: number, height: number): ICanvasDimensions | undefined {
 		// The font needs to have been initialized
 		const font = this.xterm ? this.xterm.getFont() : this._terminalConfigurationService.getFont(dom.getWindow(this.domElement));
