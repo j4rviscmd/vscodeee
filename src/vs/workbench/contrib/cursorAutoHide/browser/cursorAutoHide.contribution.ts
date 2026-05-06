@@ -3,6 +3,20 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+/**
+ * Cursor auto-hide and VSCodeee-specific configuration contribution.
+ *
+ * Registers the {@link CursorAutoHideController} as a workbench contribution and
+ * declares all `vscodeee.*` configuration properties, including:
+ *
+ * - `vscodeee.cursorAutoHide.enabled` / `vscodeee.cursorAutoHide.delay` -
+ *   automatic mouse cursor hiding after a period of inactivity
+ * - `vscodeee.activePaneBorder.enabled` / `.color` / `.width` -
+ *   tmux-like active editor pane border highlighting
+ * - `vscodeee.terminal.horizontalPadding` -
+ *   configurable horizontal padding for the integrated terminal
+ */
+
 import { localize } from '../../../../nls.js';
 import { IConfigurationRegistry, Extensions as ConfigurationExtensions } from '../../../../platform/configuration/common/configurationRegistry.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
@@ -47,6 +61,13 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration)
 				'minimum': 1,
 				'maximum': 5,
 				'description': localize('activePaneBorderWidth', "Controls the width in pixels of the active pane border.")
+			},
+			'vscodeee.terminal.horizontalPadding': {
+				'type': 'number',
+				'default': 20,
+				'minimum': 0,
+				'maximum': 100,
+				'description': localize('terminalHorizontalPadding', "Controls the horizontal padding (in pixels) applied to both left and right sides of the integrated terminal.")
 			}
 		}
 	});

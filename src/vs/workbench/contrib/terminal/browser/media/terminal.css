@@ -72,17 +72,21 @@
 	box-sizing: border-box;
 }
 
+.monaco-workbench .terminal-wrapper {
+	--vscodeee-terminal-hpadding: 20px;
+}
+
 .monaco-workbench .xterm {
-	/* All terminals have at least 20px left padding for the gutter */
-	padding-left: 20px;
+	padding-left: var(--vscodeee-terminal-hpadding);
+	padding-right: max(0px, calc(var(--vscodeee-terminal-hpadding) - 14px));
 }
 
 .monaco-workbench .xterm .xterm-scrollable-element {
 	/* Offset the scrollable element such that:
 	 * - The terminal grid will be positioned to the right of the gutter
 	 * - Elements are not hidden in the gutter */
-	margin-left: -20px;
-	padding-left: 20px;
+	margin-left: calc(-1 * var(--vscodeee-terminal-hpadding));
+	padding-left: var(--vscodeee-terminal-hpadding);
 }
 
 .monaco-workbench .terminal-editor .xterm,
