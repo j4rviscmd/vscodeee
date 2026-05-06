@@ -17,7 +17,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::Path;
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogResult};
+use tauri_plugin_dialog::DialogExt;
 
 /// File stat result matching VS Code's `IStat` interface.
 #[derive(Serialize)]
@@ -443,137 +443,6 @@ pub fn fs_show_item_in_folder(path: String) -> Result<(), String> {
     }
 
     Ok(())
-}
-
-/// Show a message box dialog using Tauri's dialog plugin.
-///
-/// Accepts Electron-style `MessageBoxOptions` and returns
-/// `{ response: buttonIndex, checkboxChecked: false }`.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MessageBoxOptions {
-    pub message: String,
-    #[serde(default)]
-    // TODO(Phase 3): Remove allow(dead_code) when this is wired up
-    #[allow(dead_code)]
-    pub r#type: Option<String>,
-    #[serde(default)]
-    pub buttons: Option<Vec<String>>,
-    #[serde(default)]
-    pub default_id: Option<u32>,
-    #[serde(default)]
-    pub title: Option<String>,
-    #[serde(default)]
-    pub detail: Option<String>,
-    #[serde(default)]
-    pub cancel_id: Option<u32>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MessageBoxResult {
-    pub response: u32,
-    pub checkbox_checked: bool,
-}
-
-#[tauri::command]
-pub async fn show_message_box(
-    app_handle: tauri::AppHandle,
-    options: MessageBoxOptions,
-) -> Result<MessageBoxResult, String> {
-    let buttons = options.buttons.unwrap_or_else(|| vec!["OK".to_string()]);
-    let title = options.title.unwrap_or_else(|| "VS Codeee".to_string());
-    let message = if let Some(detail) = &options.detail {
-        format!("{}\n\n{}", options.message, detail)
-    } else {
-        options.message.clone()
-    };
-
-    // For 1-2 buttons, use confirm dialog. For 3+, we need a different approach.
-    // VS Code commonly uses 3-button dialogs (Save/Don't Save/Cancel).
-    if buttons.len() <= 1 {
-        // Simple OK dialog
-        let dialog = app_handle.dialog().clone();
-        dialog
-            .message(&message)
-            .title(&title)
-            .buttons(MessageDialogButtons::OkCustom(buttons[0].clone()))
-            .blocking_show();
-        return Ok(MessageBoxResult {
-            response: 0,
-            checkbox_checked: false,
-        });
-    }
-
-    if buttons.len() == 2 {
-        // Confirm dialog (OK/Cancel or Yes/No style)
-        let dialog = app_handle.dialog().clone();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        dialog
-            .message(&message)
-            .title(&title)
-            .buttons(MessageDialogButtons::OkCancelCustom(
-                buttons[0].clone(),
-                buttons[1].clone(),
-            ))
-            .show_with_result(move |result| {
-                let _ = tx.send(result);
-            });
-        let result = rx.await.map_err(|e| format!("Unknown: {}", e))?;
-        let response = match result {
-            MessageDialogResult::Custom(ref s) if s == &buttons[0] => 0,
-            MessageDialogResult::Ok | MessageDialogResult::Yes => 0,
-            _ => 1,
-        };
-        return Ok(MessageBoxResult {
-            response,
-            checkbox_checked: false,
-        });
-    }
-
-    // 3+ buttons: Use confirm dialog with first button as OK,
-    // last button as Cancel, and treat the middle buttons specially.
-    // For the common Save/Don't Save/Cancel pattern:
-    //   buttons[0] = "Save" (OK/Yes)
-    //   buttons[1] = "Don't Save" (No)
-    //   buttons[2] = "Cancel" (Cancel)
-    let cancel_id = options.cancel_id.unwrap_or((buttons.len() - 1) as u32) as usize;
-    let default_id = options.default_id.unwrap_or(0) as usize;
-
-    // Pick the "no" button: the first button that isn't default or cancel.
-    let no_idx = (0..buttons.len())
-        .find(|&i| i != default_id && i != cancel_id)
-        .unwrap_or(1);
-
-    let dialog = app_handle.dialog().clone();
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    let buttons_clone = buttons.clone();
-    dialog
-        .message(&message)
-        .title(&title)
-        .buttons(MessageDialogButtons::YesNoCancelCustom(
-            buttons[default_id].clone(),
-            buttons[no_idx].clone(),
-            buttons[cancel_id].clone(),
-        ))
-        .show_with_result(move |result| {
-            let _ = tx.send(result);
-        });
-
-    let result = rx.await.map_err(|e| format!("Unknown: {}", e))?;
-    let response = match result {
-        MessageDialogResult::Custom(ref s) => buttons_clone
-            .iter()
-            .position(|b| b == s)
-            .unwrap_or(cancel_id) as u32,
-        MessageDialogResult::Yes | MessageDialogResult::Ok => default_id as u32,
-        MessageDialogResult::No => no_idx as u32,
-        MessageDialogResult::Cancel => cancel_id as u32,
-    };
-    Ok(MessageBoxResult {
-        response,
-        checkbox_checked: false,
-    })
 }
 
 // ---------------------------------------------------------------------------

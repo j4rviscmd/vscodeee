@@ -27,7 +27,7 @@ import { Disposable } from '../../../base/common/lifecycle.js';
 import { URI } from '../../../base/common/uri.js';
 import { VSBuffer } from '../../../base/common/buffer.js';
 import { INativeHostService, INativeHostOptions, IOSProperties, IOSStatistics, IToastOptions, IToastResult, SystemIdleState, ThermalState, PowerSaveBlockerType, FocusMode } from '../common/native.js';
-import { MessageBoxOptions, MessageBoxReturnValue, OpenDevToolsOptions, OpenDialogOptions, OpenDialogReturnValue, SaveDialogOptions, SaveDialogReturnValue } from '../../../base/parts/sandbox/common/nativeDialogTypes.js';
+import { OpenDevToolsOptions, OpenDialogOptions, OpenDialogReturnValue, SaveDialogOptions, SaveDialogReturnValue } from '../../../base/parts/sandbox/common/nativeDialogTypes.js';
 import { ISerializableCommandAction } from '../../action/common/action.js';
 import { INativeOpenDialogOptions } from '../../dialogs/common/dialogs.js';
 import { IV8Profile } from '../../profiling/common/profiling.js';
@@ -408,11 +408,6 @@ export class TauriNativeHostService extends Disposable implements INativeHostSer
   // #endregion
 
   // #region Dialogs
-
-  /** Shows a native message box dialog via Tauri. */
-  async showMessageBox(options: MessageBoxOptions & INativeHostOptions): Promise<MessageBoxReturnValue> {
-    return invoke<MessageBoxReturnValue>('show_message_box', { options });
-  }
 
   /** Shows a native save-file dialog via Tauri. */
   async showSaveDialog(options: SaveDialogOptions & INativeHostOptions): Promise<SaveDialogReturnValue> {

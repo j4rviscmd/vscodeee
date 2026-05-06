@@ -351,7 +351,6 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
             commands::filesystem::fs_rename,
             commands::filesystem::fs_copy,
             commands::filesystem::fs_show_item_in_folder,
-            commands::filesystem::show_message_box,
             commands::filesystem::show_save_dialog,
             commands::filesystem::show_open_dialog,
             // ── Storage commands (text-based, for TauriStorageService) ──
