@@ -1,0 +1,18 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.cursor-auto-hidden {
+	cursor: none !important;
+}
+
+.cursor-auto-hidden * {
+	cursor: none !important;
+	pointer-events: none !important;
+}
+
+/* Keep pointer-events on body itself so document-level listeners work */
+.cursor-auto-hidden {
+	pointer-events: auto !important;
+}

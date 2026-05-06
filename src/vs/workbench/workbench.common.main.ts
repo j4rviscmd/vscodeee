@@ -252,6 +252,9 @@ import './contrib/searchEditor/browser/searchEditor.contribution.js';
 // Sash
 import './contrib/sash/browser/sash.contribution.js';
 
+// Cursor Auto Hide
+import './contrib/cursorAutoHide/browser/cursorAutoHide.contribution.js';
+
 // Git
 import './contrib/git/browser/git.contributions.js';
 
