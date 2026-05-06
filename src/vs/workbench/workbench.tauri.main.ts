@@ -211,4 +211,7 @@ import './contrib/splash/browser/splash.contribution.js';
 // Zoom
 import './tauri-browser/contrib/zoomStatusEntry.js';
 
+// Default Theme
+import './tauri-browser/contrib/defaultTheme.contribution.js';
+
 //#endregion
