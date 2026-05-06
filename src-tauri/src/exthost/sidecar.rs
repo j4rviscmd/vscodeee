@@ -95,10 +95,12 @@ fn resolve_runtime_binary() -> String {
 /// `.build/extensions/*/out/` where no `node_modules` exist. Bun walks up
 /// from the extension's location and never finds the source tree's packages.
 ///
+/// User-installed extensions at `~/.vscodeee/extensions/*/` may also ship their
+/// own `node_modules/` (e.g., Prettier bundles its own `prettier` package).
+///
 /// This function constructs a colon/semicolon-separated list of paths that includes
-/// both the production resource path and, when an `extensions/` directory is detected
-/// in `app_root`, all extension `node_modules/` directories so `require('byline')` etc.
-/// resolve.
+/// the production resource path, built-in extension `node_modules/`, and
+/// user extension `node_modules/` directories so `require('byline')` etc. resolve.
 ///
 /// The paths are set as both `NODE_PATH` and `VSCODEEE_EXT_NODE_MODULES_PATHS`:
 /// - `NODE_PATH`: Bun adds these to `Module.globalPaths` at process startup.
@@ -128,19 +130,16 @@ fn build_ext_node_modules_paths(app_root: &Path, resource_dir: &Path) -> String 
         }
 
         // Each extension's own node_modules
-        if let Ok(entries) = std::fs::read_dir(&extensions_dir) {
-            let mut ext_paths: Vec<String> = entries
-                .filter_map(|e| {
-                    let nm = e.ok()?.path().join("node_modules");
-                    if nm.is_dir() {
-                        Some(nm.to_string_lossy().into_owned())
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            ext_paths.sort();
-            paths.append(&mut ext_paths);
+        paths.append(&mut collect_child_node_modules(&extensions_dir));
+    }
+
+    // User-installed extensions: ~/.vscodeee/extensions/*/node_modules
+    // Extensions like Prettier bundle their own npm dependencies (e.g., prettier)
+    // which must be resolvable via CJS require() in the extension host process.
+    if let Some(home_dir) = dirs::home_dir() {
+        let user_ext_dir = home_dir.join(".vscodeee").join("extensions");
+        if user_ext_dir.is_dir() {
+            paths.append(&mut collect_child_node_modules(&user_ext_dir));
         }
     }
 
@@ -151,6 +150,28 @@ fn build_ext_node_modules_paths(app_root: &Path, resource_dir: &Path) -> String 
         paths.len()
     );
     paths_str
+}
+
+/// Collect `node_modules` paths from immediate subdirectories of `dir`.
+///
+/// Reads the entries of `dir`, looks for `<entry>/node_modules/` directories,
+/// sorts them alphabetically, and returns them as a list of paths.
+fn collect_child_node_modules(dir: &Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut paths: Vec<String> = entries
+        .filter_map(|e| {
+            let nm = e.ok()?.path().join("node_modules");
+            if nm.is_dir() {
+                Some(nm.to_string_lossy().into_owned())
+            } else {
+                None
+            }
+        })
+        .collect();
+    paths.sort();
+    paths
 }
 
 /// Build an enriched PATH for the Extension Host child process.
@@ -346,31 +367,31 @@ fn augment_product_json(app_root: &Path) -> Option<(std::path::PathBuf, String)>
     }
 
     // Write augmented product.json (pretty-printed to preserve readability)
-    match serde_json::to_string_pretty(&product) {
-        Ok(augmented) => {
-            // Add trailing newline to match typical JSON formatting
-            let augmented = augmented + "\n";
-            if let Err(e) = std::fs::write(&product_path, &augmented) {
-                log::warn!(
-                    target: "vscodeee::exthost::sidecar",
-                    "Failed to write augmented product.json: {e}"
-                );
-                return None;
-            }
-            log::info!(
-                target: "vscodeee::exthost::sidecar",
-                "Wrote augmented product.json with commit and version"
-            );
-            Some((product_path, original))
-        }
+    let augmented = match serde_json::to_string_pretty(&product) {
+        Ok(s) => s,
         Err(e) => {
             log::warn!(
                 target: "vscodeee::exthost::sidecar",
                 "Failed to serialize augmented product.json: {e}"
             );
-            None
+            return None;
         }
+    };
+
+    // Add trailing newline to match typical JSON formatting
+    let augmented = augmented + "\n";
+    if let Err(e) = std::fs::write(&product_path, &augmented) {
+        log::warn!(
+            target: "vscodeee::exthost::sidecar",
+            "Failed to write augmented product.json: {e}"
+        );
+        return None;
     }
+    log::info!(
+        target: "vscodeee::exthost::sidecar",
+        "Wrote augmented product.json with commit and version"
+    );
+    Some((product_path, original))
 }
 
 /// Spawn the Extension Host as a Bun sidecar, returning the connected stream.
