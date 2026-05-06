@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { mainWindow } from '../../../../base/browser/window.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
@@ -73,7 +74,7 @@ export class CursorAutoHideController extends Disposable implements IWorkbenchCo
 	private _setupListeners(): void {
 		// Use document-level listeners with capture phase so they fire
 		// even when pointer-events: none is applied to body
-		const doc = document;
+		const doc = mainWindow.document;
 
 		this._store.add({
 			dispose: () => {
@@ -105,7 +106,7 @@ export class CursorAutoHideController extends Disposable implements IWorkbenchCo
 		// to the actual target element now that pointer-events is restored
 		if (wasHidden && e.type === 'mousedown') {
 			const mouseEvent = e as MouseEvent;
-			const target = document.elementFromPoint(mouseEvent.clientX, mouseEvent.clientY);
+			const target = mainWindow.document.elementFromPoint(mouseEvent.clientX, mouseEvent.clientY);
 			if (target) {
 				const newEvent = new MouseEvent('mousedown', {
 					bubbles: true,
@@ -145,14 +146,14 @@ export class CursorAutoHideController extends Disposable implements IWorkbenchCo
 
 	private _hideCursor(): void {
 		if (!this._isHidden) {
-			document.body.classList.add('cursor-auto-hidden');
+			mainWindow.document.body.classList.add('cursor-auto-hidden');
 			this._isHidden = true;
 		}
 	}
 
 	private _showCursor(): void {
 		if (this._isHidden) {
-			document.body.classList.remove('cursor-auto-hidden');
+			mainWindow.document.body.classList.remove('cursor-auto-hidden');
 			this._isHidden = false;
 		}
 	}
