@@ -148,6 +148,7 @@ Electron（バンドルされた Chromium）と Tauri（ネイティブシステ
 | `setBackgroundThrottling` | WebView 内部の JS タイマー/アニメーションのスロットリングは外部から制御不可                                                                                                                               | 全プラットフォーム — `NSProcessInfo.beginActivity()`（macOS）で OS レベルのスロットリングを防げますが、WebView 内部の動作は制御できません。                                                                |
 | 設定同期                  | 内蔵の設定同期は利用不可。上流の同期サービスは公式 VS Code ビルド専用にライセンスされています。                                                                                                           | 全プラットフォーム — サードパーティの拡張機能（例: [Settings Sync](https://marketplace.visualstudio.com/items?itemName=Shan.code-settings-sync)）で GitHub Gist 経由で同期する代替手段を使用してください。 |
 | リモートトンネル          | 内蔵のリモートトンネルは利用不可。トンネルリレーインフラは Microsoft（Azure Dev Tunnels）がホストしており、サードパーティビルドからはアクセスできません。リモート開発には Remote-SSH を使用してください。 | 全プラットフォーム — 詳細は [#100](https://github.com/j4rviscmd/vscodeee/issues/100) を参照。代替として Remote-SSH が利用可能です（[#185](https://github.com/j4rviscmd/vscodeee/issues/185)）。            |
+| GitHub Copilot Chat       | Bun ランタイムとの非互換のためブロック。拡張機能は自動アンインストールされ、再インストールも不可。                                                                                                         | 全プラットフォーム — 詳細は [#453](https://github.com/j4rviscmd/vscodeee/issues/453) を参照。                                                                                                              |
 
 > [!NOTE]
 > このリストは固有のプラットフォーム制限をカバーしています。単にまだ実装されていない機能は個別の GitHub Issue で追跡されています。

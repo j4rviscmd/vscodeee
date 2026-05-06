@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-05-06
+
+### Added
+
+- Block GitHub.copilot-chat extension via product.json unsupportedExtensions
+
+### Fixed
+
+- Resolve extension module paths in production build
+
+### Changed
+
+- Add retry logic and cleanup-on-failure to release workflow
+
 ## [0.14.0] - 2026-05-05
 
 ### Added

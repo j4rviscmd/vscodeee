@@ -5,7 +5,7 @@
 
 import { IExtensionGalleryService, IGlobalExtensionEnablementService } from '../../../../platform/extensionManagement/common/extensionManagement.js';
 import { IExtensionStorageService } from '../../../../platform/extensionManagement/common/extensionStorage.js';
-import { migrateUnsupportedExtensions } from '../../../../platform/extensionManagement/common/unsupportedExtensionsMigration.js';
+import { migrateUnsupportedExtensions, uninstallUnsupportedExtensions } from '../../../../platform/extensionManagement/common/unsupportedExtensionsMigration.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IWorkbenchContribution } from '../../../common/contributions.js';
 import { IExtensionManagementServerService } from '../../../services/extensionManagement/common/extensionManagement.js';
@@ -25,6 +25,10 @@ export class UnsupportedExtensionsMigrationContrib implements IWorkbenchContribu
 		}
 		if (extensionManagementServerService.webExtensionManagementServer) {
 			migrateUnsupportedExtensions(undefined, extensionManagementServerService.webExtensionManagementServer.extensionManagementService, extensionGalleryService, extensionStorageService, extensionEnablementService, logService);
+		}
+		// Tauri: no shared process, so uninstall unsupported extensions for local server directly
+		if (extensionManagementServerService.localExtensionManagementServer) {
+			uninstallUnsupportedExtensions(undefined, extensionManagementServerService.localExtensionManagementServer.extensionManagementService, logService);
 		}
 	}
 

@@ -207,6 +207,12 @@
   "win32MutexName": "vscodeee",
   "win32NameVersion": "VS Codeee",
   "win32RegValueName": "VSCodeee",
+  "unsupportedExtensions": [
+    {
+      "id": "GitHub.copilot-chat",
+      "reason": "This extension is not compatible with VS Codeee's Bun runtime."
+    }
+  ],
   "win32ShellNameShort": "V&S Codeee",
   "win32TunnelMutex": "vscodeee-tunnel",
   "win32TunnelServiceMutex": "vscodeee-tunnelservice",

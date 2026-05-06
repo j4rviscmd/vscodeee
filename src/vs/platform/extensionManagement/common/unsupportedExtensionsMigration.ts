@@ -98,3 +98,40 @@ export async function migrateUnsupportedExtensions(profile: IUserDataProfile | u
 		logService.error(error);
 	}
 }
+
+/**
+ * Uninstalls extensions that are marked as unsupported (deprecated with disallowInstall and no replacement).
+ * This handles extensions that are incompatible with the runtime (e.g., Bun) and should be removed.
+ */
+export async function uninstallUnsupportedExtensions(
+	profile: IUserDataProfile | undefined,
+	extensionManagementService: IExtensionManagementService,
+	logService: ILogService
+): Promise<void> {
+	try {
+		const extensionsControlManifest = await extensionManagementService.getExtensionsControlManifest();
+		if (!extensionsControlManifest.deprecated) {
+			return;
+		}
+		const installed = await extensionManagementService.getInstalled(ExtensionType.User, profile?.extensionsResource);
+		for (const [unsupportedExtensionId, deprecated] of Object.entries(extensionsControlManifest.deprecated)) {
+			// Only handle extensions that disallow install and have NO replacement (pure unsupported)
+			if (!deprecated?.disallowInstall || deprecated.extension) {
+				continue;
+			}
+			const unsupportedExtension = installed.find(i => areSameExtensions(i.identifier, { id: unsupportedExtensionId }));
+			if (!unsupportedExtension) {
+				continue;
+			}
+			try {
+				logService.info(`Uninstalling unsupported extension '${unsupportedExtension.identifier.id}'...`);
+				await extensionManagementService.uninstall(unsupportedExtension, { profileLocation: profile?.extensionsResource });
+				logService.info(`Uninstalled unsupported extension '${unsupportedExtension.identifier.id}'.`);
+			} catch (error) {
+				logService.error(error);
+			}
+		}
+	} catch (error) {
+		logService.error(error);
+	}
+}
