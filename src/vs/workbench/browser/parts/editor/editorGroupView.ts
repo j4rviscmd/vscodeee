@@ -600,6 +600,16 @@ export class EditorGroupView extends Themable implements IEditorGroupView {
 		// Active pane border configuration changes
 		const onDidChangeActivePaneBorder = Event.filter(this.configurationService.onDidChangeConfiguration, e => e.affectsConfiguration('vscodeee.activePaneBorder'));
 		this._register(onDidChangeActivePaneBorder(() => this.updateStyles()));
+
+		// Update active border on focus changes to ensure correct visibility.
+		// FOCUS_OUT is deferred by one tick so that the newly focused element
+		// is reflected in `document.activeElement` before we re-evaluate.
+		this._register(addDisposableListener(this.element, EventType.FOCUS_IN, () => {
+			this.updateStyles();
+		}));
+		this._register(addDisposableListener(this.element, EventType.FOCUS_OUT, () => {
+			setTimeout(() => this.updateStyles(), 0);
+		}));
 	}
 
 	private onDidGroupModelChange(e: IGroupModelChangeEvent): void {
@@ -2138,6 +2148,23 @@ export class EditorGroupView extends Themable implements IEditorGroupView {
 
 	//#region Themable
 
+	/**
+	 * Updates visual styles including the tmux-like active editor pane border.
+	 *
+	 * When `vscodeee.activePaneBorder.enabled` is `true` (default), the active
+	 * editor group displays an inset border. The border is only shown when:
+	 * - Multiple editor groups exist
+	 * - This group is the active group
+	 * - The group or a descendant element has DOM focus
+	 *
+	 * The border color defaults to the theme's `editorGroup.activeBorder` token
+	 * but can be overridden via `vscodeee.activePaneBorder.color`. The border
+	 * width is configurable via `vscodeee.activePaneBorder.width`.
+	 *
+	 * CSS custom properties set on the group element:
+	 * - `--active-pane-border-color` - resolved border color
+	 * - `--active-pane-border-width`  - resolved border width in px
+	 */
 	override updateStyles(): void {
 		const isEmpty = this.isEmpty;
 
@@ -2164,22 +2191,17 @@ export class EditorGroupView extends Themable implements IEditorGroupView {
 		// Editor container
 		this.editorContainer.style.backgroundColor = this.getColor(editorBackground) || '';
 
-		// Active pane border (tmux-like): only show when multiple groups exist
+		// Active pane border (tmux-like): only show when multiple groups exist and editor has focus
 		const activePaneBorderEnabled = this.configurationService.getValue<boolean>('vscodeee.activePaneBorder.enabled') ?? true;
 		const hasMultipleGroups = this.groupsView.groups.length > 1;
-		if (activePaneBorderEnabled && hasMultipleGroups && this.active) {
-			const colorOverride = this.configurationService.getValue<string>('vscodeee.activePaneBorder.color');
-			const activeBorderColor = colorOverride || this.getColor(EDITOR_GROUP_ACTIVE_BORDER);
-			if (activeBorderColor) {
-				this.element.classList.add('active-pane-border');
-				this.element.style.setProperty('--active-pane-border-color', activeBorderColor);
-				const widthValue = this.configurationService.getValue<number>('vscodeee.activePaneBorder.width') ?? 1;
-				this.element.style.setProperty('--active-pane-border-width', `${widthValue}px`);
-			} else {
-				this.element.classList.remove('active-pane-border');
-				this.element.style.removeProperty('--active-pane-border-color');
-				this.element.style.removeProperty('--active-pane-border-width');
-			}
+		const editorHasFocus = this.element.contains(getActiveElement());
+		const colorOverride = this.configurationService.getValue<string>('vscodeee.activePaneBorder.color');
+		const activeBorderColor = colorOverride || this.getColor(EDITOR_GROUP_ACTIVE_BORDER);
+		if (activePaneBorderEnabled && hasMultipleGroups && this.active && editorHasFocus && activeBorderColor) {
+			this.element.classList.add('active-pane-border');
+			this.element.style.setProperty('--active-pane-border-color', activeBorderColor);
+			const widthValue = this.configurationService.getValue<number>('vscodeee.activePaneBorder.width') ?? 1;
+			this.element.style.setProperty('--active-pane-border-width', `${widthValue}px`);
 		} else {
 			this.element.classList.remove('active-pane-border');
 			this.element.style.removeProperty('--active-pane-border-color');
@@ -2254,6 +2276,14 @@ export class EditorGroupView extends Themable implements IEditorGroupView {
 	}
 }
 
+/**
+ * Describes an editor replacement operation within a group.
+ *
+ * @remarks
+ * This is an extension of the base {@link IEditorReplacement} that adds the
+ * concrete {@link EditorInput} types and optional editor options to apply
+ * when opening the replacement editor.
+ */
 export interface EditorReplacement extends IEditorReplacement {
 	readonly editor: EditorInput;
 	readonly replacement: EditorInput;
