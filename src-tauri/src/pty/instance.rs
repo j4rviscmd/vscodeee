@@ -34,7 +34,9 @@ use super::autoreply::AutoReplyInterceptor;
 const HIGH_WATERMARK_CHARS: u64 = 100_000;
 const LOW_WATERMARK_CHARS: u64 = 5_000;
 /// Sleep duration when the reader is paused (flow control).
-const PAUSED_POLL_INTERVAL: Duration = Duration::from_millis(1);
+/// 50ms balances responsiveness with CPU usage — 1ms caused CPU 100% spikes
+/// during shutdown when the frontend stopped acknowledging terminal output.
+const PAUSED_POLL_INTERVAL: Duration = Duration::from_millis(50);
 /// Maximum time to stay paused before force-resuming.
 /// Prevents deadlock when acks don't arrive (e.g., VS Code's AckDataBufferer
 /// chain not yet wired through for the Tauri backend).
@@ -96,7 +98,8 @@ pub struct PtyInstance {
     writer: Arc<Mutex<Option<Box<dyn Write + Send>>>>,
     /// Master PTY handle for resize operations.
     master: Arc<Mutex<Option<Box<dyn MasterPty + Send>>>>,
-    /// Handle to the background reader thread (detached on drop).
+    /// Handle to the background reader thread (detached on drop — the thread
+    /// exits via the shutdown flag + master PTY drop causing EOF).
     _reader_handle: Option<thread::JoinHandle<()>>,
     /// Child process handle — retained for signal delivery and PID tracking.
     child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
@@ -111,6 +114,8 @@ pub struct PtyInstance {
     activate_tx: Mutex<Option<std::sync::mpsc::SyncSender<()>>>,
     /// Shared flow control state for reader thread backpressure.
     flow_control: Arc<FlowControlState>,
+    /// Shutdown flag — when set, the reader thread exits immediately.
+    shutdown: Arc<AtomicBool>,
 }
 
 impl Drop for PtyInstance {
@@ -118,26 +123,26 @@ impl Drop for PtyInstance {
         let pid = self.pid;
         log::info!(target: "vscodeee::pty::instance", "Dropping PTY instance (pid={pid})");
 
-        // 1. Close the writer (sends EOF to the shell's stdin)
+        // 1. Signal the reader thread to stop immediately.
+        self.shutdown.store(true, Ordering::SeqCst);
+        // Resume flow control in case the reader is blocked in the pause loop.
+        self.flow_control.paused.store(false, Ordering::Relaxed);
+
+        // 2. Close the writer (sends EOF to the shell's stdin).
         if let Ok(mut writer) = self.writer.lock() {
             *writer = None;
         }
 
-        // 2. Kill the child process if still alive
+        // 3. Kill the child process if still alive.
         #[cfg(unix)]
         {
-            // Use libc::kill directly for synchronous termination — the tokio
-            // runtime may already be shut down during Drop.
             if self.pid != 0 {
                 unsafe {
-                    // First try SIGTERM for graceful shutdown
                     libc::kill(self.pid as i32, libc::SIGTERM);
                 }
-                // Give the process a moment, then SIGKILL if still alive
-                std::thread::sleep(std::time::Duration::from_millis(100));
+                std::thread::sleep(std::time::Duration::from_millis(50));
                 if let Ok(mut child) = self.child.lock() {
                     if let Ok(None) = child.try_wait() {
-                        // Still running — force kill
                         unsafe {
                             libc::kill(self.pid as i32, libc::SIGKILL);
                         }
@@ -152,8 +157,10 @@ impl Drop for PtyInstance {
             }
         }
 
-        // 3. Drop the master PTY handle — on Unix this sends SIGHUP to the
+        // 4. Drop the master PTY handle — on Unix this sends SIGHUP to the
         //    child's session, ensuring termination of the process group.
+        //    This also causes the reader thread to get EOF on its next read,
+        //    prompting it to exit.
         if let Ok(mut master) = self.master.lock() {
             *master = None;
         }
@@ -246,6 +253,10 @@ impl PtyInstance {
         let flow_control = Arc::new(FlowControlState::new());
         let flow_control_reader = Arc::clone(&flow_control);
 
+        // Shared shutdown flag — set during Drop to stop the reader thread immediately.
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let shutdown_reader = Arc::clone(&shutdown);
+
         // Start background reader thread
         // The reader blocks on a one-shot channel until activate() is called.
         // This gives the frontend time to register event listeners before any
@@ -273,6 +284,13 @@ impl PtyInstance {
             let mut pause_start: Option<Instant> = None;
 
             loop {
+                // Exit immediately when shutdown is requested (during Drop).
+                if shutdown_reader.load(Ordering::Relaxed) {
+                    log::info!(target: "vscodeee::pty::instance",
+                        "Reader shutting down (pty:{pty_id})");
+                    break;
+                }
+
                 // When paused, sleep and periodically check the flag.
                 // The kernel PTY buffer provides natural backpressure: as it fills
                 // up, the shell process blocks on write.
@@ -368,6 +386,7 @@ impl PtyInstance {
             cwd: config.cwd,
             activate_tx: Mutex::new(Some(activate_tx)),
             flow_control,
+            shutdown,
         })
     }
 

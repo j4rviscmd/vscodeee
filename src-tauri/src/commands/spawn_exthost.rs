@@ -130,13 +130,13 @@ impl ExtHostState {
     ///
     /// Used from the shutdown coordinator closure when the tokio runtime
     /// may not be available (e.g., during `RunEvent::Exit`).
+    ///
+    /// Drains all instances from the map and aborts their watchdog/relay tasks,
+    /// then sends SIGKILL directly (no polite SIGTERM — the process is dying).
     #[cfg(unix)]
     pub fn sync_kill_all(&self) {
-        let pids: Vec<u32> = match self.instances.try_lock() {
-            Ok(instances) => instances
-                .values()
-                .filter_map(|inst| inst.sidecar.child.id())
-                .collect(),
+        let drained: Vec<(u32, ExtHostInstance)> = match self.instances.try_lock() {
+            Ok(mut instances) => instances.drain().collect(),
             Err(_) => {
                 log::warn!(
                     target: "vscodeee::commands::spawn_exthost",
@@ -145,23 +145,27 @@ impl ExtHostState {
                 return;
             }
         };
-        for pid in &pids {
-            unsafe {
-                libc::kill(*pid as i32, libc::SIGTERM);
-            }
+        if drained.is_empty() {
+            return;
         }
-        if !pids.is_empty() {
-            std::thread::sleep(std::time::Duration::from_millis(200));
-            for pid in &pids {
+        let count = drained.len();
+        for (id, inst) in drained {
+            log::info!(
+                target: "vscodeee::commands::spawn_exthost",
+                "Sync-killing ExtHost instance {id}"
+            );
+            inst.watchdog_task.abort();
+            inst.relay_task.abort();
+            if let Some(pid) = inst.sidecar.child.id() {
                 unsafe {
-                    libc::kill(*pid as i32, libc::SIGKILL);
+                    libc::kill(pid as i32, libc::SIGKILL);
                 }
             }
         }
         log::info!(
             target: "vscodeee::commands::spawn_exthost",
-            "Synchronously killed {} ExtHost processes",
-            pids.len()
+            "Sync-killed {} ExtHost instances (drained)",
+            count
         );
     }
 
