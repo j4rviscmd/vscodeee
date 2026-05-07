@@ -17,6 +17,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::Path;
+use tauri::Emitter;
 use tauri_plugin_dialog::DialogExt;
 
 /// File stat result matching VS Code's `IStat` interface.
@@ -697,7 +698,11 @@ pub fn storage_read_text_file(path: String) -> Result<String, String> {
 /// On POSIX systems, `rename` is atomic, so the destination file will
 /// always contain either the old or the complete new content.
 #[tauri::command]
-pub fn storage_write_atomic(path: String, content: String) -> Result<(), String> {
+pub fn storage_write_atomic(
+    app_handle: tauri::AppHandle,
+    path: String,
+    content: String,
+) -> Result<(), String> {
     let p = Path::new(&path);
 
     // Ensure parent directory exists
@@ -716,7 +721,12 @@ pub fn storage_write_atomic(path: String, content: String) -> Result<(), String>
     }
 
     // Atomic rename (on POSIX, rename is atomic)
-    std::fs::rename(&tmp_path, p).map_err(map_io_error)
+    std::fs::rename(&tmp_path, p).map_err(map_io_error)?;
+
+    // Notify other windows so they can reload their storage cache
+    let _ = app_handle.emit("vscode:storage_changed", &path);
+
+    Ok(())
 }
 
 #[cfg(test)]
