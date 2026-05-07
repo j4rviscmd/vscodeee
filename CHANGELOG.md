@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-05-07
+
+### Added
+
+- Add tmux-like active border to sidebar, panel, and auxiliary bar (#477)
+  - Visually highlight the currently focused panel container with a colored border
+- Use dynamic terminal tab title from OSC sequence (#478)
+  - Terminal tabs now display the title set by shell escape sequences (OSC 0/2)
+
 ## [0.19.1] - 2026-05-07
 
 ### Fixed
