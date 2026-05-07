@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-05-07
+
+### Added
+
+- Exclude terminal editors (vim, nano, etc.) from Quick Open results (#481)
+
 ## [0.20.0] - 2026-05-07
 
 ### Added
