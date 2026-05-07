@@ -222,14 +222,29 @@ impl PtyManager {
     /// Close all running PTY instances.
     ///
     /// Called during application shutdown to ensure all child shell processes
-    /// and their reader threads are cleaned up. Each `PtyInstance::Drop` kills
-    /// the child process and closes the master PTY.
+    /// are cleaned up. Each `PtyInstance::Drop` kills the child process,
+    /// signals the reader thread to stop (via shutdown flag), and closes
+    /// the master PTY. The reader thread is detached, not joined — it exits
+    /// promptly via the shutdown flag or EOF from the dropped master.
+    ///
+    /// Drains instances from the map and drops them **after releasing the lock**
+    /// to avoid deadlock: the reader thread's `on_exit` callback attempts to
+    /// acquire the same instances lock, so dropping while holding the lock
+    /// would deadlock.
     pub fn close_all(&self) {
-        if let Ok(mut instances) = self.instances.lock() {
+        let drained: Vec<PtyInstance> = if let Ok(mut instances) = self.instances.lock() {
             let count = instances.len();
-            instances.clear();
-            log::info!(target: "vscodeee::pty::manager", "Closed all {count} PTY instances");
-        }
+            let drained: Vec<_> = instances.drain().map(|(_, v)| v).collect();
+            log::info!(target: "vscodeee::pty::manager", "Drained {count} PTY instances for shutdown");
+            drained
+        } else {
+            return;
+        };
+        // Drop outside the lock — each PtyInstance::Drop signals the reader thread
+        // via shutdown flag and drops the master PTY, which may trigger the
+        // on_exit callback that re-acquires the instances lock.
+        drop(drained);
+        log::info!(target: "vscodeee::pty::manager", "All PTY instances shut down");
     }
 
     /// Acquire the instances lock, look up a PTY by ID, and apply a function to it.
