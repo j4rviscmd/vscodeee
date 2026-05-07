@@ -1912,7 +1912,6 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 			this._setTitle(title, TitleEventSource.Sequence);
 		}
 	}
-
 	private async _trust(): Promise<boolean> {
 		if (this._configurationService.getValue(TerminalSettingId.AllowInUntrustedWorkspace)) {
 			this._logService.info(`Workspace trust check bypassed due to ${TerminalSettingId.AllowInUntrustedWorkspace}`);
@@ -2091,6 +2090,9 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 
 	private _updateTitleProperties(title: string | undefined, eventSource: TitleEventSource): string {
 		if (!title) {
+			if (eventSource === TitleEventSource.Sequence) {
+				this._sequence = undefined;
+			}
 			return this._processName;
 		}
 		switch (eventSource) {
@@ -2368,7 +2370,6 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 		if ((this._shellLaunchConfig?.type === 'Task' || this._titleSource === TitleEventSource.Api) && eventSource === TitleEventSource.Process) {
 			return;
 		}
-
 		const reset = !title;
 		title = this._updateTitleProperties(title, eventSource);
 		const titleChanged = title !== this._title;
@@ -2838,8 +2839,6 @@ export function parseExitResult(
 
 	return { code, message };
 }
-
-
 export class TerminalInstanceColorProvider implements IXtermColorProvider {
 	constructor(
 		private readonly _target: IReference<TerminalLocation | undefined>,
