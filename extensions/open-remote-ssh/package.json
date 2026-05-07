@@ -64,9 +64,9 @@
 				},
 				"remote.SSH.enableDynamicForwarding": {
 					"type": "boolean",
-					"description": "Whether to use SSH dynamic forwarding to allow setting up new port tunnels over an existing SSH connection.",
+					"description": "Whether to use SSH dynamic forwarding to allow setting up new port tunnels over an existing SSH connection. Disabled by default in VSCodeee because the socks client library is incompatible with the Bun runtime.",
 					"scope": "application",
-					"default": true
+					"default": false
 				},
 				"remote.SSH.enableAgentForwarding": {
 					"type": "boolean",
