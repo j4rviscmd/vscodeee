@@ -48,7 +48,7 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration)
 			'vscodeee.activePaneBorder.enabled': {
 				'type': 'boolean',
 				'default': true,
-				'description': localize('activePaneBorderEnabled', "Controls whether the active editor pane displays a border highlight when multiple panes are open (tmux-like).")
+				'description': localize('activePaneBorderEnabled', "Controls whether the active pane displays a border highlight (tmux-like). Applies to editor panes when multiple are open, and to sidebar/panel when focused.")
 			},
 			'vscodeee.activePaneBorder.color': {
 				'type': 'string',

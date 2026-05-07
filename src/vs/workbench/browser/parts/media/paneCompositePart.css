@@ -367,3 +367,29 @@
 	margin: 12px;
 	text-align: center;
 }
+
+/*
+ * Active pane border (tmux-like) for sidebar and panel.
+ *
+ * When the `active-pane-border` class is added to a part container (by
+ * AbstractPaneCompositePart.updateStyles), an inset border is drawn via a
+ * pseudo-element. The border color and width are controlled by CSS custom
+ * properties set dynamically from the `vscodeee.activePaneBorder.*` settings:
+ *
+ *   --active-pane-border-color  e.g. "#ff0000" or a theme token value
+ *   --active-pane-border-width   e.g. "1px", "2px"
+ */
+.monaco-workbench .part.sidebar.active-pane-border,
+.monaco-workbench .part.panel.active-pane-border {
+	position: relative;
+}
+
+.monaco-workbench .part.sidebar.active-pane-border::after,
+.monaco-workbench .part.panel.active-pane-border::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	border: var(--active-pane-border-width, 1px) solid var(--active-pane-border-color, transparent);
+	pointer-events: none;
+	z-index: 100;
+}

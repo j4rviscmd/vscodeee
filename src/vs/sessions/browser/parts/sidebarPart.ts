@@ -61,9 +61,13 @@ export class SidebarPart extends AbstractPaneCompositePart {
   private static readonly FOOTER_BOTTOM_MARGIN = 2;
   private static readonly FOOTER_BORDER_TOP = 1;
 
+  /** DOM element for the footer area below the sidebar content. */
   private footerContainer: HTMLElement | undefined;
+  /** DOM element for the sidebar title area (header). */
   private sideBarTitleArea: HTMLElement | undefined;
+  /** Toolbar rendered inside the footer area. */
   private footerToolbar: MenuWorkbenchToolBar | undefined;
+  /** Cached layout dimensions used to re-layout when the footer toolbar items change. */
   private previousLayoutDimensions: { width: number; height: number; top: number; left: number } | undefined;
 
   //#region IView
@@ -106,7 +110,7 @@ export class SidebarPart extends AbstractPaneCompositePart {
     @IContextKeyService contextKeyService: IContextKeyService,
     @IExtensionService extensionService: IExtensionService,
     @IMenuService menuService: IMenuService,
-    @IConfigurationService private readonly configurationService: IConfigurationService,
+    @IConfigurationService configurationService: IConfigurationService,
   ) {
     super(
       Parts.SIDEBAR_PART,
@@ -134,6 +138,7 @@ export class SidebarPart extends AbstractPaneCompositePart {
       contextKeyService,
       extensionService,
       menuService,
+      configurationService,
     );
   }
 
@@ -218,6 +223,14 @@ export class SidebarPart extends AbstractPaneCompositePart {
     footer.style.display = this.getFooterHeight() > 0 ? '' : 'none';
   }
 
+  /**
+   * Applies sessions-specific styling to the sidebar container and title area.
+   *
+   * Uses `sessionsSidebarBackground` for the main background and
+   * `sessionsSidebarHeaderBackground`/`sessionsSidebarHeaderForeground` for
+   * the title area. The standard right border is removed because the sessions
+   * sidebar uses a flush design without card appearance.
+   */
   override updateStyles(): void {
     super.updateStyles();
 
@@ -239,6 +252,12 @@ export class SidebarPart extends AbstractPaneCompositePart {
     }
   }
 
+  /**
+   * Lays out the sidebar content, accounting for the footer toolbar height.
+   *
+   * The full grid-allocated dimensions are restored via `Part.prototype.layout`
+   * afterwards so that `Part.relayout()` continues to work correctly.
+   */
   override layout(width: number, height: number, top: number, left: number): void {
     this.previousLayoutDimensions = { width, height, top, left };
 
@@ -272,6 +291,7 @@ export class SidebarPart extends AbstractPaneCompositePart {
     };
   }
 
+  /** Returns the configuration options for the pane composite bar. */
   protected getCompositeBarOptions(): IPaneCompositeBarOptions {
     return {
       partContainerClass: 'sidebar',

@@ -33,6 +33,17 @@ import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { Extensions } from '../../panecomposite.js';
 
+/**
+ * The bottom/top panel part of the workbench, hosting panel views
+ * (e.g. Output, Problems, Terminal, Debug Console).
+ *
+ * Extends {@link AbstractPaneCompositePart} to provide panel-specific behavior
+ * including position-aware layout (bottom/top/right), and the tmux-like
+ * active pane border that highlights the panel when it has focus.
+ *
+ * Minimum dimensions have been reduced from the upstream defaults (300x77)
+ * to allow finer-grained splits similar to tmux.
+ */
 export class PanelPart extends AbstractPaneCompositePart {
 
 	//#region IView
@@ -82,7 +93,7 @@ export class PanelPart extends AbstractPaneCompositePart {
 		@IExtensionService extensionService: IExtensionService,
 		@ICommandService private commandService: ICommandService,
 		@IMenuService menuService: IMenuService,
-		@IConfigurationService private configurationService: IConfigurationService
+		@IConfigurationService configurationService: IConfigurationService
 	) {
 		super(
 			Parts.PANEL_PART,
@@ -110,6 +121,7 @@ export class PanelPart extends AbstractPaneCompositePart {
 			contextKeyService,
 			extensionService,
 			menuService,
+			configurationService,
 		);
 
 		this._register(this.configurationService.onDidChangeConfiguration(e => {

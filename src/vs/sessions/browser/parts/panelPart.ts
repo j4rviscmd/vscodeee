@@ -68,7 +68,7 @@ export class PanelPart extends AbstractPaneCompositePart {
 
   static readonly activePanelSettingsKey = 'workbench.agentsession.panelpart.activepanelid';
 
-  /** Visual margin values for the card-like appearance */
+  /** Visual margin values for the card-like appearance. */
   static readonly MARGIN_BOTTOM = 10;
   static readonly MARGIN_LEFT = 10;
   static readonly MARGIN_RIGHT = 10;
@@ -86,7 +86,7 @@ export class PanelPart extends AbstractPaneCompositePart {
     @IContextKeyService contextKeyService: IContextKeyService,
     @IExtensionService extensionService: IExtensionService,
     @IMenuService menuService: IMenuService,
-    @IConfigurationService private readonly configurationService: IConfigurationService,
+    @IConfigurationService configurationService: IConfigurationService,
   ) {
     super(
       Parts.PANEL_PART,
@@ -114,6 +114,7 @@ export class PanelPart extends AbstractPaneCompositePart {
       contextKeyService,
       extensionService,
       menuService,
+      configurationService,
     );
 
     this._register(this.configurationService.onDidChangeConfiguration(e => {
@@ -123,6 +124,13 @@ export class PanelPart extends AbstractPaneCompositePart {
     }));
   }
 
+  /**
+   * Applies the card-like visual styling to the panel container.
+   *
+   * Stores background and border colors as CSS custom properties
+   * (`--part-background`, `--part-border-color`) for the `.part` element
+   * and clears the default inline top border in favor of the CSS border-radius card.
+   */
   override updateStyles(): void {
     super.updateStyles();
 
@@ -139,6 +147,7 @@ export class PanelPart extends AbstractPaneCompositePart {
     container.style.borderTopWidth = '';
   }
 
+  /** Returns the configuration options for the pane composite bar. */
   protected getCompositeBarOptions(): IPaneCompositeBarOptions {
     return {
       partContainerClass: 'panel',
@@ -171,6 +180,12 @@ export class PanelPart extends AbstractPaneCompositePart {
 
   private fillExtraContextMenuActions(_actions: IAction[]): void { }
 
+  /**
+   * Lays out the panel content, accounting for visual margins and the card border.
+   *
+   * The full grid-allocated dimensions are restored via `Part.prototype.layout`
+   * afterwards so that `Part.relayout()` continues to work correctly.
+   */
   override layout(width: number, height: number, top: number, left: number): void {
     if (!this.layoutService.isVisible(Parts.PANEL_PART)) {
       return;

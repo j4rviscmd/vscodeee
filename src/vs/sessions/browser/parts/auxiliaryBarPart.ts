@@ -35,6 +35,7 @@ import { IBaseActionViewItemOptions } from '../../../base/browser/ui/actionbar/a
 import { getFlatContextMenuActions } from '../../../platform/actions/browser/menuEntryActionViewItem.js';
 import { IDisposable, MutableDisposable } from '../../../base/common/lifecycle.js';
 import { Extensions } from '../../../workbench/browser/panecomposite.js';
+import { IConfigurationService } from '../../../platform/configuration/common/configuration.js';
 
 /**
  * Auxiliary bar part specifically for agent sessions workbench.
@@ -61,16 +62,18 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
   private readonly _runScriptMenu = this._register(new MutableDisposable<IMenu>());
   private readonly _runScriptMenuListener = this._register(new MutableDisposable<IDisposable>());
 
-  // Sessions-specific auxiliary bar dimensions (intentionally not tied to the sessions SidebarPart values)
+  /** Sessions-specific auxiliary bar dimensions (intentionally not tied to the sessions SidebarPart values). */
   override readonly minimumWidth: number = 270;
   override readonly maximumWidth: number = Number.POSITIVE_INFINITY;
   override readonly minimumHeight: number = 0;
   override readonly maximumHeight: number = Number.POSITIVE_INFINITY;
 
+  /** Preferred height is 40 % of the main container height. */
   get preferredHeight(): number | undefined {
     return this.layoutService.mainContainerDimension.height * 0.4;
   }
 
+  /** Returns the optimal width of the active composite, clamped to a minimum of 380px. */
   get preferredWidth(): number | undefined {
     const activeComposite = this.getActivePaneComposite();
 
@@ -86,6 +89,7 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
     return Math.max(width, 380);
   }
 
+  /** Layout priority is lower so the auxiliary bar yields space to higher-priority parts. */
   readonly priority = LayoutPriority.Low;
 
   constructor(
@@ -101,6 +105,7 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
     @IContextKeyService contextKeyService: IContextKeyService,
     @IExtensionService extensionService: IExtensionService,
     @IMenuService menuService: IMenuService,
+    @IConfigurationService configurationService: IConfigurationService,
   ) {
     super(
       Parts.AUXILIARYBAR_PART,
@@ -132,10 +137,19 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
       contextKeyService,
       extensionService,
       menuService,
+      configurationService,
     );
 
   }
 
+  /**
+   * Applies the card-like visual styling to the auxiliary bar container.
+   *
+   * Stores background and border colors as CSS custom properties
+   * (`--part-background`, `--part-border-color`) for the `.part` element
+   * and clears the default inline side borders in favor of the CSS
+   * border-radius card appearance.
+   */
   override updateStyles(): void {
     super.updateStyles();
 
@@ -156,6 +170,7 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
     container.style.borderRightWidth = '';
   }
 
+  /** Returns the configuration options for the pane composite bar. */
   protected getCompositeBarOptions(): IPaneCompositeBarOptions {
     const $this = this;
     return {
@@ -257,6 +272,12 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
     return CompositeBarPosition.TITLE;
   }
 
+  /**
+   * Lays out the auxiliary bar content, accounting for visual margins and the card border.
+   *
+   * The full grid-allocated dimensions are restored via `Part.prototype.layout`
+   * afterwards so that `Part.relayout()` continues to work correctly.
+   */
   override layout(width: number, height: number, top: number, left: number): void {
     if (!this.layoutService.isVisible(Parts.AUXILIARYBAR_PART)) {
       return;
