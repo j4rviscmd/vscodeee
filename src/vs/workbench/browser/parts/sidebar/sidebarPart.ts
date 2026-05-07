@@ -35,6 +35,13 @@ import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { VisibleViewContainersTracker } from '../visibleViewContainersTracker.js';
 import { Extensions } from '../../panecomposite.js';
 
+/**
+ * The sidebar part of the workbench, hosting viewlets (e.g. Explorer, Search, Source Control).
+ *
+ * Extends {@link AbstractPaneCompositePart} to provide sidebar-specific behavior
+ * including activity bar integration, auto-hide support, and the tmux-like
+ * active pane border that highlights the sidebar when it has focus.
+ */
 export class SidebarPart extends AbstractPaneCompositePart {
 
 	static readonly activeViewletSettingsKey = 'workbench.sidebar.activeviewletid';
@@ -81,7 +88,7 @@ export class SidebarPart extends AbstractPaneCompositePart {
 		@IViewDescriptorService viewDescriptorService: IViewDescriptorService,
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@IExtensionService extensionService: IExtensionService,
-		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@IConfigurationService configurationService: IConfigurationService,
 		@IMenuService menuService: IMenuService,
 	) {
 		super(
@@ -110,6 +117,7 @@ export class SidebarPart extends AbstractPaneCompositePart {
 			contextKeyService,
 			extensionService,
 			menuService,
+			configurationService,
 		);
 
 		// Track visible view containers for auto-hide

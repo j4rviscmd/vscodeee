@@ -35,6 +35,7 @@ import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { VisibleViewContainersTracker } from '../visibleViewContainersTracker.js';
 import { Extensions } from '../../panecomposite.js';
 
+/** Resolved configuration state for the auxiliary bar part. */
 interface IAuxiliaryBarPartConfiguration {
 	position: ActivityBarPosition;
 
@@ -42,6 +43,15 @@ interface IAuxiliaryBarPartConfiguration {
 	showLabels: boolean;
 }
 
+/**
+ * The auxiliary bar part of the workbench, hosting secondary side views
+ * (e.g. additional file explorers, AI assistants).
+ *
+ * Extends {@link AbstractPaneCompositePart} to provide auxiliary bar-specific
+ * behavior including activity bar position awareness, label toggling,
+ * auto-hide support, and the tmux-like active pane border that highlights
+ * the auxiliary bar when it has focus.
+ */
 export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 
 	static readonly activeViewSettingsKey = 'workbench.auxiliarybar.activepanelid';
@@ -95,7 +105,7 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 		@IExtensionService extensionService: IExtensionService,
 		@ICommandService private commandService: ICommandService,
 		@IMenuService menuService: IMenuService,
-		@IConfigurationService private readonly configurationService: IConfigurationService
+		@IConfigurationService configurationService: IConfigurationService
 	) {
 		super(
 			Parts.AUXILIARYBAR_PART,
@@ -127,6 +137,7 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 			contextKeyService,
 			extensionService,
 			menuService,
+			configurationService,
 		);
 
 		// Track visible view containers for auto-hide
@@ -260,6 +271,14 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 		]);
 	}
 
+	/**
+		 * Determines whether the composite bar (view container tabs) should be shown.
+		 *
+		 * Returns `false` when:
+		 * - The activity bar position is `HIDDEN`, or
+		 * - The activity bar is top/bottom with auto-hide enabled and only one
+		 *   or fewer view containers are visible.
+		 */
 	protected shouldShowCompositeBar(): boolean {
 		if (this.configuration.position === ActivityBarPosition.HIDDEN) {
 			return false;

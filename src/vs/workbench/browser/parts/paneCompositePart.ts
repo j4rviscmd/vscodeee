@@ -27,7 +27,8 @@ import { IExtensionService } from '../../services/extensions/common/extensions.j
 import { IComposite } from '../../common/composite.js';
 import { localize } from '../../../nls.js';
 import { CompositeDragAndDropObserver, toggleDropEffect } from '../dnd.js';
-import { EDITOR_DRAG_AND_DROP_BACKGROUND } from '../../common/theme.js';
+import { EDITOR_DRAG_AND_DROP_BACKGROUND, EDITOR_GROUP_ACTIVE_BORDER } from '../../common/theme.js';
+import { IConfigurationService } from '../../../platform/configuration/common/configuration.js';
 import { IMenuService, MenuId } from '../../../platform/actions/common/actions.js';
 import { ActionsOrientation } from '../../../base/browser/ui/actionbar/actionbar.js';
 import { Gesture, EventType as GestureEventType } from '../../../base/browser/touch.js';
@@ -40,6 +41,10 @@ import { IHoverService } from '../../../platform/hover/browser/hover.js';
 import { HiddenItemStrategy, MenuWorkbenchToolBar } from '../../../platform/actions/browser/toolbar.js';
 import { DeferredPromise } from '../../../base/common/async.js';
 
+/**
+ * Describes where the composite bar (view container tabs) is rendered
+ * within a pane composite part.
+ */
 export enum CompositeBarPosition {
 	TOP,
 	TITLE,
@@ -105,6 +110,18 @@ export interface IPaneCompositePart extends IView {
 	getPaneCompositeIds(): string[];
 }
 
+/**
+ * Abstract base class for pane composite parts (sidebar, panel, auxiliary bar).
+ *
+ * Manages the lifecycle of pane composites (viewlet/panel views), the composite
+ * bar (view container tabs), and provides a tmux-like active border highlight
+ * controlled by the `vscodeee.activePaneBorder` configuration.
+ *
+ * Subclasses must implement:
+ * - {@link shouldShowCompositeBar}
+ * - {@link getCompositeBarOptions}
+ * - {@link getCompositeBarPosition}
+ */
 export abstract class AbstractPaneCompositePart extends CompositePart<PaneComposite> implements IPaneCompositePart {
 
 	private static readonly MIN_COMPOSITE_BAR_WIDTH = 50;
@@ -158,6 +175,7 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 		@IContextKeyService protected readonly contextKeyService: IContextKeyService,
 		@IExtensionService private readonly extensionService: IExtensionService,
 		@IMenuService protected readonly menuService: IMenuService,
+		@IConfigurationService protected readonly configurationService: IConfigurationService,
 	) {
 		super(
 			notificationService,
@@ -245,8 +263,62 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 		this.updateCompositeBar();
 
 		const focusTracker = this._register(trackFocus(parent));
-		this._register(focusTracker.onDidFocus(() => this.paneFocusContextKey.set(true)));
-		this._register(focusTracker.onDidBlur(() => this.paneFocusContextKey.set(false)));
+		this._register(focusTracker.onDidFocus(() => {
+			this.paneFocusContextKey.set(true);
+			this.updateStyles();
+		}));
+		this._register(focusTracker.onDidBlur(() => {
+			this.paneFocusContextKey.set(false);
+			this.updateStyles();
+		}));
+
+		// Active pane border: react to configuration changes
+		const onDidChangeActivePaneBorder = Event.filter(
+			this.configurationService.onDidChangeConfiguration,
+			e => e.affectsConfiguration('vscodeee.activePaneBorder')
+		);
+		this._register(onDidChangeActivePaneBorder(() => this.updateStyles()));
+	}
+
+	/**
+	 * Updates visual styles including the tmux-like active pane border.
+	 *
+	 * When `vscodeee.activePaneBorder.enabled` is `true` (default) and the part
+	 * currently has focus, an inset border is drawn around the container using the
+	 * `active-pane-border` CSS class. The border color defaults to the theme's
+	 * `editorGroup.activeBorder` token but can be overridden via
+	 * `vscodeee.activePaneBorder.color`. The border width is configurable via
+	 * `vscodeee.activePaneBorder.width`.
+	 *
+	 * CSS custom properties set on the container:
+	 * - `--active-pane-border-color` - resolved border color
+	 * - `--active-pane-border-width`  - resolved border width in px
+	 */
+	override updateStyles(): void {
+		super.updateStyles();
+
+		const container = this.getContainer();
+		if (!container) {
+			return;
+		}
+
+		// Active pane border (tmux-like): show when this part has focus
+		const activePaneBorderEnabled = this.configurationService.getValue<boolean>('vscodeee.activePaneBorder.enabled') ?? true;
+		if (activePaneBorderEnabled && this.paneFocusContextKey.get()) {
+			const colorOverride = this.configurationService.getValue<string>('vscodeee.activePaneBorder.color');
+			const activeBorderColor = colorOverride || this.getColor(EDITOR_GROUP_ACTIVE_BORDER);
+			if (activeBorderColor) {
+				container.classList.add('active-pane-border');
+				container.style.setProperty('--active-pane-border-color', activeBorderColor);
+				const widthValue = this.configurationService.getValue<number>('vscodeee.activePaneBorder.width') ?? 1;
+				container.style.setProperty('--active-pane-border-width', `${widthValue}px`);
+				return;
+			}
+		}
+
+		container.classList.remove('active-pane-border');
+		container.style.removeProperty('--active-pane-border-color');
+		container.style.removeProperty('--active-pane-border-width');
 	}
 
 	private createEmptyPaneMessage(parent: HTMLElement): void {
@@ -397,6 +469,13 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 		return titleLabel;
 	}
 
+	/**
+	 * Recreates the composite bar when its visibility or position has changed.
+	 *
+	 * @param updateCompositeBarOption - When `true`, forces a relayout of the
+	 *   composite bar even if the position has not changed (e.g. when label
+	 *   visibility is toggled).
+	 */
 	protected updateCompositeBar(updateCompositeBarOption: boolean = false): void {
 		const wasCompositeBarVisible = this.compositeBarPosition !== undefined;
 		const isCompositeBarVisible = this.shouldShowCompositeBar();

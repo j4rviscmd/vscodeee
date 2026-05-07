@@ -31,17 +31,33 @@ import { Menus } from '../menus.js';
 import { ActiveChatBarContext, ChatBarFocusContext } from '../../common/contextkeys.js';
 import { SessionCompositeBar } from './sessionCompositeBar.js';
 import { prepend } from '../../../base/browser/dom.js';
+import { IConfigurationService } from '../../../platform/configuration/common/configuration.js';
 
-export class ChatBarPart extends AbstractPaneCompositePart { // TODO: should not be a AbstractPaneCompositePart but instead a custom Part with a CompositeBar
+/**
+ * Chat bar part for agent sessions workbench.
+ *
+ * Hosts chat-related pane composites (e.g. AI chat views) within the agent
+ * session window. Extends {@link AbstractPaneCompositePart} with a card-like
+ * visual appearance that uses margins and a border instead of the standard
+ * panel chrome.
+ *
+ * @remarks
+ * TODO: should not be a AbstractPaneCompositePart but instead a custom Part with a CompositeBar
+ */
+export class ChatBarPart extends AbstractPaneCompositePart {
 
   static readonly activeViewSettingsKey = 'workbench.chatbar.activepanelid';
   static readonly pinnedViewsKey = 'workbench.chatbar.pinnedPanels';
   static readonly placeholderViewContainersKey = 'workbench.chatbar.placeholderPanels';
   static readonly viewContainersWorkspaceStateKey = 'workbench.chatbar.viewContainersWorkspaceState';
 
+  /** Minimum width the chat bar can be resized to. */
   override readonly minimumWidth: number = 300;
+  /** Maximum width the chat bar can be resized to. */
   override readonly maximumWidth: number = Number.POSITIVE_INFINITY;
+  /** Minimum height the chat bar can be resized to. */
   override readonly minimumHeight: number = 0;
+  /** Maximum height the chat bar can be resized to. */
   override readonly maximumHeight: number = Number.POSITIVE_INFINITY;
 
   /** Visual margin values for the card-like appearance */
@@ -53,17 +69,21 @@ export class ChatBarPart extends AbstractPaneCompositePart { // TODO: should not
   /** Border width on the card (1px each side) */
   static readonly BORDER_WIDTH = 1;
 
-  /** Height of the session composite bar when visible */
+  /** Height of the session composite bar when visible. */
   private static readonly SESSION_BAR_HEIGHT = 35;
 
+  /** Session composite bar rendered above the content area. */
   private _sessionCompositeBar: SessionCompositeBar | undefined;
 
+  /** Cached layout dimensions used to re-layout when the session bar visibility changes. */
   private _lastLayout: { readonly width: number; readonly height: number; readonly top: number; readonly left: number } | undefined;
 
+  /** Preferred height is 40 % of the main container height. */
   get preferredHeight(): number | undefined {
     return this.layoutService.mainContainerDimension.height * 0.4;
   }
 
+  /** Layout priority is higher than the sidebar/auxiliary bar so the chat bar takes space first. */
   readonly priority = LayoutPriority.High;
 
   constructor(
@@ -79,6 +99,7 @@ export class ChatBarPart extends AbstractPaneCompositePart { // TODO: should not
     @IContextKeyService contextKeyService: IContextKeyService,
     @IExtensionService extensionService: IExtensionService,
     @IMenuService menuService: IMenuService,
+    @IConfigurationService configurationService: IConfigurationService,
   ) {
     super(
       Parts.CHATBAR_PART,
@@ -110,6 +131,7 @@ export class ChatBarPart extends AbstractPaneCompositePart { // TODO: should not
       contextKeyService,
       extensionService,
       menuService,
+      configurationService,
     );
   }
 
@@ -128,6 +150,13 @@ export class ChatBarPart extends AbstractPaneCompositePart { // TODO: should not
     }));
   }
 
+  /**
+   * Applies the card-like visual styling to the chat bar container.
+   *
+   * Stores the background and border colors as CSS custom properties
+   * (`--part-background`, `--part-border-color`) so that the `.part`
+   * element can reference them for its border-radius card appearance.
+   */
   override updateStyles(): void {
     super.updateStyles();
 
@@ -140,6 +169,13 @@ export class ChatBarPart extends AbstractPaneCompositePart { // TODO: should not
     container.style.color = this.getColor(SIDE_BAR_FOREGROUND) || '';
   }
 
+  /**
+   * Lays out the chat bar content, accounting for the session composite bar
+   * height, visual margins, and the card border.
+   *
+   * The full grid-allocated dimensions are restored via `Part.prototype.layout`
+   * afterwards so that `Part.relayout()` continues to work correctly.
+   */
   override layout(width: number, height: number, top: number, left: number): void {
     if (!this.layoutService.isVisible(Parts.CHATBAR_PART)) {
       return;
@@ -163,6 +199,7 @@ export class ChatBarPart extends AbstractPaneCompositePart { // TODO: should not
     Part.prototype.layout.call(this, width, height, top, left);
   }
 
+  /** Returns the configuration options for the pane composite bar. */
   protected getCompositeBarOptions(): IPaneCompositeBarOptions {
     return {
       partContainerClass: 'chatbar',
