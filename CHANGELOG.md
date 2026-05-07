@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-05-07
+
+### Fixed
+
+- Sync APPLICATION-scoped storage across windows via Tauri events (#475)
+  - Emit `vscode:storage_changed` event from Rust after atomic file write
+  - Listen for the event in TauriFileStorageDatabase, reload from disk, and fire `onDidChangeItemsExternal`
+  - Fixes "Open Recent" losing the latest entry when multiple windows are open
+- Resolve CPU 100% during window close by optimizing shutdown flow (#474)
+
+### Changed
+
+- Update Known Limitations section for Copilot Chat (#470)
+
 ## [0.19.0] - 2026-05-06
 
 ### Added
