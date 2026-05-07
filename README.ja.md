@@ -115,6 +115,8 @@ VSCodeee は Electron アーキテクチャを2つのレイヤーで置き換え
   - `"vscodeee.activePaneBorder.width": 1` (px, 1〜5)
   - ターミナルの水平パディング
   - `"vscodeee.terminal.horizontalPadding": 20` (px, 0〜100)
+- Quick Openからターミナルエディタを除外する
+  - `"vscodeee.quickOpen.excludeTerminals": true`
 
 ---
 

@@ -104,6 +104,9 @@ export class AnythingQuickAccessProvider extends PickerQuickAccessProvider<IAnyt
 
 	private static readonly MAX_RESULTS = 512;
 
+	/** Type identifier for {@link TerminalEditorInput}, used to detect terminal editors in Quick Open results. */
+	private static readonly TERMINAL_EDITOR_TYPE_ID = 'workbench.editors.terminal';
+
 	private static readonly TYPING_SEARCH_DELAY = 200; // this delay accommodates for the user typing a word and then stops typing to start searching
 
 	private static SYMBOL_PICKS_MERGE_DELAY = 200; // allow some time to merge fast and slow picks to reduce flickering
@@ -205,6 +208,14 @@ export class AnythingQuickAccessProvider extends PickerQuickAccessProvider<IAnyt
 		this.editorSymbolsQuickAccess = this.instantiationService.createInstance(GotoSymbolQuickAccessProvider);
 	}
 
+	/**
+	 * Resolves the merged Quick Open configuration from editor, search,
+	 * quickOpen, and VSCodeEE-specific settings. Cached per access; each
+	 * property is re-read from {@link IConfigurationService} on every call.
+	 *
+	 * @returns An object containing Quick Open behavior flags and the
+	 *          {@link excludeTerminals} toggle from `vscodeee.quickOpen.excludeTerminals`.
+	 */
 	private get configuration() {
 		const editorConfig = this.configurationService.getValue<IWorkbenchEditorConfiguration>().workbench?.editor;
 		const searchConfig = this.configurationService.getValue<IWorkbenchSearchConfiguration>().search;
@@ -216,7 +227,8 @@ export class AnythingQuickAccessProvider extends PickerQuickAccessProvider<IAnyt
 			includeSymbols: searchConfig?.quickOpen.includeSymbols,
 			includeHistory: searchConfig?.quickOpen.includeHistory,
 			historyFilterSortOrder: searchConfig?.quickOpen.history.filterSortOrder,
-			preserveInput: quickAccessConfig.preserveInput
+			preserveInput: quickAccessConfig.preserveInput,
+			excludeTerminals: this.configurationService.getValue<boolean>('vscodeee.quickOpen.excludeTerminals') ?? true
 		};
 	}
 
@@ -504,7 +516,9 @@ export class AnythingQuickAccessProvider extends PickerQuickAccessProvider<IAnyt
 
 		// Just return all history entries if not searching
 		if (!query.normalized) {
-			return this.historyService.getHistory().map(editor => this.createAnythingPick(editor, configuration));
+			return this.historyService.getHistory()
+				.filter(editor => !this.isTerminalEditor(editor, configuration))
+				.map(editor => this.createAnythingPick(editor, configuration));
 		}
 
 		if (!this.configuration.includeHistory) {
@@ -517,6 +531,10 @@ export class AnythingQuickAccessProvider extends PickerQuickAccessProvider<IAnyt
 		for (const editor of this.historyService.getHistory()) {
 			const resource = editor.resource;
 			if (!resource) {
+				continue;
+			}
+
+			if (this.isTerminalEditor(editor, configuration)) {
 				continue;
 			}
 
@@ -542,6 +560,26 @@ export class AnythingQuickAccessProvider extends PickerQuickAccessProvider<IAnyt
 
 		// Perform sorting
 		return editorHistoryPicks.sort((editorA, editorB) => compareItemsByFuzzyScore(editorA, editorB, query, false, editorHistoryScorerAccessor, this.pickState.scorerCache));
+	}
+
+	/**
+	 * Determines whether the given editor represents a terminal editor tab
+	 * and should therefore be excluded from Quick Open results.
+	 *
+	 * When the {@link configuration.excludeTerminals} flag is `false`, this
+	 * method always returns `false` regardless of the editor type.
+	 *
+	 * @param editor - The editor input or resource editor input to check.
+	 * @param configuration - The current Quick Open configuration containing
+	 *                        the `excludeTerminals` toggle.
+	 * @returns `true` if the editor is a terminal editor and terminal exclusion
+	 *          is enabled; `false` otherwise.
+	 */
+	private isTerminalEditor(editor: EditorInput | IResourceEditorInput, configuration: { excludeTerminals: boolean }): boolean {
+		if (!configuration.excludeTerminals) {
+			return false;
+		}
+		return isEditorInput(editor) && editor.typeId === AnythingQuickAccessProvider.TERMINAL_EDITOR_TYPE_ID;
 	}
 
 	//#endregion

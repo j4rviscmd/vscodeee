@@ -1131,6 +1131,12 @@ registry.registerConfiguration({
 			'type': 'boolean',
 			'default': true,
 			'description': localize('editorGroupIndexInTab', "When enabled, shows the editor group index prefix (e.g., [1]) on the active tab of each editor group. Only appears when 2 or more editor groups are open.")
+		},
+		/** Controls whether terminal editor tabs are hidden from Quick Open (Cmd/Ctrl+P) results. */
+		'vscodeee.quickOpen.excludeTerminals': {
+			'type': 'boolean',
+			'default': true,
+			'description': localize('quickOpenExcludeTerminals', "When enabled, terminal editors are excluded from Quick Open (Cmd+P) results.")
 		}
 	}
 });
