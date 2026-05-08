@@ -9,7 +9,7 @@ import { ILayoutService } from '../../../../platform/layout/browser/layoutServic
 import { Part } from '../../../browser/part.js';
 import { IDimension } from '../../../../base/browser/dom.js';
 import { Direction, IViewSize } from '../../../../base/browser/ui/grid/grid.js';
-import { isMacintosh, isNative, isTauri, isWeb } from '../../../../base/common/platform.js';
+import { isNative, isTauri, isWeb } from '../../../../base/common/platform.js';
 import { isAuxiliaryWindow } from '../../../../base/browser/window.js';
 import { CustomTitleBarVisibility, TitleBarSetting, getMenuBarVisibility, hasCustomTitlebar, hasNativeMenu, hasNativeTitlebar } from '../../../../platform/window/common/window.js';
 import { isFullscreen, isWCOEnabled } from '../../../../base/browser/browser.js';
