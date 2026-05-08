@@ -499,16 +499,12 @@ export function shouldShowCustomTitleBar(configurationService: IConfigurationSer
 		return false;
 	}
 
-	// macOS (Electron or Tauri): title bar not needed when fullscreen.
-	// Tauri's TitleBarStyle::Overlay provides native traffic lights when windowed,
-	// so the title bar must remain visible to provide spacing and a drag region.
-	if (isMacintosh && (isNative || isTauri)) {
+	// Electron native or Tauri: the title bar must remain visible when not
+	// fullscreen. On macOS (Electron/Tauri) the title bar provides a drag region
+	// alongside native traffic lights. On Windows/Linux Tauri, custom window
+	// controls (min/max/close) are rendered inside the title bar.
+	if (isNative || isTauri) {
 		return !inFullscreen;
-	}
-
-	// non-fullscreen native must show the title bar
-	if (isNative && !inFullscreen) {
-		return true;
 	}
 
 	// if WCO is visible, we have to show the title bar

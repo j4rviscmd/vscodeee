@@ -31,11 +31,11 @@ fi
 # content and hash it because the extraction logic is non-trivial in pure shell.
 # The file path is passed via sys.argv to avoid shell-injection issues with paths
 # containing special characters.
-COMPUTED_HASH=$(python3 -c "
+COMPUTED_HASH=$(python -c "
 import hashlib, base64, re, sys
 
 filepath = sys.argv[1]
-with open(filepath, 'r') as f:
+with open(filepath, 'r', encoding='utf-8') as f:
     content = f.read()
 
 match = re.search(r'<script>(.*?)</script>', content, re.DOTALL)
@@ -52,11 +52,11 @@ print(base64.b64encode(sha).decode('ascii'))
 }
 
 # Extract the hash currently declared in the CSP meta tag.
-CSP_HASH=$(python3 -c "
+CSP_HASH=$(python -c "
 import re, sys
 
 filepath = sys.argv[1]
-with open(filepath, 'r') as f:
+with open(filepath, 'r', encoding='utf-8') as f:
     content = f.read()
 
 match = re.search(r'sha256-([A-Za-z0-9+/=]+)', content)

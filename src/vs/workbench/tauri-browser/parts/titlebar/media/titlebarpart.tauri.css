@@ -15,3 +15,32 @@
 .monaco-workbench.tauri.mac .titlebar-left {
 	padding-left: 70px;
 }
+
+/* Windows/Linux: Override .web WCO fallback that resolves to width:0px.
+	Tauri renders custom window controls (min/max/restore/close) via
+	TauriTitlebarPart.createContentArea, so a fixed width is required.
+	Scoped to .titlebar-right to avoid expanding the empty left-side
+	.window-controls-container created by the isWeb code path. */
+.monaco-workbench.tauri:not(.mac) .part.titlebar .titlebar-right .window-controls-container {
+	width: calc(138px / var(--zoom-factor, 1));
+}
+
+.monaco-workbench.tauri:not(.mac) .part.titlebar .titlebar-container.counter-zoom .titlebar-right .window-controls-container {
+	width: 138px;
+}
+
+.monaco-workbench.tauri:not(.mac) .part.titlebar .titlebar-container:not(.counter-zoom) .titlebar-right .window-controls-container * {
+	zoom: calc(1 / var(--zoom-factor, 1));
+}
+
+/* App icon: Use project icon instead of VS Code default */
+.monaco-workbench.tauri .part.titlebar > .titlebar-container > .titlebar-left > .window-appicon:not(.codicon) {
+	background-image: url('app-icon.svg');
+}
+
+/* Windows/Linux: Hide the empty left-side window-controls-container created
+	by the isWeb code path. Tauri does not use WCO and renders custom controls
+	on the right via TauriTitlebarPart. */
+.monaco-workbench.tauri:not(.mac) .part.titlebar .titlebar-left .window-controls-container {
+	display: none;
+}
