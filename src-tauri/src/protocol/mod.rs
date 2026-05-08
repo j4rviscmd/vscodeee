@@ -246,12 +246,18 @@ fn serve_file(
 ///   `/Users/foo/work/vscodeee/out/vs/code/foo.js` → `"vs/code/foo.js"`
 ///   `/Applications/VS Codeee.app/Contents/Resources/out/vs/base/worker/...` → `"vs/base/worker/..."`
 ///
-/// Returns `None` if the path does not contain `/out/`.
+/// Returns `None` if the path does not contain `/out/` or `\out\`.
 fn extract_asset_key(decoded_path: &str) -> Option<&str> {
-    // Find the last occurrence of "/out/" to handle paths like
-    // `/foo/checkout/out/vs/...` or `/app/Resources/out/vs/...`
+    // Find the last occurrence of "/out/" (forward slash: URI paths, macOS/Linux)
     if let Some(idx) = decoded_path.rfind("/out/") {
         let key = &decoded_path[idx + 5..]; // skip "/out/"
+        if !key.is_empty() {
+            return Some(key);
+        }
+    }
+    // Try backslash (Windows filesystem paths from parse_vscode_file_uri_raw)
+    if let Some(idx) = decoded_path.rfind("\\out\\") {
+        let key = &decoded_path[idx + 5..]; // skip "\out\"
         if !key.is_empty() {
             return Some(key);
         }

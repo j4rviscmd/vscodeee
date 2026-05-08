@@ -152,7 +152,19 @@ pub async fn get_window_configuration(
                 .ok()
                 .map(|rd| rd.join("out"))
         })
-        .map(|p| p.to_string_lossy().to_string())
+        .map(|p| {
+            let s = p.to_string_lossy().to_string();
+            // Strip Windows extended-length path prefix (\\?\) which causes
+            // TypeScript's URI.file() to misparse the path as UNC.
+            #[cfg(target_os = "windows")]
+            {
+                s.trim_start_matches(r"\\?\").to_string()
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                s
+            }
+        })
         .unwrap_or_default();
 
     // Application data directory for user settings/state.
