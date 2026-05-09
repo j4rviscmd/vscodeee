@@ -6617,6 +6617,7 @@ dependencies = [
  "core-foundation-sys",
  "core-text",
  "dirs",
+ "dunce",
  "futures-util",
  "globset",
  "hostname",

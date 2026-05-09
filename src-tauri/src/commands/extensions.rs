@@ -66,7 +66,7 @@ fn resolve_extensions_dir(app_handle: &tauri::AppHandle) -> Option<PathBuf> {
     if let Some(dir) = std::env::current_dir()
         .ok()
         .map(|cwd| cwd.join("../extensions"))
-        .and_then(|p| p.canonicalize().ok())
+        .and_then(|p| dunce::canonicalize(&p).ok())
         .filter(|p| p.is_dir())
     {
         return Some(dir);
@@ -76,7 +76,7 @@ fn resolve_extensions_dir(app_handle: &tauri::AppHandle) -> Option<PathBuf> {
     if let Some(dir) = std::env::current_dir()
         .ok()
         .map(|cwd| cwd.join("../.build/extensions"))
-        .and_then(|p| p.canonicalize().ok())
+        .and_then(|p| dunce::canonicalize(&p).ok())
         .filter(|p| p.is_dir())
     {
         return Some(dir);
