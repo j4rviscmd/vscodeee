@@ -464,10 +464,12 @@ fn resolve_app_root_and_resource_dir(
 ) -> Result<(PathBuf, PathBuf), String> {
     use tauri::Manager;
 
-    let resource_dir = app_handle
-        .path()
-        .resource_dir()
-        .map_err(|e| format!("Failed to resolve resource dir: {e}"))?;
+    let resource_dir = strip_unc_prefix(
+        &app_handle
+            .path()
+            .resource_dir()
+            .map_err(|e| format!("Failed to resolve resource dir: {e}"))?,
+    );
 
     // Walk up from resource dir to find the repo root
     let mut candidate = resource_dir.as_path();
@@ -484,6 +486,7 @@ fn resolve_app_root_and_resource_dir(
 
     // Fallback: try current working directory
     if let Ok(cwd) = std::env::current_dir() {
+        let cwd = strip_unc_prefix(&cwd);
         if cwd.join("out/bootstrap-fork.js").exists() {
             return Ok((cwd, resource_dir));
         }
@@ -501,4 +504,21 @@ fn resolve_app_root_and_resource_dir(
         "Cannot find repo root with out/bootstrap-fork.js. Searched from: {}",
         resource_dir.display()
     ))
+}
+
+/// Strip the Windows UNC extended-length path prefix (`\\?\`) from a path.
+///
+/// On Windows, `std::fs::canonicalize()` and Tauri's `resource_dir()` may
+/// return paths with the `\\?\` prefix. Node.js handles this transparently,
+/// but Bun does not — it treats the prefix as part of the file name, causing
+/// module resolution failures in the Extension Host.
+///
+/// On non-Windows platforms this is a no-op.
+fn strip_unc_prefix(path: &std::path::Path) -> PathBuf {
+    let s = path.to_string_lossy();
+    if s.starts_with(r"\\?\") {
+        PathBuf::from(&s[4..])
+    } else {
+        path.to_path_buf()
+    }
 }

@@ -48,6 +48,7 @@ notify-rust = "4"
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
 aes-gcm = "0.10"
 rand = "0.8"
+dunce = "1"
 tokio-tungstenite = "0.24"
 futures-util = { version = "0.3", default-features = false, features = ["sink"] }
 clap = { version = "4", features = ["derive"] }
