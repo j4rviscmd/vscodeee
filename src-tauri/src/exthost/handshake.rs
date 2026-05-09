@@ -52,8 +52,6 @@ pub async fn run_handshake<S: AsyncRead + AsyncWrite + Unpin>(
     let start = Instant::now();
     let mut messages = Vec::new();
     let mut rust_msg_id: u32 = 0;
-    let mut last_exthost_msg_id: u32 = 0;
-
     let (mut reader, mut writer) = tokio::io::split(stream);
 
     // Step 1: Wait for Resume (may also get KeepAlive — skip non-Resume)
@@ -62,7 +60,7 @@ pub async fn run_handshake<S: AsyncRead + AsyncWrite + Unpin>(
 
     // Step 2: Wait for Ready (Regular message with body=[0x02])
     // Sent by connectToRenderer() at extensionHostProcess.ts:393
-    last_exthost_msg_id = wait_for_ready(&mut reader, &mut messages).await?;
+    let last_exthost_msg_id = wait_for_ready(&mut reader, &mut messages).await?;
 
     // Step 3: Send InitData as a Regular message
     rust_msg_id += 1;
