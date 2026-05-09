@@ -246,17 +246,16 @@ fn serve_file(
 ///   `/Users/foo/work/vscodeee/out/vs/code/foo.js` → `"vs/code/foo.js"`
 ///   `/Applications/VS Codeee.app/Contents/Resources/out/vs/base/worker/...` → `"vs/base/worker/..."`
 ///
-/// Returns `None` if the path does not contain `/out/`.
+/// Returns `None` if the path does not contain `/out/` or `\out\`.
 fn extract_asset_key(decoded_path: &str) -> Option<&str> {
-    // Find the last occurrence of "/out/" to handle paths like
-    // `/foo/checkout/out/vs/...` or `/app/Resources/out/vs/...`
-    if let Some(idx) = decoded_path.rfind("/out/") {
-        let key = &decoded_path[idx + 5..]; // skip "/out/"
-        if !key.is_empty() {
-            return Some(key);
-        }
+    /// Find the asset key after the last occurrence of `sep`.
+    fn find_after<'a>(haystack: &'a str, sep: &str) -> Option<&'a str> {
+        let idx = haystack.rfind(sep)?;
+        let key = &haystack[idx + sep.len()..];
+        (!key.is_empty()).then_some(key)
     }
-    None
+
+    find_after(decoded_path, "/out/").or_else(|| find_after(decoded_path, "\\out\\"))
 }
 
 /// Serve a file from Tauri's embedded asset resolver.

@@ -14,6 +14,7 @@ import { ILogService } from '../../log/common/log.js';
 import { IConfigurationService } from '../../configuration/common/configuration.js';
 import { AbstractExtensionResourceLoaderService, IExtensionResourceLoaderService } from '../common/extensionResourceLoader.js';
 import { IExtensionGalleryManifestService } from '../../extensionManagement/common/extensionGalleryManifest.js';
+import * as platform from '../../../base/common/platform.js';
 
 class ExtensionResourceLoaderService extends AbstractExtensionResourceLoaderService {
 
@@ -34,11 +35,15 @@ class ExtensionResourceLoaderService extends AbstractExtensionResourceLoaderServ
 	async readExtensionResource(uri: URI): Promise<string> {
 		uri = FileAccess.uriToBrowserUri(uri);
 
-		// In Tauri, file:// URIs are rewritten to vscode-file:// by uriToBrowserUri.
-		// The vscode-file:// scheme is served by Tauri's custom protocol handler, not
-		// by an IFileService provider, so we must use fetch() to load these resources.
-		// For http/https/data schemes, we also use fetch() (with optional gallery headers).
-		if (uri.scheme !== Schemas.http && uri.scheme !== Schemas.https && uri.scheme !== Schemas.data && uri.scheme !== Schemas.vscodeFileResource) {
+		// In Tauri, convert vscode-file:// back to file:// and route through
+		// _fileService.readFile() which uses TauriDiskFileSystemProvider (IPC).
+		// This bypasses fetch() which depends on browser custom-scheme support
+		// that may behave differently across WebView runtimes (WKWebView vs WebView2).
+		if (platform.isTauri && uri.scheme === Schemas.vscodeFileResource) {
+			uri = FileAccess.uriToFileUri(uri);
+		}
+
+		if (uri.scheme !== Schemas.http && uri.scheme !== Schemas.https && uri.scheme !== Schemas.data) {
 			const result = await this._fileService.readFile(uri);
 			return result.value.toString();
 		}

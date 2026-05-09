@@ -73,6 +73,13 @@ pub struct WindowConfiguration {
     /// Cached theme foreground color from previous session (e.g. `"#CCCCCC"`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub theme_foreground: Option<String>,
+    /// URL of the localhost file server (Windows only).
+    ///
+    /// WebView2 blocks `fetch()` and `import()` for custom URI schemes.
+    /// The TypeScript side uses this URL to construct HTTP resource URLs
+    /// instead of `vscode-file://` URIs. Empty string on non-Windows.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub file_server_url: String,
 }
 
 /// Retrieve native host environment information.
@@ -152,7 +159,19 @@ pub async fn get_window_configuration(
                 .ok()
                 .map(|rd| rd.join("out"))
         })
-        .map(|p| p.to_string_lossy().to_string())
+        .map(|p| {
+            let s = p.to_string_lossy().to_string();
+            // Strip Windows extended-length path prefix (\\?\) which causes
+            // TypeScript's URI.file() to misparse the path as UNC.
+            #[cfg(target_os = "windows")]
+            {
+                s.trim_start_matches(r"\\?\").to_string()
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                s
+            }
+        })
         .unwrap_or_default();
 
     // Application data directory for user settings/state.
@@ -181,6 +200,15 @@ pub async fn get_window_configuration(
     // Read cached theme colors from previous session for splash screen.
     let (theme_background, theme_foreground) = read_theme_cache(&app_handle);
 
+    // Retrieve the file server URL (Windows only, empty string on other platforms).
+    #[cfg(target_os = "windows")]
+    let file_server_url = app_handle
+        .try_state::<std::sync::Arc<crate::FileServerState>>()
+        .map(|s| s.url.clone())
+        .unwrap_or_default();
+    #[cfg(not(target_os = "windows"))]
+    let file_server_url = String::new();
+
     Ok(WindowConfiguration {
         window_id,
         log_level: 1, // Info
@@ -192,6 +220,7 @@ pub async fn get_window_configuration(
         is_dev_build,
         theme_background,
         theme_foreground,
+        file_server_url,
     })
 }
 

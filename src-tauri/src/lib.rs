@@ -18,6 +18,24 @@ mod shutdown;
 /// root validation, CORS, COOP/COEP, and MIME type resolution.
 mod protocol;
 
+/// HTTP file server for Windows WebView2 compatibility.
+///
+/// WebView2 blocks `fetch()` and dynamic `import()` for custom URI schemes.
+/// This module provides a localhost HTTP server as an alternative, serving
+/// files from the same roots as the protocol handler.
+#[cfg(target_os = "windows")]
+mod file_server;
+
+/// Managed state for the localhost file server URL (Windows only).
+///
+/// Stored as Tauri managed state so commands can retrieve the URL
+/// without passing it through every function.
+#[cfg(target_os = "windows")]
+pub struct FileServerState {
+    /// Base URL of the running file server (e.g., `http://127.0.0.1:12345`).
+    pub url: String,
+}
+
 /// IPC infrastructure — channel routing and event bus for VS Code's binary IPC protocol.
 ///
 /// Replaces Electron's `ipcMain` / `ipcRenderer` with a Tauri-native
@@ -498,6 +516,30 @@ pub fn run(gui_args: Option<cli::dispatch::ParsedGuiArgs>) {
 
             // Initialize protocol state with app root directories.
             let state = protocol::init_protocol_state(app);
+
+            // Start the HTTP file server on Windows.
+            // WebView2 blocks fetch()/import() for custom URI schemes,
+            // so we provide a localhost HTTP server that serves the same files.
+            #[cfg(target_os = "windows")]
+            {
+                match tauri::async_runtime::block_on(file_server::FileServer::start(Arc::clone(&state))) {
+                    Ok(server) => {
+                        let url = server.base_url();
+                        log::info!(
+                            target: "vscodeee::file_server",
+                            "File server started at {url}"
+                        );
+                        app.manage(std::sync::Arc::new(FileServerState { url }));
+                    }
+                    Err(e) => {
+                        log::error!(
+                            target: "vscodeee::file_server",
+                            "Failed to start file server: {e}"
+                        );
+                    }
+                }
+            }
+
             let _ = protocol_state.set(state);
 
             // ── Deep-link handler ──

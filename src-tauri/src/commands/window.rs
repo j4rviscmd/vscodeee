@@ -41,6 +41,9 @@ pub struct ExtendedWindowConfiguration {
     pub fullscreen: bool,
     /// Whether the window is currently maximized.
     pub maximized: bool,
+    /// URL of the localhost file server (Windows only, empty on other platforms).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub file_server_url: String,
 }
 
 /// Retrieve extended window configuration including OS info.
@@ -81,11 +84,32 @@ pub async fn get_extended_window_configuration(
                 .ok()
                 .map(|rd| rd.join("out"))
         })
-        .map(|p| p.to_string_lossy().to_string())
+        .map(|p| {
+            let s = p.to_string_lossy().to_string();
+            // Strip Windows extended-length path prefix (\\?\) which causes
+            // TypeScript's URI.file() to misparse the path as UNC.
+            #[cfg(target_os = "windows")]
+            {
+                s.trim_start_matches(r"\\?\").to_string()
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                s
+            }
+        })
         .unwrap_or_default();
 
     let fullscreen = window.is_fullscreen().unwrap_or(false);
     let maximized = window.is_maximized().unwrap_or(false);
+
+    // Retrieve the file server URL (Windows only).
+    #[cfg(target_os = "windows")]
+    let file_server_url = app_handle
+        .try_state::<std::sync::Arc<crate::FileServerState>>()
+        .map(|s| s.url.clone())
+        .unwrap_or_default();
+    #[cfg(not(target_os = "windows"))]
+    let file_server_url = String::new();
 
     Ok(ExtendedWindowConfiguration {
         window_id,
@@ -103,6 +127,7 @@ pub async fn get_extended_window_configuration(
             .unwrap_or_else(|_| "unknown".to_string()),
         fullscreen,
         maximized,
+        file_server_url,
     })
 }
 

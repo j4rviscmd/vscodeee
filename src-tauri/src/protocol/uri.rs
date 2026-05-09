@@ -74,6 +74,23 @@ pub fn parse_vscode_file_uri(raw_uri: &str) -> Result<PathBuf, ProtocolError> {
     // symlinks and verify the final path exists, and roots validation follows.
     let normalized = normalize_dot_segments(&decoded);
 
+    // On Windows, URI paths from TypeScript's URI.file() come as /E:/work/...
+    // (forward slashes with leading / before the drive letter). Convert to a
+    // native Windows path (E:\work\...) so canonicalize() can resolve it.
+    #[cfg(target_os = "windows")]
+    let normalized = {
+        let s = normalized.to_string_lossy();
+        if let Some(stripped) = s.strip_prefix('/') {
+            if stripped.len() >= 2 && stripped.as_bytes()[1] == b':' {
+                PathBuf::from(stripped.replace('/', r"\"))
+            } else {
+                normalized
+            }
+        } else {
+            normalized
+        }
+    };
+
     // Canonicalize to resolve symlinks and verify the path exists.
     let canonical = std::fs::canonicalize(&normalized).map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => {

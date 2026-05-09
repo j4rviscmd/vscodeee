@@ -140,6 +140,7 @@
     isDevBuild?: boolean;
     themeBackground?: string;
     themeForeground?: string;
+    fileServerUrl?: string;
   }
 
   /**
@@ -216,6 +217,13 @@
   // resolve correctly relative to this path.
   const baseUrl = `${window.location.origin}/`;
   (globalThis as Record<string, unknown>)._VSCODE_FILE_ROOT = windowConfig.frontendDist;
+
+  // On Windows, WebView2 blocks fetch() and import() for custom URI schemes.
+  // The Rust backend starts a localhost HTTP file server as a workaround.
+  // Store its URL so uriToBrowserUri() can convert file:// → http:// URLs.
+  if (windowConfig.fileServerUrl) {
+    (globalThis as Record<string, unknown>)._VSCODE_FILE_SERVER_URL = windowConfig.fileServerUrl;
+  }
 
   //#endregion
 
