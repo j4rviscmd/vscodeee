@@ -709,7 +709,7 @@ export class BrowserHostService extends Disposable implements IHostService {
 		}
 	}
 
-	private async handleExpectedShutdown(reason: ShutdownReason): Promise<void> {
+	protected async handleExpectedShutdown(reason: ShutdownReason): Promise<void> {
 
 		// Update shutdown reason in a way that we do
 		// not show a dialog because this is a expected
