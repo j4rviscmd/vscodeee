@@ -516,8 +516,8 @@ fn resolve_app_root_and_resource_dir(
 /// On non-Windows platforms this is a no-op.
 fn strip_unc_prefix(path: &std::path::Path) -> PathBuf {
     let s = path.to_string_lossy();
-    if s.starts_with(r"\\?\") {
-        PathBuf::from(&s[4..])
+    if let Some(stripped) = s.strip_prefix(r"\\?\") {
+        PathBuf::from(stripped)
     } else {
         path.to_path_buf()
     }
