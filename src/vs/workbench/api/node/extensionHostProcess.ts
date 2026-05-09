@@ -282,11 +282,22 @@ function _createExtHostProtocol(): Promise<IMessagePassingProtocol> {
 
 		return new Promise<PersistentProtocol>((resolve, reject) => {
 
-			// Use {path} object form for Bun compatibility.
-			// Bun's net.createConnection(string) treats the argument as a TCP host
-			// rather than a Unix socket path. The object form works on both runtimes.
-			const socket = net.createConnection({ path: pipeName }, () => {
+			// On Windows, the Rust sidecar uses TCP sockets instead of named pipes
+			// for Bun compatibility. Named pipes have reliability issues with Bun
+			// where data events may not fire correctly after the initial handshake.
+			// The TCP format is "tcp:host:port" (e.g., "tcp:127.0.0.1:12345").
+			const tcpMatch = pipeName.match(/^tcp:(.+):(\d+)$/);
+			const connectOpts: { path?: string; host?: string; port?: number } = tcpMatch
+				? { host: tcpMatch[1], port: parseInt(tcpMatch[2], 10) }
+				// Use {path} object form for Bun compatibility.
+				// Bun's net.createConnection(string) treats the argument as a TCP host
+				// rather than a Unix socket path. The object form works on both runtimes.
+				: { path: pipeName };
+
+			const socket = net.createConnection(connectOpts as net.NetConnectOpts, () => {
 				socket.removeListener('error', reject);
+				// Disable Nagle's algorithm for low-latency IPC message exchange.
+				socket.setNoDelay(true);
 				const protocol = new PersistentProtocol({ socket: new NodeSocket(socket, 'extHost-renderer') });
 				protocol.sendResume();
 				resolve(protocol);

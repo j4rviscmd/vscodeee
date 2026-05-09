@@ -14,10 +14,9 @@ import { ExtensionDescriptionRegistrySnapshot } from '../common/extensionDescrip
 import { ExtensionHostKind } from '../common/extensionHostKind.js';
 import { ExtensionRunningLocation, LocalProcessRunningLocation } from '../common/extensionRunningLocation.js';
 import { ExtensionRunningLocationTracker, filterExtensionDescriptions } from '../common/extensionRunningLocationTracker.js';
-import { ExtensionHostExtensions, ExtensionHostStartup, IExtensionHost } from '../common/extensions.js';
+import { ExtensionHostExtensions, IExtensionHost } from '../common/extensions.js';
 import { ExtensionsProposedApi } from '../common/extensionsProposedApi.js';
 import { IRemoteExtensionHostDataProvider, IRemoteExtensionHostInitData, RemoteExtensionHost } from '../common/remoteExtensionHost.js';
-import { IWebWorkerExtensionHostDataProvider, IWebWorkerExtensionHostInitData, WebWorkerExtensionHost } from '../browser/webWorkerExtensionHost.js';
 import { TauriLocalProcessExtensionHost, ITauriLocalProcessExtensionHostDataProvider } from './tauriLocalProcessExtensionHost.js';
 
 /**
@@ -43,9 +42,9 @@ export class TauriExtensionHostFactory implements IExtensionHostFactory {
   /**
 	 * Create an extension host for the given running location.
 	 *
-	 * Handles all three extension host kinds:
+	 * Handles extension host kinds:
 	 * - `LocalProcess` → {@link TauriLocalProcessExtensionHost} (Tauri-specific)
-	 * - `LocalWebWorker` → {@link WebWorkerExtensionHost}
+	 * - `LocalWebWorker` → `null` (disabled; see TODO(Phase 2) comment)
 	 * - `Remote` → {@link RemoteExtensionHost}
 	 *
 	 * @returns The created extension host, or `null` if the kind is unsupported.
@@ -63,17 +62,15 @@ export class TauriExtensionHostFactory implements IExtensionHostFactory {
         );
       }
       case ExtensionHostKind.LocalWebWorker: {
-        const startup = (
-          isInitialStart
-            ? ExtensionHostStartup.EagerManualStart
-            : ExtensionHostStartup.EagerAutoStart
-        );
-        return this._instantiationService.createInstance(
-          WebWorkerExtensionHost,
-          runningLocation,
-          startup,
-          this._createLocalWebWorkerExtensionHostDataProvider(runningLocations, runningLocation, isInitialStart),
-        );
+        // TODO(Phase 2): In Tauri desktop, the WebWorker extension host iframe
+        // (vscode-file://vscode-app) fails to start because it cannot establish
+        // a MessagePort handshake with the main window (tauri://localhost) due to
+        // cross-origin restrictions. The hanging start() Promise blocks ALL
+        // extension activation via Promise.all in _activateByEvent, preventing
+        // commands and features from working even in the LocalProcess host.
+        // Returning null disables the WebWorker host, matching Electron desktop
+        // behavior where web-only extensions are not supported.
+        return null;
       }
       case ExtensionHostKind.Remote: {
         const remoteAgentConnection = this._remoteAgentService.getConnection();
@@ -97,25 +94,6 @@ export class TauriExtensionHostFactory implements IExtensionHostFactory {
   private _createLocalProcessExtensionHostDataProvider(runningLocations: ExtensionRunningLocationTracker, desiredRunningLocation: ExtensionRunningLocation, isInitialStart: boolean): ITauriLocalProcessExtensionHostDataProvider {
     return {
       getInitData: async () => {
-        if (isInitialStart) {
-          const localExtensions = checkEnabledAndProposedAPI(this._logService, this._extensionEnablementService, this._extensionsProposedApi, await this._scanWebExtensions(), /* ignore workspace trust */true);
-          const runningLocation = runningLocations.computeRunningLocation(localExtensions, [], false);
-          const myExtensions = filterExtensionDescriptions(localExtensions, runningLocation, extRunningLocation => desiredRunningLocation.equals(extRunningLocation));
-          const extensions = new ExtensionHostExtensions(0, localExtensions, myExtensions.map(extension => extension.identifier));
-          return { extensions };
-        } else {
-          const snapshot = await this._getExtensionRegistrySnapshotWhenReady();
-          const myExtensions = runningLocations.filterByRunningLocation(snapshot.extensions, desiredRunningLocation);
-          const extensions = new ExtensionHostExtensions(snapshot.versionId, snapshot.extensions, myExtensions.map(extension => extension.identifier));
-          return { extensions };
-        }
-      },
-    };
-  }
-
-  private _createLocalWebWorkerExtensionHostDataProvider(runningLocations: ExtensionRunningLocationTracker, desiredRunningLocation: ExtensionRunningLocation, isInitialStart: boolean): IWebWorkerExtensionHostDataProvider {
-    return {
-      getInitData: async (): Promise<IWebWorkerExtensionHostInitData> => {
         if (isInitialStart) {
           const localExtensions = checkEnabledAndProposedAPI(this._logService, this._extensionEnablementService, this._extensionsProposedApi, await this._scanWebExtensions(), /* ignore workspace trust */true);
           const runningLocation = runningLocations.computeRunningLocation(localExtensions, [], false);

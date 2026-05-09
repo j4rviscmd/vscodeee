@@ -96,7 +96,10 @@ export class TauriExtensionService extends AbstractExtensionService implements I
     );
     super(
       // hasLocalProcess: true — enables LocalProcess extension host routing
-      { hasLocalProcess: true, allowRemoteExtensionsInLocalWebWorker: true },
+      // allowRemoteExtensionsInLocalWebWorker: false — WebWorker host is disabled
+      // in Tauri desktop (same as Electron desktop). Web-only extensions are not
+      // supported; all local extensions run via LocalProcess.
+      { hasLocalProcess: true, allowRemoteExtensionsInLocalWebWorker: false },
       extensionsProposedApi,
       extensionHostFactory,
       new TauriExtensionHostKindPicker(logService),

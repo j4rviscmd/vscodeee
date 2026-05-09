@@ -230,9 +230,9 @@ fn build_exthost_path() -> String {
 pub struct ExtHostSidecar {
     /// Handle to the spawned Bun child process.
     pub child: Child,
-    /// Path to the IPC pipe used for communication with the Extension Host.
+    /// IPC endpoint address for communication with the Extension Host.
     /// On Unix this is a Unix domain socket path (e.g., `/tmp/vscode-ipc-*.sock`);
-    /// on Windows this is a named pipe path (e.g., `\\.\pipe\vscode-ipc-*\sock`).
+    /// on Windows this is a TCP address (e.g., `tcp:127.0.0.1:12345`).
     pub pipe_path: String,
     /// Original content of `product.json` before augmentation, if modified.
     /// Used by [`Drop`] to restore the file when the sidecar is cleaned up.
@@ -243,8 +243,8 @@ pub struct ExtHostSidecar {
 /// original `product.json` when the sidecar is dropped.
 impl Drop for ExtHostSidecar {
     fn drop(&mut self) {
-        // Best-effort cleanup of the socket file (Unix only — Windows named pipes
-        // are not filesystem entries and don't need removal)
+        // Best-effort cleanup of the socket file (Unix only — TCP sockets
+        // on Windows are cleaned up by the OS when the listener is dropped)
         #[cfg(unix)]
         let _ = std::fs::remove_file(&self.pipe_path);
 
@@ -270,13 +270,13 @@ impl Drop for ExtHostSidecar {
 /// Mirrors `createRandomIPCHandle()` at `ipc.net.ts:889-904`.
 /// macOS has a 104-char limit for socket paths; UUID-based paths in /tmp/
 /// are ~55 chars, well within that limit.
+///
+/// Note: On Windows, TCP sockets are used instead (see `spawn()`), so
+/// this function is only called on Unix platforms.
+#[cfg(unix)]
 fn create_random_ipc_handle() -> String {
     let id = uuid::Uuid::new_v4();
-    if cfg!(windows) {
-        format!("\\\\.\\pipe\\vscode-ipc-{id}-sock")
-    } else {
-        format!("{}/vscode-ipc-{id}.sock", std::env::temp_dir().display())
-    }
+    format!("{}/vscode-ipc-{id}.sock", std::env::temp_dir().display())
 }
 
 /// Augment `product.json` with `commit` and `version` fields at runtime.
@@ -407,9 +407,18 @@ fn augment_product_json(app_root: &Path) -> Option<(std::path::PathBuf, String)>
 ///
 /// This replicates the pattern from `extensionHostConnection.ts:247-327`:
 /// 1. Augment `product.json` with `commit`/`version` for extensions
-/// 2. Create IPC pipe (Unix domain socket or Windows named pipe)
+/// 2. Create IPC endpoint (Unix domain socket or TCP socket on Windows)
 /// 3. Spawn `bun out/bootstrap-fork.js --type=extensionHost`
-/// 4. Wait for the ExtHost to connect back to our pipe (30s timeout)
+/// 4. Wait for the ExtHost to connect back (30s timeout)
+///
+/// # Platform-specific IPC
+///
+/// - **macOS/Linux**: Uses Unix domain sockets (traditional approach).
+/// - **Windows**: Uses TCP sockets on localhost instead of named pipes.
+///   Bun's `net.Socket` implementation on Windows named pipes has known
+///   reliability issues where data events may not fire correctly after
+///   the initial handshake, causing extension RPC calls to be silently lost.
+///   TCP sockets are well-tested and reliable on all platforms and runtimes.
 ///
 /// # Arguments
 /// * `app_root` — Repository root containing `out/bootstrap-fork.js` and `product.json`
@@ -425,21 +434,56 @@ pub async fn spawn(
     // Extensions (e.g., open-remote-ssh) read this file directly from disk.
     let augmented = augment_product_json(app_root);
 
-    let pipe_path = create_random_ipc_handle();
+    // --- Platform-specific IPC setup ---
+    // On Windows, use TCP sockets for Bun compatibility (named pipes have issues).
+    // On Unix, use traditional Unix domain sockets.
+    #[cfg(windows)]
+    let (pipe_path, stream) = {
+        // Bind TCP listener first to get the OS-assigned port.
+        let tcp_listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(ExtHostError::PipeCreation)?;
+        let port = tcp_listener
+            .local_addr()
+            .map_err(ExtHostError::PipeCreation)?
+            .port();
+        // Format as "tcp:host:port" — the ExtHost TypeScript layer detects this
+        // prefix and connects via TCP instead of named pipes.
+        let pipe_path = format!("tcp:127.0.0.1:{port}");
 
-    log::info!(target: "vscodeee::exthost::sidecar", "Listening on pipe: {pipe_path}");
+        log::info!(
+            target: "vscodeee::exthost::sidecar",
+            "IPC endpoint (TCP): {pipe_path}"
+        );
 
-    // Spawn child process and wait for IPC connection
-    let (mut child, stderr_buf) = spawn_child_process(app_root, resource_dir, &pipe_path)?;
+        let (mut child, stderr_buf) = spawn_child_process(app_root, resource_dir, &pipe_path)?;
+        let stream = accept_ipc_connection_tcp(tcp_listener, &stderr_buf, &mut child).await?;
 
-    let result = accept_ipc_connection(&pipe_path, &stderr_buf, &mut child).await;
-    if result.is_err() {
-        #[cfg(unix)]
-        let _ = std::fs::remove_file(&pipe_path);
-    }
-    let stream = result?;
+        // Store child in sidecar
+        let sidecar_child = child;
+        (pipe_path, (stream, sidecar_child))
+    };
 
-    log::info!(target: "vscodeee::exthost::sidecar", "ExtHost connected to pipe");
+    #[cfg(unix)]
+    let (pipe_path, stream) = {
+        let pipe_path = create_random_ipc_handle();
+
+        log::info!(
+            target: "vscodeee::exthost::sidecar",
+            "IPC endpoint (Unix socket): {pipe_path}"
+        );
+
+        let (mut child, stderr_buf) = spawn_child_process(app_root, resource_dir, &pipe_path)?;
+        let result = accept_ipc_connection(&pipe_path, &stderr_buf, &mut child).await;
+        if result.is_err() {
+            let _ = std::fs::remove_file(&pipe_path);
+        }
+        let stream = result?;
+        (pipe_path, (stream, child))
+    };
+
+    let (stream, child) = stream;
+    log::info!(target: "vscodeee::exthost::sidecar", "ExtHost connected via IPC");
 
     let sidecar = ExtHostSidecar {
         child,
@@ -589,25 +633,31 @@ async fn accept_ipc_connection(
 
 /// Accept an IPC connection from the ExtHost child process (Windows).
 ///
-/// Creates a Windows named pipe server, waits for the child to connect,
-/// and returns the connected pipe as an [`IpcStream`].
+/// Uses a TCP socket on localhost instead of Windows named pipes for
+/// reliability with the Bun runtime. Bun's named pipe implementation
+/// on Windows has issues where `data` events may not fire correctly
+/// after the initial protocol handshake, causing extension RPC messages
+/// to be silently dropped.
+///
+/// TCP sockets are well-tested across all platforms and runtimes, and
+/// provide reliable bidirectional byte streaming.
 #[cfg(windows)]
-async fn accept_ipc_connection(
-    pipe_path: &str,
+async fn accept_ipc_connection_tcp(
+    listener: tokio::net::TcpListener,
     stderr_buf: &Arc<Mutex<String>>,
     child: &mut Child,
 ) -> Result<IpcStream, ExtHostError> {
-    use tokio::net::windows::named_pipe::ServerOptions;
-
-    let server = ServerOptions::new()
-        .first_pipe_instance(true)
-        .create(pipe_path)
-        .map_err(ExtHostError::PipeCreation)?;
-
     tokio::select! {
-        result = server.connect() => {
-            result.map_err(ExtHostError::PipeCreation)?;
-            Ok(Box::new(server) as IpcStream)
+        result = listener.accept() => {
+            let (stream, addr) = result.map_err(ExtHostError::PipeCreation)?;
+            log::info!(
+                target: "vscodeee::exthost::sidecar",
+                "ExtHost connected via TCP from {addr}"
+            );
+            // Disable Nagle's algorithm for low-latency IPC message exchange.
+            // Extension host RPC messages are typically small and latency-sensitive.
+            stream.set_nodelay(true).map_err(ExtHostError::Io)?;
+            Ok(Box::new(stream) as IpcStream)
         }
         _ = tokio::time::sleep(tokio::time::Duration::from_secs(30)) => {
             check_child_exit_or_timeout(child, stderr_buf).await
