@@ -311,7 +311,8 @@
     if (remoteUri?.startsWith('vscode-remote://')) {
       const afterScheme = remoteUri.substring('vscode-remote://'.length);
       const slashIdx = afterScheme.indexOf('/');
-      remoteAuthorityParam = slashIdx > 0 ? afterScheme.substring(0, slashIdx) : afterScheme || null;
+      const raw = slashIdx > 0 ? afterScheme.substring(0, slashIdx) : afterScheme;
+      remoteAuthorityParam = raw ? decodeURIComponent(raw) : null;
     }
   }
 

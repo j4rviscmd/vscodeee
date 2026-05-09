@@ -13,7 +13,7 @@ import { IFileService } from '../../../../platform/files/common/files.js';
 import { ILabelService } from '../../../../platform/label/common/label.js';
 import { IBrowserWorkbenchEnvironmentService } from '../../environment/browser/environmentService.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
-import { ILifecycleService } from '../../lifecycle/common/lifecycle.js';
+import { ILifecycleService, ShutdownReason } from '../../lifecycle/common/lifecycle.js';
 import { BrowserLifecycleService } from '../../lifecycle/browser/lifecycleService.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IDialogService } from '../../../../platform/dialogs/common/dialogs.js';
@@ -67,58 +67,37 @@ export class TauriHostService extends BrowserHostService {
   }
 
   /**
-	 * Toggles the native window fullscreen state.
-	 *
-	 * Overrides the browser implementation which uses the DOM Fullscreen API,
-	 * delegating instead to the native Tauri window API for correct desktop
-	 * fullscreen behavior (e.g. macOS Space management).
-	 */
+   * Toggles the native window fullscreen state.
+   */
   override async toggleFullScreen(_targetWindow: Window): Promise<void> {
     return this.nativeHostService.toggleFullScreen();
   }
 
   /**
-	 * Brings the application window to the front of the OS window stack.
-	 *
-	 * Overrides the browser implementation which uses `window.focus()`,
-	 * delegating instead to the native Tauri API for reliable window raising
-	 * across all desktop platforms.
-	 */
+   * Brings the application window to the front of the OS window stack.
+   */
   override async moveTop(_targetWindow: Window): Promise<void> {
     return this.nativeHostService.moveWindowTop();
   }
 
   /**
-	 * Relaunches the entire application.
-	 *
-	 * Overrides the browser implementation which would only reload the WebView,
-	 * delegating instead to the native Tauri relaunch API to restart the full
-	 * native process (equivalent to quitting and re-opening the app).
-	 */
+   * Relaunches the entire application.
+   */
   override async restart(): Promise<void> {
     return this.nativeHostService.relaunch();
   }
 
   /**
-	 * Reloads the window with an immediate splash overlay to prevent flicker.
-	 *
-	 * Injects a full-screen splash overlay (matching the startup splash style)
-	 * before delegating to the base implementation which calls
-	 * `mainWindow.location.reload()`. The overlay is destroyed along with
-	 * the rest of the DOM when the page reloads, so no cleanup is needed.
-	 */
+   * Reloads the window with an immediate splash overlay to prevent flicker.
+   */
   override async reload(): Promise<void> {
     this.injectReloadSplash();
     await super.reload();
   }
 
   /**
-	 * Injects a full-screen splash overlay into the DOM.
-	 *
-	 * Matches the startup splash from `workbench-tauri.html` and the
-	 * shutdown overlay from `TauriLifecycleService`. Uses the active
-	 * theme background color for visual consistency.
-	 */
+   * Injects a full-screen splash overlay into the DOM.
+   */
   private injectReloadSplash(): void {
     const doc = mainWindow.document;
 
@@ -169,12 +148,8 @@ export class TauriHostService extends BrowserHostService {
   }
 
   /**
-	 * Returns the cursor position in screen coordinates and the display bounds.
-	 *
-	 * Overrides the browser implementation (which returns `undefined`) to delegate
-	 * to the native Tauri API. Required for drag-to-new-window to correctly
-	 * position auxiliary editor windows.
-	 */
+   * Returns the cursor position in screen coordinates and the display bounds.
+   */
   override async getCursorScreenPoint(): Promise<{ readonly point: IPoint; readonly display: IRectangle } | undefined> {
     try {
       return await this.nativeHostService.getCursorScreenPoint();
@@ -185,44 +160,27 @@ export class TauriHostService extends BrowserHostService {
   }
 
   /**
-	 * Opens a new window, with special handling for remote authority.
-	 *
-	 * The browser implementation's `doOpenEmptyWindow` drops the
-	 * `remoteAuthority` from `IOpenEmptyWindowOptions`. This override
-	 * intercepts the empty-window case and passes `remoteAuthority`
-	 * directly to the Rust backend so that the new window's extension
-	 * host can call `_resolveAuthority` and establish the remote connection
-	 * (e.g., Remote-SSH).
-	 *
-	 * For non-empty windows (folder/workspace openables), it also extracts
-	 * `remoteAuthority` from `vscode-remote://` URIs.
-	 *
-	 * @param options - Options for opening an empty window.
-	 */
+   * Opens a window with special handling for remote authority.
+   *
+   * Defaults to reusing the current window for remote connections
+   * (matching VS Code behavior). A new window is only opened when
+   * `forceNewWindow` or `preferNewWindow` is explicitly set on the
+   * folder/workspace openable overload (e.g., Ctrl+Enter in QuickPick).
+   *
+   * `IOpenEmptyWindowOptions` has no `forceNewWindow`, so the empty
+   * window path always reuses. The "new window" intent goes through
+   * the folder/workspace openable overload with `IOpenWindowOptions`.
+   */
   override openWindow(options?: IOpenEmptyWindowOptions): Promise<void>;
-  /**
-	 * Opens a new window with the specified openables.
-	 *
-	 * @param toOpen - Array of folders, workspaces, or files to open.
-	 * @param options - Options controlling window reuse, diff/merge modes, etc.
-	 */
   override openWindow(toOpen: IWindowOpenable[], options?: IOpenWindowOptions): Promise<void>;
   override async openWindow(arg1?: IOpenEmptyWindowOptions | IWindowOpenable[], arg2?: IOpenWindowOptions): Promise<void> {
-    // Empty window with remoteAuthority — Remote-SSH uses this path
+    // Empty window with remoteAuthority -- Remote-SSH uses this path.
+    // IOpenEmptyWindowOptions has no forceNewWindow, so we always reuse.
     if (!Array.isArray(arg1)) {
       const emptyOptions = arg1 as IOpenEmptyWindowOptions | undefined;
       if (emptyOptions?.remoteAuthority) {
-        try {
-          await invoke('open_new_window', {
-            options: {
-              remoteAuthority: emptyOptions.remoteAuthority,
-              forceNewWindow: !emptyOptions.forceReuseWindow,
-            },
-          });
-          return;
-        } catch (err) {
-          this._logService.error('[TauriHostService] Failed to open remote empty window:', err);
-        }
+        await this.openRemoteInCurrentWindow(emptyOptions.remoteAuthority);
+        return;
       }
     }
 
@@ -246,19 +204,24 @@ export class TauriHostService extends BrowserHostService {
       }
 
       if (remoteAuthority) {
-        try {
-          await invoke('open_new_window', {
-            options: {
-              folderUri,
-              workspaceUri,
-              remoteAuthority,
-              forceNewWindow: !arg2?.forceReuseWindow,
-            },
-          });
-          return;
-        } catch (err) {
-          this._logService.error('[TauriHostService] Failed to open remote folder/workspace window:', err);
+        const forceNew = (arg2?.forceNewWindow || arg2?.preferNewWindow) && !arg2?.forceReuseWindow;
+        if (!forceNew) {
+          await this.openRemoteInCurrentWindow(remoteAuthority, folderUri, workspaceUri);
+        } else {
+          try {
+            await invoke('open_new_window', {
+              options: {
+                folderUri,
+                workspaceUri,
+                remoteAuthority,
+                forceNewWindow: true,
+              },
+            });
+          } catch (err) {
+            this._logService.error('[TauriHostService] Failed to open remote folder/workspace window:', err);
+          }
         }
+        return;
       }
     }
 
@@ -267,6 +230,35 @@ export class TauriHostService extends BrowserHostService {
       return super.openWindow(arg1, arg2);
     }
     return super.openWindow(arg1);
+  }
+
+  /**
+   * Opens a remote connection in the current window by navigating to a new URL.
+   *
+   * Signals an expected shutdown (LOAD) so state is flushed before navigation.
+   */
+  private async openRemoteInCurrentWindow(remoteAuthority: string, folderUri?: string, workspaceUri?: string): Promise<void> {
+    const targetUrl = this.buildRemoteUrl(remoteAuthority, folderUri, workspaceUri);
+    await this.handleExpectedShutdown(ShutdownReason.LOAD);
+    mainWindow.location.href = targetUrl;
+  }
+
+  /**
+   * Builds the workbench URL for a remote connection.
+   */
+  private buildRemoteUrl(remoteAuthority: string, folderUri?: string, workspaceUri?: string): string {
+    const base = `${mainWindow.location.origin}${mainWindow.location.pathname}`;
+    const params = new URLSearchParams();
+
+    if (folderUri) {
+      params.set('folder', folderUri);
+    } else if (workspaceUri) {
+      params.set('workspace', workspaceUri);
+    }
+
+    params.set('remoteAuthority', remoteAuthority);
+
+    return `${base}?${params.toString()}`;
   }
 }
 
