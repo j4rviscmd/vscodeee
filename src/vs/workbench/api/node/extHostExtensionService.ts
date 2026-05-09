@@ -55,6 +55,14 @@ function registerProcessCleanup(dir: string): void {
  */
 class NodeModuleRequireInterceptor extends RequireInterceptor {
 
+	/**
+	 * Install the CJS require() interceptor for both Node.js and Bun runtimes.
+	 *
+	 * On Bun, sets up `Module._resolveFilename` interception with per-module shim files
+	 * (see {@link _installBunInterceptor}). On both runtimes, patches
+	 * `Module._resolveLookupPaths` so that alternative module name mappings (e.g.
+	 * `vscode-ripgrep` -> `@vscode/ripgrep`) are applied before lookup.
+	 */
 	protected _installInterceptor(): void {
 		const node_module = nodeRequire('module');
 
@@ -235,11 +243,24 @@ class NodeModuleESMInterceptor extends RequireInterceptor {
 
 	private readonly _store = new DisposableStore();
 
-	/** Dispose registered cleanup handlers. */
+	/**
+	 * Dispose the ESM interceptor and all associated cleanup handlers.
+	 *
+	 * Removes registered process-exit cleanup and releases any resources
+	 * held by the internal disposable store.
+	 */
 	dispose(): void {
 		this._store.dispose();
 	}
 
+	/**
+	 * Install the ESM import interceptor for the Bun-based extension host.
+	 *
+	 * Delegates to {@link _installBunESMInterceptor}, which sets up physical
+	 * `node_modules/vscode/` CJS packages, symlinks, singleton module stubs,
+	 * and the global `__VSCODEEE_PREPARE_ESM__` callback used before each
+	 * dynamic `import('vscode')`.
+	 */
 	protected override _installInterceptor(): void {
 		this._installBunESMInterceptor();
 	}
@@ -282,6 +303,13 @@ module.exports = globalThis.__VSCODEEE_ESM_API__ || {};
 		// These are not per-extension — the global is set once during initialization.
 		this._installBunESMSingletonModule(shimDir, 'node:sqlite', '__VSCODEEE_NODE_SQLITE_MODULE__');
 		this._installBunESMSingletonModule(shimDir, 'node:sea', '__VSCODEEE_NODE_SEA_MODULE__');
+
+		// Patch node:* import specifiers in extension JS files for Bun compatibility.
+		// Bun treats node:* as builtins only and doesn't fall through to filesystem
+		// resolution. On Windows, junctions cannot contain ':', so we rewrite
+		// 'node:MODULE' → 'node_MODULE' in JS source files on disk. The sanitized
+		// symlinks created above resolve these rewritten imports.
+		this._patchBunNodeModuleImports();
 
 		// Register a global function that _doLoadModule calls before each ESM import.
 		// It looks up the per-extension API, sets the global, and busts the CJS cache.
@@ -338,11 +366,109 @@ module.exports = globalThis.__VSCODEEE_ESM_API__ || {};
 		const loadedModule = factory.load(moduleName, URI.parse(`file:///${moduleName}`), () => { throw new Error('Cannot load module from here.'); });
 		g[globalKey] = loadedModule;
 
+		// Generate explicit property assignments on module.exports so that Bun's
+		// static analysis can detect named exports for ESM `import { X } from ...`.
+		// Without this, Bun cannot resolve named imports like `import { constants } from 'node:sqlite'`
+		// because `module.exports = globalThis.X` is not statically analyzable.
+		const exportKeys = Object.keys(loadedModule as Record<string, unknown>);
+		const propertyAssignments = exportKeys.map(k => `module.exports.${k} = _m.${k};`).join('\n');
+
 		fs.writeFileSync(path.join(moduleDir, 'index.js'), `'use strict';
-	module.exports = globalThis.${globalKey} || {};
+const _m = globalThis.${globalKey} || {};
+module.exports = _m;
+${propertyAssignments}
 `);
 
 		this._createBunESMSymlink(moduleName, moduleDir);
+	}
+
+	/**
+	 * Patch node:* import specifiers in extension JS files for Bun compatibility.
+	 *
+	 * Bun treats node:* specifiers as builtins only -- it errors immediately
+	 * for unknown node: modules without trying filesystem resolution. On
+	 * Windows, junctions cannot contain ':' in their name, so the symlink
+	 * approach used on macOS/Linux doesn't work.
+	 *
+	 * This method scans extension directories for JS files containing
+	 * node:* import specifiers (e.g. 'node:sqlite') and rewrites them
+	 * to the sanitized form (e.g. 'node_sqlite'). The sanitized symlinks
+	 * created by _createBunESMSymlink then resolve these rewritten imports.
+	 *
+	 * Only active when running under Bun. No-op on Node.js.
+	 * Patches are idempotent -- already-patched files are skipped.
+	 */
+	private _patchBunNodeModuleImports(): void {
+		// eslint-disable-next-line local/code-no-any-casts
+		const Bun = (globalThis as any).Bun;
+		if (!Bun) {
+			return;
+		}
+
+		// Collect node:* module names from registered factories
+		const nodeModules = Array.from(this._factories.keys())
+			.filter(name => name.startsWith('node:'));
+		if (nodeModules.length === 0) {
+			return;
+		}
+
+		const suffixes = nodeModules.map(n => n.replace('node:', ''));
+
+		// Directories to scan for extension JS files
+		const extensionRoots: string[] = [
+			path.join(process.cwd(), 'extensions'),
+			path.join(process.cwd(), '.build', 'extensions'),
+			path.join(os.homedir(), '.vscodeee', 'extensions'),
+		];
+
+		for (const root of extensionRoots) {
+			if (!fs.existsSync(root)) {
+				continue;
+			}
+			try {
+				const entries = fs.readdirSync(root, { withFileTypes: true });
+				for (const entry of entries) {
+					if (!entry.isDirectory()) {
+						continue;
+					}
+					this._patchDirRecursive(path.join(root, entry.name), suffixes);
+				}
+			} catch { /* best-effort */ }
+		}
+	}
+
+	/**
+	 * Recursively patch JS files in a directory, rewriting node:* imports
+	 * to the sanitized node_MODULE form.
+	 */
+	private _patchDirRecursive(dir: string, suffixes: string[]): void {
+		let entries;
+		try {
+			entries = fs.readdirSync(dir, { withFileTypes: true });
+		} catch {
+			return;
+		}
+		// Build a single regex matching any node:<suffix> that needs rewriting
+		const pattern = new RegExp(`node:(${suffixes.map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'g');
+
+		for (const entry of entries) {
+			const fullPath = path.join(dir, entry.name);
+			if (entry.isDirectory()) {
+				// Skip hidden directories and node_modules (avoid following junctions)
+				if (entry.name.startsWith('.') || entry.name === 'node_modules') {
+					continue;
+				}
+				this._patchDirRecursive(fullPath, suffixes);
+			} else if (entry.isFile() && /\.[cm]?js$/.test(entry.name)) {
+				try {
+					const contents = fs.readFileSync(fullPath, 'utf-8');
+					const patched = contents.replace(pattern, 'node_$1');
+					if (patched !== contents) {
+						fs.writeFileSync(fullPath, patched, 'utf-8');
+					}
+				} catch { /* best-effort per file */ }
+			}
+		}
 	}
 
 	/**
@@ -353,32 +479,56 @@ module.exports = globalThis.__VSCODEEE_ESM_API__ || {};
 	 * In production, they are at cwd/.build/extensions/ (Tauri maps ../
 	 * resources to _up_/ inside the .app bundle). User extensions are under
 	 * ~/.vscodeee/extensions/. We symlink at all three roots.
+	 *
+	 * For node:* modules (e.g. 'node:sqlite'), also creates a symlink at the
+	 * filesystem-safe name ('node_sqlite'). On Windows, ':' is not allowed in
+	 * junction names so the original-name symlink silently fails. The file patcher
+	 * in _patchBunNodeModuleImports rewrites import specifiers
+	 * from 'node:MODULE' to 'node_MODULE', which Bun resolves via this symlink.
 	 */
 	private _createBunESMSymlink(moduleName: string, packageDir: string): void {
-		const createSymlink = (targetDir: string) => {
-			const nodeModulesDir = path.join(targetDir, 'node_modules');
-			const symlinkPath = path.join(nodeModulesDir, moduleName);
-			try {
-				fs.mkdirSync(nodeModulesDir, { recursive: true });
-				// Remove stale symlink from a previous process and recreate
-				try { fs.rmSync(symlinkPath, { force: true }); } catch { /* not a symlink or doesn't exist */ }
-				fs.symlinkSync(packageDir, symlinkPath, 'junction');
-			} catch { /* best-effort: may fail due to permissions */ }
-		};
+		const symlinkTargets: string[] = [];
 
 		// Built-in extensions: extensions/node_modules/<module> (development)
-		createSymlink(path.join(process.cwd(), 'extensions'));
+		symlinkTargets.push(path.join(process.cwd(), 'extensions'));
 
 		// Built-in extensions: .build/extensions/node_modules/<module> (production)
 		const buildExtDir = path.join(process.cwd(), '.build', 'extensions');
 		if (fs.existsSync(buildExtDir)) {
-			createSymlink(buildExtDir);
+			symlinkTargets.push(buildExtDir);
 		}
 
 		// User-installed extensions: ~/.vscodeee/extensions/node_modules/<module>
 		const homeExtDir = path.join(os.homedir(), '.vscodeee', 'extensions');
 		if (fs.existsSync(homeExtDir)) {
-			createSymlink(homeExtDir);
+			symlinkTargets.push(homeExtDir);
+		}
+
+		const createSymlink = (targetDir: string, symlinkName: string) => {
+			const nodeModulesDir = path.join(targetDir, 'node_modules');
+			const symlinkPath = path.join(nodeModulesDir, symlinkName);
+			try {
+				fs.mkdirSync(nodeModulesDir, { recursive: true });
+				// Remove stale symlink/junction from a previous process.
+				try { fs.unlinkSync(symlinkPath); } catch { /* not a symlink or doesn't exist */ }
+				fs.symlinkSync(packageDir, symlinkPath, 'junction');
+			} catch { /* best-effort: may fail due to permissions */ }
+		};
+
+		// Create symlink at the original module name (may fail on Windows for node:*)
+		for (const target of symlinkTargets) {
+			createSymlink(target, moduleName);
+		}
+
+		// Also create symlink at the sanitized name for node:* modules.
+		// On Windows, ':' is not allowed in junction names, so the original-name
+		// symlink silently fails. The sanitized symlink is resolved after the Bun
+		// plugin rewrites 'node:MODULE' → 'node_MODULE' in import specifiers.
+		const fsSafeName = moduleName.replace(/:/g, '_');
+		if (fsSafeName !== moduleName) {
+			for (const target of symlinkTargets) {
+				createSymlink(target, fsSafeName);
+			}
 		}
 	}
 }
