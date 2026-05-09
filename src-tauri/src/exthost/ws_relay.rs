@@ -3,12 +3,13 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-//! WebSocket ↔ Unix pipe bidirectional byte relay.
+//! WebSocket ↔ IPC pipe bidirectional byte relay.
 //!
-//! The renderer (WebView) cannot directly connect to a Unix domain socket.
-//! This module creates a local WebSocket server (`127.0.0.1:0`) that acts as
-//! a transparent byte relay between the WebSocket connection from TypeScript
-//! and the Unix pipe connected to the Extension Host process.
+//! The renderer (WebView) cannot directly connect to a Unix domain socket or
+//! Windows named pipe. This module creates a local WebSocket server
+//! (`127.0.0.1:0`) that acts as a transparent byte relay between the WebSocket
+//! connection from TypeScript and the IPC pipe connected to the Extension Host
+//! process.
 //!
 //! The relay is byte-transparent: it does not interpret or modify the VS Code
 //! wire protocol — all protocol handling happens in TypeScript via
@@ -16,9 +17,9 @@
 
 use futures_util::{SinkExt, StreamExt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, UnixStream};
+use tokio::net::TcpListener;
 
-use super::ExtHostError;
+use super::{ExtHostError, IpcStream};
 
 /// Result of starting the WebSocket relay.
 pub struct WsRelayHandle {
@@ -28,19 +29,19 @@ pub struct WsRelayHandle {
     pub task: tokio::task::JoinHandle<()>,
 }
 
-/// Start a WebSocket relay that bridges a browser WebSocket to a Unix stream.
+/// Start a WebSocket relay that bridges a browser WebSocket to an IPC stream.
 ///
 /// 1. Binds a TCP listener to `127.0.0.1:0` (OS-assigned port).
 /// 2. Accepts exactly one WebSocket connection.
-/// 3. Relays bytes bidirectionally between the WebSocket and `unix_stream`.
+/// 3. Relays bytes bidirectionally between the WebSocket and `ipc_stream`.
 /// 4. Shuts down when either side closes.
 ///
 /// # Arguments
-/// * `unix_stream` — The connected Unix domain socket to the Extension Host.
+/// * `ipc_stream` — The connected IPC stream to the Extension Host.
 ///
 /// # Returns
 /// A [`WsRelayHandle`] with the allocated port and task handle.
-pub async fn start_ws_relay(unix_stream: UnixStream) -> Result<WsRelayHandle, ExtHostError> {
+pub async fn start_ws_relay(ipc_stream: IpcStream) -> Result<WsRelayHandle, ExtHostError> {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .map_err(ExtHostError::Io)?;
@@ -53,7 +54,7 @@ pub async fn start_ws_relay(unix_stream: UnixStream) -> Result<WsRelayHandle, Ex
     );
 
     let task = tokio::spawn(async move {
-        if let Err(e) = relay_loop(listener, unix_stream).await {
+        if let Err(e) = relay_loop(listener, ipc_stream).await {
             log::error!(
                 target: "vscodeee::exthost::ws_relay",
                 "Relay error: {e}"
@@ -65,19 +66,19 @@ pub async fn start_ws_relay(unix_stream: UnixStream) -> Result<WsRelayHandle, Ex
 }
 
 /// Accept exactly one WebSocket connection and relay bytes bidirectionally
-/// to/from the Unix stream.
+/// to/from the IPC stream.
 ///
 /// The relay runs two concurrent tasks (via `tokio::select!`):
-/// - **WS → Unix pipe**: Reads binary WebSocket frames and writes raw bytes
-///   to the Unix stream. Text, ping, and pong frames are silently ignored.
-/// - **Unix pipe → WS**: Reads raw bytes from the Unix stream (64 KB buffer)
+/// - **WS → IPC pipe**: Reads binary WebSocket frames and writes raw bytes
+///   to the IPC stream. Text, ping, and pong frames are silently ignored.
+/// - **IPC pipe → WS**: Reads raw bytes from the IPC stream (64 KB buffer)
 ///   and sends them as binary WebSocket frames.
 ///
 /// The relay terminates when either direction encounters an error, EOF, or
 /// a WebSocket close frame.
 async fn relay_loop(
     listener: TcpListener,
-    unix_stream: UnixStream,
+    ipc_stream: IpcStream,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Accept exactly one TCP connection
     let (tcp_stream, addr) = listener.accept().await?;
@@ -90,16 +91,18 @@ async fn relay_loop(
     let ws_stream = tokio_tungstenite::accept_async(tcp_stream).await?;
     let (mut ws_write, mut ws_read) = ws_stream.split();
 
-    // Split the Unix stream
-    let (mut unix_read, mut unix_write) = tokio::io::split(unix_stream);
+    // Split the IPC stream
+    let (mut ipc_read, mut ipc_write) = tokio::io::split(ipc_stream);
 
-    // Relay: WebSocket → Unix pipe
-    let ws_to_unix = async {
+    // Relay: WebSocket → IPC pipe
+    let ws_to_ipc = async {
         let mut count: u64 = 0;
         while let Some(msg) = ws_read.next().await {
             match msg {
                 Ok(tokio_tungstenite::tungstenite::Message::Binary(data)) => {
                     count += 1;
+                    // Log the first 20 frames, then every 100th to avoid
+                    // flooding the log during normal operation.
                     if count <= 20 || count.is_multiple_of(100) {
                         log::debug!(
                             target: "vscodeee::exthost::ws_relay",
@@ -108,7 +111,7 @@ async fn relay_loop(
                             first4 = &data[..std::cmp::min(4, data.len())]
                         );
                     }
-                    if unix_write.write_all(&data).await.is_err() {
+                    if ipc_write.write_all(&data).await.is_err() {
                         log::error!(target: "vscodeee::exthost::ws_relay", "WS→pipe: write_all failed");
                         break;
                     }
@@ -124,21 +127,22 @@ async fn relay_loop(
                 _ => {} // Ignore text/ping/pong
             }
         }
-        let _ = unix_write.shutdown().await;
+        let _ = ipc_write.shutdown().await;
     };
 
-    // Relay: Unix pipe → WebSocket
-    let unix_to_ws = async {
-        let mut buf = vec![0u8; 64 * 1024]; // 64KB buffer
+    // Relay: IPC pipe → WebSocket
+    let ipc_to_ws = async {
+        let mut buf = vec![0u8; 64 * 1024]; // 64KB read buffer
         let mut count: u64 = 0;
         loop {
-            match unix_read.read(&mut buf).await {
+            match ipc_read.read(&mut buf).await {
                 Ok(0) => {
                     log::info!(target: "vscodeee::exthost::ws_relay", "pipe→WS: EOF");
                     break;
                 }
                 Ok(n) => {
                     count += 1;
+                    // Same log throttling as WS→pipe direction.
                     if count <= 20 || count.is_multiple_of(100) {
                         log::debug!(
                             target: "vscodeee::exthost::ws_relay",
@@ -163,8 +167,8 @@ async fn relay_loop(
 
     // Run both directions concurrently; finish when either side closes
     tokio::select! {
-        _ = ws_to_unix => {},
-        _ = unix_to_ws => {},
+        _ = ws_to_ipc => {},
+        _ = ipc_to_ws => {},
     }
 
     log::info!(

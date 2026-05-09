@@ -19,6 +19,9 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 use serde::Serialize;
 use tokio::sync::Mutex;
 
@@ -62,7 +65,6 @@ pub struct ExtHostSpawnResult {
 ///
 /// Holds the sidecar process handle (for killing the child) and the
 /// WebSocket relay task handle (for aborting the relay on shutdown).
-#[cfg(unix)]
 struct ExtHostInstance {
     /// The sidecar owning the child process.
     sidecar: crate::exthost::sidecar::ExtHostSidecar,
@@ -80,7 +82,6 @@ struct ExtHostInstance {
 /// unique `instance_id` assigned by an atomic counter.
 pub struct ExtHostState {
     /// Map of instance_id → running ExtHost instance.
-    #[cfg(unix)]
     instances: Mutex<HashMap<u32, ExtHostInstance>>,
     /// Monotonically increasing counter for generating unique instance IDs.
     next_id: AtomicU32,
@@ -90,7 +91,6 @@ impl ExtHostState {
     /// Create a new [`ExtHostState`] wrapped in an `Arc` for use as Tauri managed state.
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
-            #[cfg(unix)]
             instances: Mutex::new(HashMap::new()),
             next_id: AtomicU32::new(1),
         })
@@ -100,9 +100,7 @@ impl ExtHostState {
     ///
     /// Same logic as the `kill_all_exthosts` command, but callable from
     /// non-command contexts (e.g., shutdown coordinator).
-    // TODO: Remove allow(dead_code) when PoC mode is removed
     #[allow(dead_code)]
-    #[cfg(unix)]
     pub async fn shutdown_all(&self) {
         let mut instances = self.instances.lock().await;
         let count = instances.len();
@@ -122,18 +120,13 @@ impl ExtHostState {
         );
     }
 
-    /// No-op on non-Unix platforms where Extension Host is not supported.
-    #[cfg(not(unix))]
-    pub async fn shutdown_all(&self) {}
-
-    /// Kill all ExtHost processes synchronously using `libc::kill`.
+    /// Kill all ExtHost processes synchronously.
     ///
     /// Used from the shutdown coordinator closure when the tokio runtime
     /// may not be available (e.g., during `RunEvent::Exit`).
     ///
     /// Drains all instances from the map and aborts their watchdog/relay tasks,
-    /// then sends SIGKILL directly (no polite SIGTERM — the process is dying).
-    #[cfg(unix)]
+    /// then kills the child process directly.
     pub fn sync_kill_all(&self) {
         let drained: Vec<(u32, ExtHostInstance)> = match self.instances.try_lock() {
             Ok(mut instances) => instances.drain().collect(),
@@ -157,8 +150,24 @@ impl ExtHostState {
             inst.watchdog_task.abort();
             inst.relay_task.abort();
             if let Some(pid) = inst.sidecar.child.id() {
-                unsafe {
-                    libc::kill(pid as i32, libc::SIGKILL);
+                #[cfg(unix)]
+                {
+                    // Use SIGKILL (not SIGTERM) because we are in a synchronous
+                    // shutdown context and cannot wait for graceful termination.
+                    unsafe {
+                        libc::kill(pid as i32, libc::SIGKILL);
+                    }
+                }
+                #[cfg(windows)]
+                {
+                    // /F = force kill, /T = kill child processes too.
+                    // CREATE_NO_WINDOW (0x08000000) prevents a console window from flashing.
+                    let _ = std::process::Command::new("taskkill")
+                        .args(["/F", "/T", "/PID", &pid.to_string()])
+                        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .spawn();
                 }
             }
         }
@@ -168,45 +177,16 @@ impl ExtHostState {
             count
         );
     }
-
-    /// No-op on non-Unix platforms where Extension Host is not supported.
-    #[cfg(not(unix))]
-    pub fn sync_kill_all(&self) {}
 }
 
 /// Spawn an Extension Host with a WebSocket relay for production use.
 ///
-/// Creates a named pipe, spawns `bun out/bootstrap-fork.js --type=extensionHost`,
-/// starts a WebSocket relay on `127.0.0.1:0`, and returns the port + PID.
+/// Creates an IPC pipe (Unix domain socket or Windows named pipe), spawns
+/// `bun out/bootstrap-fork.js --type=extensionHost`, starts a WebSocket relay
+/// on `127.0.0.1:0`, and returns the port + PID.
 /// TypeScript will connect via WebSocket and run PersistentProtocol over it.
 #[tauri::command]
 pub async fn spawn_exthost_with_relay(
-    app_handle: tauri::AppHandle,
-    exthost_state: tauri::State<'_, Arc<ExtHostState>>,
-) -> Result<ExtHostSpawnResult, String> {
-    // TODO: Add Windows named pipe support via tokio::net::windows::named_pipe.
-    #[cfg(not(unix))]
-    {
-        let _ = (app_handle, exthost_state);
-        return Err(
-            "Extension Host sidecar is only supported on Unix (macOS/Linux) in Phase 5.".into(),
-        );
-    }
-
-    #[cfg(unix)]
-    {
-        spawn_exthost_with_relay_unix(app_handle, exthost_state).await
-    }
-}
-
-/// Unix-specific implementation of [`spawn_exthost_with_relay`].
-///
-/// Resolves the application root, verifies `out/bootstrap-fork.js` exists,
-/// spawns a new Bun Extension Host, starts a WebSocket relay, stores state
-/// for later cleanup, and starts a background task to monitor the child process
-/// for unexpected exit. Multiple instances can run concurrently.
-#[cfg(unix)]
-async fn spawn_exthost_with_relay_unix(
     app_handle: tauri::AppHandle,
     exthost_state: tauri::State<'_, Arc<ExtHostState>>,
 ) -> Result<ExtHostSpawnResult, String> {
@@ -228,7 +208,7 @@ async fn spawn_exthost_with_relay_unix(
     let instance_id = exthost_state.next_id.fetch_add(1, Ordering::Relaxed);
 
     // Step 1+2: Create pipe + spawn Bun
-    let (sidecar, unix_stream) = exthost::sidecar::spawn(&app_root, &resource_dir)
+    let (sidecar, ipc_stream) = exthost::sidecar::spawn(&app_root, &resource_dir)
         .await
         .map_err(|e| format!("ExtHost spawn failed: {e}"))?;
 
@@ -236,27 +216,28 @@ async fn spawn_exthost_with_relay_unix(
     let pipe_path = sidecar.pipe_path.clone();
 
     // Step 3: Start WebSocket relay
-    let relay_handle = exthost::ws_relay::start_ws_relay(unix_stream)
+    let relay_handle = exthost::ws_relay::start_ws_relay(ipc_stream)
         .await
         .map_err(|e| format!("WS relay failed: {e}"))?;
 
     let ws_port = relay_handle.port;
 
-    // Store instance for later cleanup
-    let state_arc = Arc::clone(&exthost_state);
-
     // Spawn a background watchdog that polls the ExtHost process every 500ms.
-    // If the child exits unexpectedly (e.g. crash, OOM), an error is logged
-    // and the instance is removed from state. The watchdog terminates when
-    // the process exits or the instance is cleaned up.
+    //
+    // The watchdog detects unexpected Extension Host crashes (e.g., unhandled
+    // exceptions) and cleans up the associated relay task. Without this, a
+    // crashed ExtHost would leave a dangling WebSocket relay that silently
+    // drops all messages from the renderer.
+    //
+    // A 2-second initial delay avoids false positives during startup, when the
+    // process may not yet be fully initialized.
     let watchdog_task = {
-        let state_clone = Arc::clone(&exthost_state);
+        let state_ref = Arc::clone(&exthost_state);
         tokio::spawn(async move {
-            // Give the process a moment to start, then check periodically
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
             loop {
                 tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-                let mut instances = state_clone.instances.lock().await;
+                let mut instances = state_ref.instances.lock().await;
                 if let Some(ref mut inst) = instances.get_mut(&instance_id) {
                     match inst.sidecar.child.try_wait() {
                         Ok(Some(status)) => {
@@ -264,13 +245,14 @@ async fn spawn_exthost_with_relay_unix(
                                 target: "vscodeee::commands::spawn_exthost",
                                 "ExtHost instance {instance_id} (PID={pid}) EXITED with status: {status}"
                             );
+                            // Self-remove: abort own watchdog and the relay task.
                             if let Some(dead) = instances.remove(&instance_id) {
                                 dead.watchdog_task.abort();
                                 dead.relay_task.abort();
                             }
                             break;
                         }
-                        Ok(None) => {}
+                        Ok(None) => {} // Still running — continue polling
                         Err(e) => {
                             log::error!(
                                 target: "vscodeee::commands::spawn_exthost",
@@ -280,6 +262,7 @@ async fn spawn_exthost_with_relay_unix(
                         }
                     }
                 } else {
+                    // Instance was already removed (e.g., by kill_exthost) — stop polling.
                     break;
                 }
             }
@@ -288,7 +271,7 @@ async fn spawn_exthost_with_relay_unix(
 
     // Store instance for later cleanup
     {
-        let mut instances = state_arc.instances.lock().await;
+        let mut instances = exthost_state.instances.lock().await;
         instances.insert(
             instance_id,
             ExtHostInstance {
@@ -326,36 +309,27 @@ pub async fn kill_exthost(
     instance_id: u32,
     exthost_state: tauri::State<'_, Arc<ExtHostState>>,
 ) -> Result<(), String> {
-    #[cfg(not(unix))]
-    {
-        let _ = (instance_id, exthost_state);
-        return Ok(());
+    let mut instances = exthost_state.instances.lock().await;
+    if let Some(mut inst) = instances.remove(&instance_id) {
+        log::info!(
+            target: "vscodeee::commands::spawn_exthost",
+            "Killing ExtHost instance {instance_id}"
+        );
+        inst.watchdog_task.abort();
+        inst.relay_task.abort();
+        let _ = inst.sidecar.child.kill().await;
+        let _ = inst.sidecar.child.wait().await;
+        log::info!(
+            target: "vscodeee::commands::spawn_exthost",
+            "ExtHost instance {instance_id} terminated"
+        );
+    } else {
+        log::debug!(
+            target: "vscodeee::commands::spawn_exthost",
+            "ExtHost instance {instance_id} not found (already cleaned up)"
+        );
     }
-
-    #[cfg(unix)]
-    {
-        let mut instances = exthost_state.instances.lock().await;
-        if let Some(mut inst) = instances.remove(&instance_id) {
-            log::info!(
-                target: "vscodeee::commands::spawn_exthost",
-                "Killing ExtHost instance {instance_id}"
-            );
-            inst.watchdog_task.abort();
-            inst.relay_task.abort();
-            let _ = inst.sidecar.child.kill().await;
-            let _ = inst.sidecar.child.wait().await;
-            log::info!(
-                target: "vscodeee::commands::spawn_exthost",
-                "ExtHost instance {instance_id} terminated"
-            );
-        } else {
-            log::debug!(
-                target: "vscodeee::commands::spawn_exthost",
-                "ExtHost instance {instance_id} not found (already cleaned up)"
-            );
-        }
-        Ok(())
-    }
+    Ok(())
 }
 
 /// Kill all running Extension Host instances.
@@ -366,32 +340,23 @@ pub async fn kill_exthost(
 pub async fn kill_all_exthosts(
     exthost_state: tauri::State<'_, Arc<ExtHostState>>,
 ) -> Result<(), String> {
-    #[cfg(not(unix))]
-    {
-        let _ = exthost_state;
-        return Ok(());
-    }
-
-    #[cfg(unix)]
-    {
-        let mut instances = exthost_state.instances.lock().await;
-        let count = instances.len();
-        for (id, mut inst) in instances.drain() {
-            log::info!(
-                target: "vscodeee::commands::spawn_exthost",
-                "Killing ExtHost instance {id} (shutdown)"
-            );
-            inst.watchdog_task.abort();
-            inst.relay_task.abort();
-            let _ = inst.sidecar.child.kill().await;
-            let _ = inst.sidecar.child.wait().await;
-        }
+    let mut instances = exthost_state.instances.lock().await;
+    let count = instances.len();
+    for (id, mut inst) in instances.drain() {
         log::info!(
             target: "vscodeee::commands::spawn_exthost",
-            "All {count} ExtHost instances terminated"
+            "Killing ExtHost instance {id} (shutdown)"
         );
-        Ok(())
+        inst.watchdog_task.abort();
+        inst.relay_task.abort();
+        let _ = inst.sidecar.child.kill().await;
+        let _ = inst.sidecar.child.wait().await;
     }
+    log::info!(
+        target: "vscodeee::commands::spawn_exthost",
+        "All {count} ExtHost instances terminated"
+    );
+    Ok(())
 }
 
 /// Spawn an Extension Host process as a Bun sidecar and run the handshake (PoC mode).
