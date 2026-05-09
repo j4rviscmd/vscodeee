@@ -1,6 +1,7 @@
 > [!IMPORTANT]
 > We have confirmed an issue where extensions are not loaded when launching the app on Windows and are currently working on a fix (2026-05-09).<br>
->
+> Fixed. Please install v0.22.0 or later.
+
 > ---old---
 > If you are using v0.6.0 or below, the auto-update feature is not implemented.<br>
 > Please manually install the latest version.
@@ -52,12 +53,12 @@ Maintain the current functionality of VSCode while achieving the following:
 
 VSCodeee replaces the Electron architecture at two layers, achieving significant resource savings.
 
-| Layer | Electron (upstream VSCode) | VSCodeee | Impact |
-| --- | --- | --- | --- |
-| UI framework | Chromium (bundled) | Tauri 2.0 (system WebView) | Major binary size reduction |
-| Extension Host | Node.js (~65MB) | Bun (~30MB) | **-54%** binary size |
-| Extension Host startup | ~200ms | ~50ms | **-75%** startup time |
-| Extension Host memory | ~40MB | ~20MB | **-50%** memory usage |
+| Layer                  | Electron (upstream VSCode) | VSCodeee                   | Impact                      |
+| ---------------------- | -------------------------- | -------------------------- | --------------------------- |
+| UI framework           | Chromium (bundled)         | Tauri 2.0 (system WebView) | Major binary size reduction |
+| Extension Host         | Node.js (~65MB)            | Bun (~30MB)                | **-54%** binary size        |
+| Extension Host startup | ~200ms                     | ~50ms                      | **-75%** startup time       |
+| Extension Host memory  | ~40MB                      | ~20MB                      | **-50%** memory usage       |
 
 > **Note**: The Extension Host is the process that runs VS Code extensions (Language Servers, debuggers, linters, etc.). Upstream VSCode uses Node.js bundled within Electron for this role, while VSCodeee launches a Bun runtime sidecar that communicates with the WebView via WebSocket + Unix Pipe.
 
@@ -157,11 +158,11 @@ The following Native Host Service features are deferred to post-MVP:
 
 Architectural differences between Electron (bundled Chromium) and Tauri (native system WebView) introduce permanent or platform-specific limitations.
 
-| Feature                   | Limitation                                                                                                                                                                                                                        | Platform Details                                                                                                                                                                                |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `setBackgroundThrottling` | WebView internal JS timer/animation throttling cannot be controlled externally                                                                                                                                                     | All platforms — `NSProcessInfo.beginActivity()` (macOS) can prevent OS-level throttling, but WebView-internal behavior remains uncontrollable.                                                  |
-| Settings Sync             | Built-in Settings Sync is unavailable. The upstream sync service is licensed exclusively for official VS Code builds.                                                                                                             | All platforms — use third-party extensions (e.g., [Settings Sync](https://marketplace.visualstudio.com/items?itemName=Shan.code-settings-sync)) that sync via GitHub Gist as an alternative.    |
-| Remote Tunnels            | Built-in Remote Tunnels is unavailable. The tunnel relay infrastructure is hosted by Microsoft (Azure Dev Tunnels) and is not accessible from third-party builds. Use Remote-SSH for remote development instead.                   | All platforms — see [#100](https://github.com/j4rviscmd/vscodeee/issues/100) for details. Remote-SSH is available as an alternative ([#185](https://github.com/j4rviscmd/vscodeee/issues/185)). |
+| Feature                   | Limitation                                                                                                                                                                                                                                                                                        | Platform Details                                                                                                                                                                                |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `setBackgroundThrottling` | WebView internal JS timer/animation throttling cannot be controlled externally                                                                                                                                                                                                                    | All platforms — `NSProcessInfo.beginActivity()` (macOS) can prevent OS-level throttling, but WebView-internal behavior remains uncontrollable.                                                  |
+| Settings Sync             | Built-in Settings Sync is unavailable. The upstream sync service is licensed exclusively for official VS Code builds.                                                                                                                                                                             | All platforms — use third-party extensions (e.g., [Settings Sync](https://marketplace.visualstudio.com/items?itemName=Shan.code-settings-sync)) that sync via GitHub Gist as an alternative.    |
+| Remote Tunnels            | Built-in Remote Tunnels is unavailable. The tunnel relay infrastructure is hosted by Microsoft (Azure Dev Tunnels) and is not accessible from third-party builds. Use Remote-SSH for remote development instead.                                                                                  | All platforms — see [#100](https://github.com/j4rviscmd/vscodeee/issues/100) for details. Remote-SSH is available as an alternative ([#185](https://github.com/j4rviscmd/vscodeee/issues/185)). |
 | GitHub Copilot Chat       | The Chat UI (Chat View and Activity Bar tab) is intentionally hidden because the chat functionality is not fully compatible with the Bun runtime. Non-chat Copilot features — inline completions, Next Edit Suggestions (NES), SCM commit message generation, and authentication — work normally. | All platforms — see [#468](https://github.com/j4rviscmd/vscodeee/pull/468) for details.                                                                                                         |
 
 > [!NOTE]
