@@ -140,6 +140,7 @@
     isDevBuild?: boolean;
     themeBackground?: string;
     themeForeground?: string;
+    fileServerUrl?: string;
   }
 
   /**
