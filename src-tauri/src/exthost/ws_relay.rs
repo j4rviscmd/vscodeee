@@ -97,36 +97,40 @@ async fn relay_loop(
     // Relay: WebSocket → IPC pipe
     let ws_to_ipc = async {
         let mut count: u64 = 0;
+        let mut total_bytes: u64 = 0;
         while let Some(msg) = ws_read.next().await {
             match msg {
                 Ok(tokio_tungstenite::tungstenite::Message::Binary(data)) => {
                     count += 1;
-                    // Log the first 20 frames, then every 100th to avoid
-                    // flooding the log during normal operation.
-                    if count <= 20 || count.is_multiple_of(100) {
+                    total_bytes += data.len() as u64;
+                    if count <= 50 || count.is_multiple_of(100) {
                         log::debug!(
                             target: "vscodeee::exthost::ws_relay",
-                            "WS→pipe #{count}: {len} bytes, first4={first4:?}",
+                            "WS→IPC #{count}: {len} bytes (total={total_bytes})",
                             len = data.len(),
-                            first4 = &data[..std::cmp::min(4, data.len())]
                         );
                     }
-                    if ipc_write.write_all(&data).await.is_err() {
-                        log::error!(target: "vscodeee::exthost::ws_relay", "WS→pipe: write_all failed");
+                    if let Err(e) = ipc_write.write_all(&data).await {
+                        log::error!(target: "vscodeee::exthost::ws_relay", "WS→IPC: write_all failed: {e}");
+                        break;
+                    }
+                    if let Err(e) = ipc_write.flush().await {
+                        log::error!(target: "vscodeee::exthost::ws_relay", "WS→IPC: flush failed: {e}");
                         break;
                     }
                 }
                 Ok(tokio_tungstenite::tungstenite::Message::Close(_)) => {
-                    log::info!(target: "vscodeee::exthost::ws_relay", "WS→pipe: received Close");
+                    log::info!(target: "vscodeee::exthost::ws_relay", "WS→IPC: received Close (sent {count} msgs, {total_bytes} bytes total)");
                     break;
                 }
                 Err(e) => {
-                    log::error!(target: "vscodeee::exthost::ws_relay", "WS→pipe: read error: {e}");
+                    log::error!(target: "vscodeee::exthost::ws_relay", "WS→IPC: read error: {e} (after {count} msgs)");
                     break;
                 }
                 _ => {} // Ignore text/ping/pong
             }
         }
+        log::info!(target: "vscodeee::exthost::ws_relay", "WS→IPC: loop ended, {count} msgs, {total_bytes} bytes total");
         let _ = ipc_write.shutdown().await;
     };
 
@@ -134,34 +138,35 @@ async fn relay_loop(
     let ipc_to_ws = async {
         let mut buf = vec![0u8; 64 * 1024]; // 64KB read buffer
         let mut count: u64 = 0;
+        let mut total_bytes: u64 = 0;
         loop {
             match ipc_read.read(&mut buf).await {
                 Ok(0) => {
-                    log::info!(target: "vscodeee::exthost::ws_relay", "pipe→WS: EOF");
+                    log::info!(target: "vscodeee::exthost::ws_relay", "IPC→WS: EOF (sent {count} msgs, {total_bytes} bytes total)");
                     break;
                 }
                 Ok(n) => {
                     count += 1;
-                    // Same log throttling as WS→pipe direction.
-                    if count <= 20 || count.is_multiple_of(100) {
+                    total_bytes += n as u64;
+                    if count <= 50 || count.is_multiple_of(100) {
                         log::debug!(
                             target: "vscodeee::exthost::ws_relay",
-                            "pipe→WS #{count}: {n} bytes, first4={first4:?}",
-                            first4 = &buf[..std::cmp::min(4, n)]
+                            "IPC→WS #{count}: {n} bytes (total={total_bytes})",
                         );
                     }
                     let msg = tokio_tungstenite::tungstenite::Message::Binary(buf[..n].into());
-                    if ws_write.send(msg).await.is_err() {
-                        log::error!(target: "vscodeee::exthost::ws_relay", "pipe→WS: send failed");
+                    if let Err(e) = ws_write.send(msg).await {
+                        log::error!(target: "vscodeee::exthost::ws_relay", "IPC→WS: send failed: {e} (after {count} msgs)");
                         break;
                     }
                 }
                 Err(e) => {
-                    log::error!(target: "vscodeee::exthost::ws_relay", "pipe→WS: read error: {e}");
+                    log::error!(target: "vscodeee::exthost::ws_relay", "IPC→WS: read error: {e} (after {count} msgs)");
                     break;
                 }
             }
         }
+        log::info!(target: "vscodeee::exthost::ws_relay", "IPC→WS: loop ended, {count} msgs, {total_bytes} bytes total");
         let _ = ws_write.close().await;
     };
 
