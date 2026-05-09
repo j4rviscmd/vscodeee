@@ -4,18 +4,62 @@
  *--------------------------------------------------------------------------------------------*/
 
 //! Extension Host sidecar management — spawn Bun runtime, communicate via named pipe.
+//!
+//! This module provides the infrastructure for spawning and communicating with
+//! the VS Code Extension Host running under the Bun JavaScript runtime. The
+//! Extension Host is a separate child process that executes extension code in
+//! isolation from the main application.
+//!
+//! # Architecture
+//!
+//! The Extension Host lifecycle consists of three stages:
+//!
+//! 1. **Sidecar spawning** ([`sidecar`]) — Creates an IPC pipe (Unix domain socket
+//!    or Windows named pipe), spawns the Bun runtime with the correct entry point
+//!    and environment variables, and waits for the child process to connect back.
+//!
+//! 2. **Handshake** ([`handshake`], Unix-only in PoC) — Executes the
+//!    Ready -> InitData -> Initialized protocol exchange over the IPC stream
+//!    to verify the Extension Host is operational.
+//!
+//! 3. **WebSocket relay** ([`ws_relay`]) — Bridges a browser WebSocket connection
+//!    from the TypeScript renderer to the IPC pipe, enabling bidirectional
+//!    byte-transparent communication. All VS Code wire protocol handling
+//!    happens in TypeScript via `PersistentProtocol`.
+//!
+//! # Platform Support
+//!
+//! - **Unix** (macOS/Linux): Uses Unix domain sockets for IPC.
+//! - **Windows**: Uses Windows named pipes for IPC.
+//!
+//! Both platforms are abstracted behind the [`IpcStream`] type alias.
+//!
+//! # Wire Protocol
+//!
+//! The VS Code IPC wire protocol uses a 13-byte header followed by a
+//! variable-length body. See the [`protocol`] module for details.
 
 pub mod init_data;
 pub mod protocol;
+pub mod sidecar;
+pub mod ws_relay;
 
-// Handshake and sidecar use Unix domain sockets (tokio::net::UnixListener).
-// Windows named pipe support requires tokio::net::windows::named_pipe.
 #[cfg(unix)]
 pub mod handshake;
-#[cfg(unix)]
-pub mod sidecar;
-#[cfg(unix)]
-pub mod ws_relay;
+
+use tokio::io::{AsyncRead, AsyncWrite};
+
+/// Composite trait for platform-agnostic IPC streams.
+///
+/// Both `tokio::net::UnixStream` and `tokio::net::windows::named_pipe::NamedPipeServer`
+/// implement all four traits, so they can be boxed interchangeably.
+pub trait IpcStreamTrait: AsyncRead + AsyncWrite + Unpin + Send {}
+
+impl<T: AsyncRead + AsyncWrite + Unpin + Send> IpcStreamTrait for T {}
+
+/// Platform-agnostic IPC stream type that abstracts over Unix domain sockets
+/// and Windows named pipes.
+pub type IpcStream = Box<dyn IpcStreamTrait + 'static>;
 
 /// Errors that can occur during Extension Host sidecar operations.
 #[derive(Debug)]
