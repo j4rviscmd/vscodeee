@@ -321,7 +321,12 @@ module.exports = globalThis.__VSCODEEE_ESM_API__ || {};
 		}
 		const g = globalThis as Record<string, unknown>;
 
-		const moduleDir = path.join(shimDir, 'node_modules', moduleName);
+		// Sanitize module name for use as a directory name.
+		// Windows does not allow ':' in paths, so 'node:sqlite' becomes 'node_sqlite'.
+		// The symlink in _createBunESMSymlink uses the original name and has its own
+		// try-catch to handle platforms where ':' is invalid in the junction name.
+		const fsSafeName = moduleName.replace(/:/g, '_');
+		const moduleDir = path.join(shimDir, 'node_modules', fsSafeName);
 		fs.mkdirSync(moduleDir, { recursive: true });
 
 		fs.writeFileSync(path.join(moduleDir, 'package.json'), JSON.stringify({
