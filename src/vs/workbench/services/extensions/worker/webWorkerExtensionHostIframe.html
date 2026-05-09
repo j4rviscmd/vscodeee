@@ -20,7 +20,7 @@
 		<meta http-equiv="Content-Security-Policy" content="
 			default-src 'none';
 			child-src 'self' data: blob:;
-			script-src 'self' 'unsafe-eval' 'sha256-Az3P+8se4ZoLKOwSJS4ytf0PiEIeK9E4/VoA1ACCj2w=' https: http://localhost:* blob: vscode-file:;
+			script-src 'self' 'unsafe-eval' 'sha256-txu8MXKpl168uAvxJjqFZhyKAU++U8UoPFz54qGJew8=' https: http://localhost:* blob: vscode-file:;
 			connect-src 'self' https: wss: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* vscode-file:;"/>
 	</head>
 	<body>
@@ -108,7 +108,7 @@
 				return;
 			}
 			const { data } = event.data;
-			createWorker(data.workerUrl, data.fileRoot, data.nls.messages, data.nls.language);
+			createWorker(data.workerUrl, data.fileRoot, data.fileServerUrl, data.nls.messages, data.nls.language);
 		};
 
 		window.parent.postMessage({
@@ -132,7 +132,7 @@
 	 * @param {object} nlsMessages - Localized message bundles keyed by message key.
 	 * @param {string} nlsLanguage - The current UI language identifier (e.g. "en", "ja").
 	 */
-	function createWorker(workerUrl, fileRoot, nlsMessages, nlsLanguage) {
+	function createWorker(workerUrl, fileRoot, fileServerUrl, nlsMessages, nlsLanguage) {
 		try {
 			if (globalThis.crossOriginIsolated) {
 				workerUrl += '?vscode-coi=2'; // COEP
@@ -147,6 +147,7 @@
 				`globalThis._VSCODE_NLS_MESSAGES = ${JSON.stringify(nlsMessages)};`,
 				`globalThis._VSCODE_NLS_LANGUAGE = ${JSON.stringify(nlsLanguage)};`,
 				`globalThis._VSCODE_FILE_ROOT = ${JSON.stringify(fileRoot)};`,
+				`globalThis._VSCODE_FILE_SERVER_URL = ${JSON.stringify(fileServerUrl || '')};`,
 				`await import(${JSON.stringify(workerUrl)});`,
 				`/*extensionHostWorker*/`
 			].join('')], { type: 'application/javascript' });

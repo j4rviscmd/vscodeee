@@ -302,6 +302,16 @@ class FileAccessImpl {
 			return RemoteAuthorities.rewrite(uri);
 		}
 
+		// On Windows Tauri, WebView2 blocks fetch() and import() for
+		// custom URI schemes. Route through the localhost HTTP file server
+		// instead.
+		if (uri.scheme === Schemas.file && platform.isWindows && platform.isTauri) {
+			const fileServerUrl = (globalThis as Record<string, unknown>)._VSCODE_FILE_SERVER_URL;
+			if (typeof fileServerUrl === 'string' && fileServerUrl) {
+				return URI.parse(`${fileServerUrl}${uri.path}`);
+			}
+		}
+
 		// Convert to `vscode-file` resource..
 		if (
 			// ...only ever for `file` resources

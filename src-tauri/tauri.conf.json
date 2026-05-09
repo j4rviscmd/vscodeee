@@ -32,7 +32,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data: blob: https: vscode-file:; script-src 'self' 'unsafe-eval' 'unsafe-inline' blob: vscode-file:; style-src 'self' 'unsafe-inline' vscode-file:; connect-src 'self' https: ws: wss: tauri: ipc: vscode-file:; font-src 'self' https: vscode-file:; frame-src 'self' vscode-file:",
+      "csp": "default-src 'self'; img-src 'self' data: blob: https: vscode-file: http://127.0.0.1:*; script-src 'self' 'unsafe-eval' 'unsafe-inline' blob: vscode-file: http://127.0.0.1:*; style-src 'self' 'unsafe-inline' vscode-file: http://127.0.0.1:*; connect-src 'self' https: ws: wss: tauri: ipc: vscode-file: http://127.0.0.1:*; font-src 'self' https: vscode-file: http://127.0.0.1:*; frame-src 'self' vscode-file: http://127.0.0.1:*; worker-src 'self' blob: vscode-file: http://127.0.0.1:*",
       "dangerousDisableAssetCspModification": true
     }
   },

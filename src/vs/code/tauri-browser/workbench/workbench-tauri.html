@@ -34,6 +34,7 @@
 			https://tauri.localhost
 			vscode-file:
 			vscode-remote-resource:
+			http://127.0.0.1:*
 		;
 		media-src
 			'self'
@@ -51,6 +52,7 @@
 			tauri:
 			https://tauri.localhost
 			vscode-file:
+			http://127.0.0.1:*
 		;
 		style-src
 			'self'
@@ -66,12 +68,20 @@
 			https://tauri.localhost
 			ipc:
 			vscode-file:
+			http://127.0.0.1:*
 		;
 		font-src
 			'self'
 			https:
 			vscode-file:
 			vscode-remote-resource:
+			http://127.0.0.1:*
+		;
+		worker-src
+			'self'
+			blob:
+			vscode-file:
+			http://127.0.0.1:*
 		;
 	"/>
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
