@@ -54,7 +54,7 @@ pub async fn run_handshake<S: AsyncRead + AsyncWrite + Unpin>(
     let mut rust_msg_id: u32 = 0;
     let mut last_exthost_msg_id: u32 = 0;
 
-    let (mut reader, mut writer) = stream.split();
+    let (mut reader, mut writer) = tokio::io::split(stream);
 
     // Step 1: Wait for Resume (may also get KeepAlive — skip non-Resume)
     // PersistentProtocol sends Resume immediately upon construction (ipc.net.ts:929-931)
