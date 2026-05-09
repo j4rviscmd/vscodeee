@@ -45,6 +45,22 @@ import { mainWindow } from '../../../../base/browser/window.js';
  */
 export class TauriHostService extends BrowserHostService {
 
+  /**
+   * Creates a new Tauri host service.
+   *
+   * @param layoutService - Service for accessing the workbench layout
+   * @param configurationService - Service for reading workspace/user configuration
+   * @param fileService - Service for file system operations
+   * @param labelService - Service for formatting URIs and resource labels
+   * @param environmentService - Service providing the browser workbench environment
+   * @param instantiationService - Service for creating instances via dependency injection
+   * @param lifecycleService - Service managing application lifecycle and shutdown
+   * @param _logService - Service for writing diagnostic log messages
+   * @param dialogService - Service for showing modal dialogs and confirmations
+   * @param _contextService - Service providing the current workspace context
+   * @param userDataProfilesService - Service managing user data profiles
+   * @param nativeHostService - Native host service providing OS-level window operations
+   */
   constructor(
     @ILayoutService layoutService: ILayoutService,
     @IConfigurationService configurationService: IConfigurationService,
@@ -55,40 +71,52 @@ export class TauriHostService extends BrowserHostService {
     @ILifecycleService lifecycleService: ILifecycleService,
     @ILogService private readonly _logService: ILogService,
     @IDialogService dialogService: IDialogService,
-    @IWorkspaceContextService contextService: IWorkspaceContextService,
+    @IWorkspaceContextService private readonly _contextService: IWorkspaceContextService,
     @IUserDataProfilesService userDataProfilesService: IUserDataProfilesService,
     @INativeHostService private readonly nativeHostService: INativeHostService,
   ) {
     super(
       layoutService, configurationService, fileService, labelService,
       environmentService, instantiationService, lifecycleService as unknown as BrowserLifecycleService,
-      _logService, dialogService, contextService, userDataProfilesService,
+      _logService, dialogService, _contextService, userDataProfilesService,
     );
   }
 
   /**
-   * Toggles the native window fullscreen state.
+   * Toggles the native window fullscreen state via the OS window manager
+   * instead of the DOM Fullscreen API.
+   *
+   * @param _targetWindow - Ignored; always operates on the native application window
    */
   override async toggleFullScreen(_targetWindow: Window): Promise<void> {
     return this.nativeHostService.toggleFullScreen();
   }
 
   /**
-   * Brings the application window to the front of the OS window stack.
+   * Brings the application window to the front of the OS window stack
+   * and restores it if minimized.
+   *
+   * @param _targetWindow - Ignored; always operates on the native application window
    */
   override async moveTop(_targetWindow: Window): Promise<void> {
     return this.nativeHostService.moveWindowTop();
   }
 
   /**
-   * Relaunches the entire application.
+   * Relaunches the entire application process (not just a WebView reload).
+   *
+   * Delegates to the native host service which spawns a new process
+   * and gracefully shuts down the current one.
    */
   override async restart(): Promise<void> {
     return this.nativeHostService.relaunch();
   }
 
   /**
-   * Reloads the window with an immediate splash overlay to prevent flicker.
+   * Reloads the workbench window.
+   *
+   * Injects a splash overlay into the DOM before performing the reload
+   * to prevent a flash of blank content between unload and reload.
    */
   override async reload(): Promise<void> {
     this.injectReloadSplash();
@@ -96,7 +124,12 @@ export class TauriHostService extends BrowserHostService {
   }
 
   /**
-   * Injects a full-screen splash overlay into the DOM.
+   * Injects a full-screen splash overlay into the DOM to mask the
+   * brief blank state that occurs during a workbench reload.
+   *
+   * The overlay reads `--vscode-editor-background` from the computed
+   * body style and renders a semi-transparent backdrop with the
+   * `<eee/>` logo and a CSS spinner animation.
    */
   private injectReloadSplash(): void {
     const doc = mainWindow.document;
@@ -148,7 +181,14 @@ export class TauriHostService extends BrowserHostService {
   }
 
   /**
-   * Returns the cursor position in screen coordinates and the display bounds.
+   * Returns the cursor position in screen coordinates and the bounds
+   * of the display containing the cursor.
+   *
+   * Delegates to the native host service. Returns `undefined` if the
+   * native API call fails (e.g., permission denied on macOS).
+   *
+   * @returns An object with the cursor {@link IPoint} and display
+   *          {@link IRectangle}, or `undefined` on failure
    */
   override async getCursorScreenPoint(): Promise<{ readonly point: IPoint; readonly display: IRectangle } | undefined> {
     try {
@@ -160,82 +200,132 @@ export class TauriHostService extends BrowserHostService {
   }
 
   /**
-   * Opens a window with special handling for remote authority.
+   * Opens a window, with special handling for remote authority URIs.
    *
-   * Defaults to reusing the current window for remote connections
-   * (matching VS Code behavior). A new window is only opened when
-   * `forceNewWindow` or `preferNewWindow` is explicitly set on the
-   * folder/workspace openable overload (e.g., Ctrl+Enter in QuickPick).
+   * For remote connections (URIs with the `vscode-remote` scheme), the
+   * default behavior is to reuse the current window by navigating to the
+   * remote URL, matching VS Code's built-in behavior. A new native window
+   * is only opened when `forceNewWindow` or `preferNewWindow` is explicitly
+   * set via the {@link IOpenWindowOptions} overload (e.g., Ctrl+Enter in
+   * the Remote Explorer QuickPick).
    *
-   * `IOpenEmptyWindowOptions` has no `forceNewWindow`, so the empty
-   * window path always reuses. The "new window" intent goes through
-   * the folder/workspace openable overload with `IOpenWindowOptions`.
+   * The {@link IOpenEmptyWindowOptions} overload has no `forceNewWindow`
+   * flag, so the empty-window path always reuses the current window.
+   *
+   * @param options - Options for opening an empty window
+   * @param toOpen - Array of folder, workspace, or file openables
+   * @param options - Options controlling how the openables are displayed
    */
   override openWindow(options?: IOpenEmptyWindowOptions): Promise<void>;
   override openWindow(toOpen: IWindowOpenable[], options?: IOpenWindowOptions): Promise<void>;
   override async openWindow(arg1?: IOpenEmptyWindowOptions | IWindowOpenable[], arg2?: IOpenWindowOptions): Promise<void> {
-    // Empty window with remoteAuthority -- Remote-SSH uses this path.
-    // IOpenEmptyWindowOptions has no forceNewWindow, so we always reuse.
-    if (!Array.isArray(arg1)) {
-      const emptyOptions = arg1 as IOpenEmptyWindowOptions | undefined;
-      if (emptyOptions?.remoteAuthority) {
-        await this.openRemoteInCurrentWindow(emptyOptions.remoteAuthority);
-        return;
-      }
-    }
-
-    // Folder/workspace openables with vscode-remote:// URIs
-    if (Array.isArray(arg1) && arg1.length > 0) {
-      const openable = arg1[0];
-      let remoteAuthority: string | undefined;
-      let folderUri: string | undefined;
-      let workspaceUri: string | undefined;
-
-      if (isFolderToOpen(openable)) {
-        folderUri = openable.folderUri.toString();
-        if (openable.folderUri.scheme === Schemas.vscodeRemote) {
-          remoteAuthority = openable.folderUri.authority;
-        }
-      } else if (isWorkspaceToOpen(openable)) {
-        workspaceUri = openable.workspaceUri.toString();
-        if (openable.workspaceUri.scheme === Schemas.vscodeRemote) {
-          remoteAuthority = openable.workspaceUri.authority;
-        }
-      }
-
-      if (remoteAuthority) {
-        const forceNew = (arg2?.forceNewWindow || arg2?.preferNewWindow) && !arg2?.forceReuseWindow;
-        if (!forceNew) {
-          await this.openRemoteInCurrentWindow(remoteAuthority, folderUri, workspaceUri);
-        } else {
-          try {
-            await invoke('open_new_window', {
-              options: {
-                folderUri,
-                workspaceUri,
-                remoteAuthority,
-                forceNewWindow: true,
-              },
-            });
-          } catch (err) {
-            this._logService.error('[TauriHostService] Failed to open remote folder/workspace window:', err);
-          }
-        }
-        return;
-      }
-    }
-
-    // Fall back to browser implementation for local windows
+    // --- Array path: folder/workspace openables ---
     if (Array.isArray(arg1)) {
+      if (arg1.length > 0) {
+        // Guard: skip if the openable is already the current workspace
+        if (this.isOpenableCurrentWorkspace(arg1[0])) {
+          return;
+        }
+
+        // Remote authority extraction
+        const openable = arg1[0];
+        const extracted = this.extractRemoteAuthority(openable);
+
+        if (extracted.remoteAuthority) {
+          await this.openRemoteWindow(extracted.remoteAuthority, extracted.folderUri, extracted.workspaceUri, arg2);
+          return;
+        }
+      }
+
+      // Fall back to browser implementation for local windows
       return super.openWindow(arg1, arg2);
     }
+
+    // --- Non-array path: empty window options ---
+    // IOpenEmptyWindowOptions has no forceNewWindow, so we always reuse.
+    if (arg1?.remoteAuthority) {
+      await this.openRemoteInCurrentWindow(arg1.remoteAuthority);
+      return;
+    }
+
     return super.openWindow(arg1);
   }
 
   /**
-   * Opens a remote connection in the current window by navigating to a new URL.
+   * Extracts the remote authority and relevant URI strings from a window openable.
    *
-   * Signals an expected shutdown (LOAD) so state is flushed before navigation.
+   * If the openable's URI uses the `vscode-remote` scheme, the authority
+   * (e.g., `ssh-remote+host`) is extracted; otherwise `remoteAuthority` is
+   * `undefined`. Exactly one of `folderUri` or `workspaceUri` is populated
+   * depending on the openable type.
+   *
+   * @param openable - The window openable to inspect
+   * @returns An object containing the remote authority and the
+   *          stringified folder or workspace URI
+   */
+  private extractRemoteAuthority(openable: IWindowOpenable): { remoteAuthority: string | undefined; folderUri: string | undefined; workspaceUri: string | undefined } {
+    if (isFolderToOpen(openable)) {
+      return {
+        remoteAuthority: openable.folderUri.scheme === Schemas.vscodeRemote ? openable.folderUri.authority : undefined,
+        folderUri: openable.folderUri.toString(),
+        workspaceUri: undefined,
+      };
+    }
+    if (isWorkspaceToOpen(openable)) {
+      return {
+        remoteAuthority: openable.workspaceUri.scheme === Schemas.vscodeRemote ? openable.workspaceUri.authority : undefined,
+        folderUri: undefined,
+        workspaceUri: openable.workspaceUri.toString(),
+      };
+    }
+    return { remoteAuthority: undefined, folderUri: undefined, workspaceUri: undefined };
+  }
+
+  /**
+   * Opens a remote folder or workspace, either in the current window or
+   * in a new native window depending on the caller's options.
+   *
+   * When `forceNewWindow` or `preferNewWindow` is set (and not overridden
+   * by `forceReuseWindow`), the Tauri `open_new_window` command is invoked
+   * to create a new native window. Otherwise, the connection is opened in
+   * the current window via navigation.
+   *
+   * @param remoteAuthority - The remote connection authority (e.g., `ssh-remote+host`)
+   * @param folderUri - Stringified folder URI to open, if applicable
+   * @param workspaceUri - Stringified workspace URI to open, if applicable
+   * @param options - Window open options that may request a new window
+   */
+  private async openRemoteWindow(remoteAuthority: string, folderUri: string | undefined, workspaceUri: string | undefined, options?: IOpenWindowOptions): Promise<void> {
+    const forceNew = (options?.forceNewWindow || options?.preferNewWindow) && !options?.forceReuseWindow;
+    if (!forceNew) {
+      await this.openRemoteInCurrentWindow(remoteAuthority, folderUri, workspaceUri);
+    } else {
+      try {
+        await invoke('open_new_window', {
+          options: {
+            folderUri,
+            workspaceUri,
+            remoteAuthority,
+            forceNewWindow: true,
+          },
+        });
+      } catch (err) {
+        this._logService.error('[TauriHostService] Failed to open remote folder/workspace window:', err);
+      }
+    }
+  }
+
+  /**
+   * Opens a remote connection in the current window by navigating to
+   * the remote workbench URL.
+   *
+   * Before navigation, signals an expected shutdown with reason
+   * {@link ShutdownReason.LOAD} so that the lifecycle service flushes
+   * persisted state (e.g., storage, dirty editors).
+   *
+   * @param remoteAuthority - The remote connection authority
+   * @param folderUri - Optional stringified folder URI to pass as a query parameter
+   * @param workspaceUri - Optional stringified workspace URI to pass as a query parameter
    */
   private async openRemoteInCurrentWindow(remoteAuthority: string, folderUri?: string, workspaceUri?: string): Promise<void> {
     const targetUrl = this.buildRemoteUrl(remoteAuthority, folderUri, workspaceUri);
@@ -244,7 +334,41 @@ export class TauriHostService extends BrowserHostService {
   }
 
   /**
-   * Builds the workbench URL for a remote connection.
+   * Checks whether the given openable refers to the same workspace
+   * that is currently open.
+   *
+   * For folders, matches when the workspace has exactly one folder and
+   * its URI equals the openable's folder URI. For workspaces, matches
+   * when the current workspace configuration URI equals the openable's
+   * workspace URI.
+   *
+   * @param openable - The window openable to compare against the current workspace
+   * @returns `true` if the openable is already the active workspace
+   */
+  private isOpenableCurrentWorkspace(openable: IWindowOpenable): boolean {
+    const workspace = this._contextService.getWorkspace();
+    if (isFolderToOpen(openable)) {
+      return workspace.folders.length === 1
+        && !workspace.configuration
+        && workspace.folders[0].uri.toString() === openable.folderUri.toString();
+    }
+    if (isWorkspaceToOpen(openable)) {
+      return !!workspace.configuration
+        && workspace.configuration.toString() === openable.workspaceUri.toString();
+    }
+    return false;
+  }
+
+  /**
+   * Builds the workbench URL for opening a remote connection.
+   *
+   * Preserves the current origin and pathname, then appends `folder`
+   * or `workspace` and `remoteAuthority` as query parameters.
+   *
+   * @param remoteAuthority - The remote connection authority to include
+   * @param folderUri - Optional folder URI to pass as the `folder` query param
+   * @param workspaceUri - Optional workspace URI to pass as the `workspace` query param
+   * @returns The fully qualified URL string for the remote workbench
    */
   private buildRemoteUrl(remoteAuthority: string, folderUri?: string, workspaceUri?: string): string {
     const base = `${mainWindow.location.origin}${mainWindow.location.pathname}`;
