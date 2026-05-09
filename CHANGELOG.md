@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-05-10
+
+### Added
+
+- Add Windows named pipe support for Extension Host sidecar (#488)
+
+### Fixed
+
+- Use TCP sockets for Windows ExtHost IPC and disable WebWorker host (#499)
+- Prevent loading hang when reopening current workspace from QuickOpen (#497)
+- Strip Windows UNC path prefix for Bun compatibility (#494)
+- Reuse current window for SSH connections instead of opening new one
+- Replace Bun.plugin() with file patching for ESM node:* imports on Windows (#493)
+- Sanitize ESM singleton module directory names for Windows compatibility (#491)
+- Add localhost HTTP file server for Windows WebView2 compatibility (#489)
+- Show window controls on Windows Tauri when command center disabled
+
+### Changed
+
+- Sync README.ja.md changes to README.md (#487)
+
 ## [0.21.1] - 2026-05-08
 
 ### Fixed
