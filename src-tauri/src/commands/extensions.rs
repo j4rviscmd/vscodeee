@@ -84,21 +84,25 @@ fn resolve_extensions_dir(app_handle: &tauri::AppHandle) -> Option<PathBuf> {
 
     // Fall back to resource directory for built apps.
     // Tauri maps `../.build/extensions` (from bundle.resources) to `_up_/.build/extensions`.
+    //
+    // On Windows, `resource_dir()` may return a path with the `\\?\` extended-length
+    // prefix. This prefix breaks Bun's `require()` in the Extension Host, so we
+    // canonicalize with `dunce` to strip it — consistent with the CWD-based paths above.
     if let Ok(rd) = app_handle.path().resource_dir() {
         // Primary: packaged extensions in .build/extensions
         let packaged = rd.join("_up_/.build/extensions");
         if packaged.is_dir() {
-            return Some(packaged);
+            return Some(dunce::canonicalize(&packaged).unwrap_or(packaged));
         }
         // Legacy: direct extensions path (from older bundle.resources config)
         let up_dir = rd.join("_up_/extensions");
         if up_dir.is_dir() {
-            return Some(up_dir);
+            return Some(dunce::canonicalize(&up_dir).unwrap_or(up_dir));
         }
         // Also check direct path in case bundled differently
         let direct = rd.join("extensions");
         if direct.is_dir() {
-            return Some(direct);
+            return Some(dunce::canonicalize(&direct).unwrap_or(direct));
         }
     }
 

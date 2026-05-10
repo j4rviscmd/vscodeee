@@ -24,6 +24,7 @@ import { IHostUtils } from '../common/extHostExtensionService.js';
 import { createURITransformer } from '../../../base/common/uriTransformer.js';
 import { ExtHostConnectionType, readExtHostConnection } from '../../services/extensions/common/extensionHostEnv.js';
 import { ExtensionHostExitCode, IExtHostReadyMessage, IExtHostReduceGraceTimeMessage, IExtHostSocketMessage, IExtensionHostInitData, MessageType, createMessageOfType, isMessageOfType } from '../../services/extensions/common/extensionHostProtocol.js';
+import { isWsServerMode, startWsServer } from './exthostWsServer.js';
 import { IDisposable } from '../../../base/common/lifecycle.js';
 import '../common/extHost.common.services.js';
 import './extHost.node.services.js';
@@ -185,6 +186,19 @@ function readReconnectionValue(envKey: string, fallback: number): number {
 }
 
 function _createExtHostProtocol(): Promise<IMessagePassingProtocol> {
+
+	// --- Tauri: Direct WebSocket server mode ---
+	// When VSCODEEE_EXTHOST_WS_PORT is set, the ExtHost starts a Bun.serve()
+	// WebSocket server instead of connecting outbound via IPC pipe.
+	// The WebView connects directly — no Rust relay needed.
+	if (isWsServerMode()) {
+		return startWsServer().then(socket => {
+			const protocol = new PersistentProtocol({ socket, initialChunk: null });
+			protocol.sendResume();
+			return protocol;
+		});
+	}
+
 	const extHostConnection = readExtHostConnection(process.env);
 
 	if (extHostConnection.type === ExtHostConnectionType.MessagePort) {

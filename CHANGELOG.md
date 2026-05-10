@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.2] - 2026-05-10
+
+### Fixed
+
+- Resolve TDZ error and hostname typo in ExtHost WebSocket server (#515)
+- Strip UNC path prefix from resource_dir extensions path for Bun compatibility
+
+### Changed
+
+- Replace Rust WebSocket relay with direct Bun WS server for ExtHost IPC (#513)
+- Cache product.json augmentation to skip redundant I/O on ExtHost spawn (#512)
+- Move ExtHost initialization to LifecyclePhase.Starting (#511)
+
 ## [0.22.1] - 2026-05-10
 
 ### Fixed
