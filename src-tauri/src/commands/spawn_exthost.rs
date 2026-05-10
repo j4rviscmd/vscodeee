@@ -372,9 +372,7 @@ pub async fn spawn_extension_host(
     #[cfg(not(unix))]
     {
         let _ = app_handle;
-        Err(
-            "Extension Host sidecar is only supported on Unix (macOS/Linux) in the PoC.".into(),
-        )
+        Err("Extension Host sidecar is only supported on Unix (macOS/Linux) in the PoC.".into())
     }
 
     #[cfg(unix)]
