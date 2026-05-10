@@ -24,6 +24,7 @@
 
 import { DeferredPromise } from '../../../../base/common/async.js';
 import { Emitter } from '../../../../base/common/event.js';
+import { Codicon } from '../../../../base/common/codicons.js';
 import { OperatingSystem, type IProcessEnvironment } from '../../../../base/common/platform.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { ICrossVersionSerializedTerminalState, ITerminalBackend, ITerminalBackendRegistry, ITerminalChildProcess, ITerminalLogService, ITerminalProcessOptions, ITerminalProfile, ITerminalsLayoutInfo, ITerminalsLayoutInfoById, ProcessPropertyType, TerminalExtensions, TerminalIcon, TitleEventSource, type IPtyHostLatencyMeasurement, type IProcessPropertyMap, type IShellLaunchConfig } from '../../../../platform/terminal/common/terminal.js';
@@ -57,6 +58,8 @@ interface RustDetectedShell {
   profileName: string;
   path: string;
   isDefault: boolean;
+  isAutoDetected: boolean;
+  args?: string[];
 }
 
 /**
@@ -83,7 +86,7 @@ export class TauriTerminalBackendContribution implements IWorkbenchContribution 
   }
 }
 
-// Counter for assigning unique terminal child process IDs
+/** Monotonically increasing counter for assigning unique terminal child process IDs. */
 let nextTerminalId = 1;
 
 /**
@@ -193,13 +196,10 @@ class TauriTerminalBackend extends BaseTerminalBackend implements ITerminalBacke
     // If TMUX/TMUX_PANE are forwarded, the shell's .zshrc/.bashrc
     // believes it is already inside a tmux session and skips interactive
     // session pickers (e.g., fzf-based tmux session selectors).
-    const envBlocklist = new Set([
-      'TMUX',
-      'TMUX_PANE',
-    ]);
+    const envBlocklist = new Set(['TMUX', 'TMUX_PANE']);
 
     for (const [key, value] of Object.entries(env)) {
-      if (value !== undefined && value !== null && !envBlocklist.has(key)) {
+      if (value != null && !envBlocklist.has(key)) {
         terminalEnv[key] = value;
       }
     }
@@ -301,8 +301,7 @@ class TauriTerminalBackend extends BaseTerminalBackend implements ITerminalBacke
 	 */
   async getDefaultSystemShell(_osOverride?: OperatingSystem): Promise<string> {
     try {
-      const shell = await tauriInvoke<string>('get_default_shell');
-      return shell;
+      return await tauriInvoke<string>('get_default_shell');
     } catch {
       // Fallback: try to determine from platform
       return '/bin/zsh'; // macOS default
@@ -324,17 +323,41 @@ class TauriTerminalBackend extends BaseTerminalBackend implements ITerminalBacke
   async getProfiles(_profiles: unknown, _defaultProfile: unknown, _includeDetectedProfiles?: boolean): Promise<ITerminalProfile[]> {
     try {
       const shells = await tauriInvoke<RustDetectedShell[]>('detect_shells');
-      return shells.map(s => ({
+      const profiles: ITerminalProfile[] = shells.map(s => ({
         profileName: s.profileName,
         path: s.path,
         isDefault: s.isDefault,
+        isAutoDetected: s.isAutoDetected,
+        args: s.args,
+        icon: getProfileIcon(s.profileName),
       }));
+
+      // Merge with config profiles: profiles that exist in both config and detected
+      // should NOT be marked as auto-detected, so getDefaultProfile() can find them.
+      // This mirrors Electron's applyConfigProfilesToMap behavior.
+      const configProfiles = _profiles as Record<string, unknown> | undefined;
+      if (configProfiles && typeof configProfiles === 'object') {
+        return profiles.filter(profile => {
+          if (!(profile.profileName in configProfiles)) {
+            return true;
+          }
+          // User explicitly disabled this profile
+          if (configProfiles[profile.profileName] === null) {
+            return false;
+          }
+          // Profile exists in user config — mark as non-auto-detected
+          delete (profile as unknown as Record<string, unknown>).isAutoDetected;
+          return true;
+        });
+      }
+
+      return profiles;
     } catch (e) {
       this._logService.error('TauriTerminalBackend#getProfiles failed', e instanceof Error ? e.message : String(e));
       // Fallback: return default shell only
       try {
         const defaultShell = await this.getDefaultSystemShell();
-        const shellName = defaultShell.split('/').pop() ?? 'shell';
+        const shellName = defaultShell.split(/[/\\]/).pop() ?? 'shell';
         return [{
           profileName: shellName,
           path: defaultShell,
@@ -634,5 +657,40 @@ class TauriTerminalBackend extends BaseTerminalBackend implements ITerminalBacke
   }
 }
 
-// Register the TauriTerminalBackendContribution as a workbench contribution
+// Register the TauriTerminalBackendContribution as a workbench contribution.
+// WorkbenchPhase.AfterRestored ensures the terminal backend is registered only
+// after the workbench has fully restored its state, so that any persisted
+// terminal layout can be applied during restoration.
 registerWorkbenchContribution2(TauriTerminalBackendContribution.ID, TauriTerminalBackendContribution, WorkbenchPhase.AfterRestored);
+
+/**
+ * Maps well-known shell profile names to their corresponding codicon identifiers.
+ *
+ * Used by [`getProfileIcon`] to assign visual icons in the terminal profiles
+ * dropdown. Entries should cover all profiles that [`detect_shells`] may return
+ * on any supported platform.
+ */
+const profileIconMap = new Map<string, TerminalIcon>([
+  ['PowerShell', Codicon.terminalPowershell],
+  ['Windows PowerShell', Codicon.terminalPowershell],
+  ['Command Prompt', Codicon.terminalCmd],
+  ['Git Bash', Codicon.terminalGitBash],
+  ['WSL', Codicon.terminalLinux],
+  ['bash', Codicon.terminalBash],
+  ['zsh', Codicon.terminalBash],
+  ['fish', Codicon.terminalBash],
+]);
+
+/**
+ * Resolve the codicon for a given shell profile name.
+ *
+ * Looks up the profile name in {@link profileIconMap}. Returns `undefined`
+ * when the profile name is not recognised, in which case the terminal UI
+ * will fall back to a default icon.
+ *
+ * @param profileName - The shell profile name (e.g. `"PowerShell"`, `"bash"`)
+ * @returns The matching {@link TerminalIcon}, or `undefined` if not found
+ */
+function getProfileIcon(profileName: string): TerminalIcon | undefined {
+  return profileIconMap.get(profileName);
+}
