@@ -7,9 +7,6 @@
 
 use super::error::NativeHostError;
 
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-
 // ─── Existing commands (moved from native_host.rs) ──────────────────────
 
 /// Read text from the system clipboard.
@@ -19,10 +16,7 @@ use std::os::windows::process::CommandExt;
 #[tauri::command]
 pub fn read_clipboard_text(app: tauri::AppHandle) -> Result<String, NativeHostError> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
-    match app.clipboard().read_text() {
-        Ok(text) => Ok(text),
-        Err(_) => Ok(String::new()),
-    }
+    Ok(app.clipboard().read_text().unwrap_or_default())
 }
 
 /// Write text to the system clipboard.
@@ -75,10 +69,7 @@ pub fn read_clipboard_buffer(
 #[tauri::command]
 pub fn has_clipboard(app: tauri::AppHandle, _format: String) -> Result<bool, NativeHostError> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
-    match app.clipboard().read_text() {
-        Ok(text) => Ok(!text.is_empty()),
-        Err(_) => Ok(false),
-    }
+    Ok(app.clipboard().read_text().map_or(false, |t| !t.is_empty()))
 }
 
 /// Read the macOS "Find" pasteboard text.
@@ -124,12 +115,12 @@ pub fn read_clipboard_image(app: tauri::AppHandle) -> Result<String, NativeHostE
     use tauri_plugin_clipboard_manager::ClipboardExt;
     match app.clipboard().read_image() {
         Ok(image_data) => {
-            let width = image_data.width();
-            let height = image_data.height();
-            let rgba_bytes = image_data.rgba().to_vec();
-
-            let img_buffer = image::RgbaImage::from_raw(width, height, rgba_bytes)
-                .ok_or_else(|| NativeHostError::Other("Invalid image dimensions".to_string()))?;
+            let img_buffer = image::RgbaImage::from_raw(
+                image_data.width(),
+                image_data.height(),
+                image_data.rgba().to_vec(),
+            )
+            .ok_or_else(|| NativeHostError::Other("Invalid image dimensions".to_string()))?;
 
             let mut png_bytes = Vec::new();
             img_buffer
@@ -152,17 +143,14 @@ pub fn read_clipboard_image(app: tauri::AppHandle) -> Result<String, NativeHostE
 #[tauri::command]
 pub fn has_clipboard_image(app: tauri::AppHandle) -> Result<bool, NativeHostError> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
-    match app.clipboard().read_image() {
-        Ok(_) => Ok(true),
-        Err(_) => Ok(false),
-    }
+    Ok(app.clipboard().read_image().is_ok())
 }
 
 /// Trigger a paste operation by synthesizing Cmd+V / Ctrl+V.
 ///
 /// This is security-sensitive — it simulates keyboard input.
-/// - macOS: Uses CGEvent API
-/// - Windows: Uses SendInput API
+/// - macOS: Uses AppleScript via System Events
+/// - Windows: Uses SendInput API (no external process)
 /// - Linux: Uses xdotool (if available)
 #[tauri::command]
 pub async fn trigger_paste() -> Result<(), NativeHostError> {
@@ -249,28 +237,75 @@ fn macos_trigger_paste() -> Result<(), NativeHostError> {
     Ok(())
 }
 
-/// Simulate a paste (Ctrl+V) on Windows via PowerShell's `SendKeys`.
+/// Simulate a paste (Ctrl+V) on Windows via the Win32 `SendInput` API.
 ///
-/// Uses `System.Windows.Forms.SendKeys::SendWait('^v')` to synthesize a
-/// Ctrl+V keystroke in the currently focused window. The PowerShell process
-/// is spawned with `CREATE_NO_WINDOW` to avoid a visible console window.
+/// Synthesizes Ctrl key down → V key down → V key up → Ctrl key up using
+/// the native `SendInput` function from `user32.dll`. This triggers the
+/// browser's paste pipeline in the focused WebView2 window without spawning
+/// any external processes.
 #[cfg(target_os = "windows")]
 fn windows_trigger_paste() -> Result<(), NativeHostError> {
-    // Use PowerShell to send Ctrl+V
-    let output = std::process::Command::new("powershell")
-        .args([
-            "-Command",
-            "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v')",
-        ])
-        .creation_flags(0x08000000) // CREATE_NO_WINDOW
-        .output()
-        .map_err(|e| NativeHostError::Other(format!("Failed to trigger paste: {e}")))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(NativeHostError::Other(format!(
-            "Failed to trigger paste: {stderr}"
-        )));
+    const INPUT_KEYBOARD: u32 = 1;
+    const KEYEVENTF_KEYUP: u32 = 0x0002;
+    const VK_CONTROL: u16 = 0x11;
+    const VK_V: u16 = 0x56;
+
+    /// Win32 `KEYBDINPUT` structure — describes a simulated keyboard event.
+    #[repr(C)]
+    struct KeybdInput {
+        w_vk: u16,
+        w_scan: u16,
+        dw_flags: u32,
+        time: u32,
+        dw_extra_info: usize,
     }
+
+    /// Win32 `INPUT` structure for keyboard events.
+    ///
+    /// `MOUSEINPUT` (the largest union member) is 8 bytes larger than
+    /// `KEYBDINPUT` on both 32-bit and 64-bit Windows. This padding ensures
+    /// the struct matches the Win32 `INPUT` layout when passed to `SendInput`.
+    #[repr(C)]
+    struct Input {
+        type_: u32,
+        ki: KeybdInput,
+        _padding: [u8; 8],
+    }
+
+    extern "system" {
+        /// Win32 `SendInput` — sends a sequence of simulated input events.
+        fn SendInput(c_inputs: u32, p_inputs: *const Input, cb_size: i32) -> u32;
+    }
+
+    /// Create a key-down input event for the given virtual-key code.
+    let key_down = |vk: u16| Input {
+        type_: INPUT_KEYBOARD,
+        ki: KeybdInput { w_vk: vk, w_scan: 0, dw_flags: 0, time: 0, dw_extra_info: 0 },
+        _padding: [0; 8],
+    };
+    /// Create a key-up input event for the given virtual-key code.
+    let key_up = |vk: u16| Input {
+        type_: INPUT_KEYBOARD,
+        ki: KeybdInput { w_vk: vk, w_scan: 0, dw_flags: KEYEVENTF_KEYUP, time: 0, dw_extra_info: 0 },
+        _padding: [0; 8],
+    };
+
+    let inputs = [
+        key_down(VK_CONTROL),
+        key_down(VK_V),
+        key_up(VK_V),
+        key_up(VK_CONTROL),
+    ];
+
+    unsafe {
+        let sent = SendInput(4, inputs.as_ptr(), std::mem::size_of::<Input>() as i32);
+        if sent == 0 {
+            return Err(NativeHostError::Other(
+                "Failed to trigger paste: SendInput returned 0".to_string(),
+            ));
+        }
+    }
+
     Ok(())
 }
 

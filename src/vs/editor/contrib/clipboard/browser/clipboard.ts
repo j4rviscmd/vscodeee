@@ -33,18 +33,25 @@ const supportsCopy = (platform.isNative || document.queryCommandSupported('copy'
 // When loading over http, navigator.clipboard can be undefined. See https://github.com/microsoft/monaco-editor/issues/2313
 const supportsPaste = (typeof navigator.clipboard === 'undefined' || browser.isFirefox) ? document.queryCommandSupported('paste') : true;
 
+/**
+ * Register an editor command and return it for further chaining.
+ *
+ * @param command - The command instance to register.
+ * @returns The same command instance, after registration.
+ */
 function registerCommand<T extends Command>(command: T): T {
 	command.register();
 	return command;
 }
 
+/** Multi-command for the Cut operation. Registered only when the platform supports `cut`. */
 export const CutAction = supportsCut ? registerCommand(new MultiCommand({
 	id: 'editor.action.clipboardCutAction',
 	precondition: undefined,
 	kbOpts: (
 		// Do not bind cut keybindings in the browser,
 		// since browsers do that for us and it avoids security prompts
-		platform.isNative ? {
+		(platform.isNative || platform.isTauri) ? {
 			primary: KeyMod.CtrlCmd | KeyCode.KeyX,
 			win: { primary: KeyMod.CtrlCmd | KeyCode.KeyX, secondary: [KeyMod.Shift | KeyCode.Delete] },
 			weight: KeybindingWeight.EditorContrib
@@ -75,13 +82,14 @@ export const CutAction = supportsCut ? registerCommand(new MultiCommand({
 	}]
 })) : undefined;
 
+/** Multi-command for the Copy operation. Registered only when the platform supports `copy`. */
 export const CopyAction = supportsCopy ? registerCommand(new MultiCommand({
 	id: 'editor.action.clipboardCopyAction',
 	precondition: undefined,
 	kbOpts: (
 		// Do not bind copy keybindings in the browser,
 		// since browsers do that for us and it avoids security prompts
-		platform.isNative ? {
+		(platform.isNative || platform.isTauri) ? {
 			primary: KeyMod.CtrlCmd | KeyCode.KeyC,
 			win: { primary: KeyMod.CtrlCmd | KeyCode.KeyC, secondary: [KeyMod.CtrlCmd | KeyCode.Insert] },
 			weight: KeybindingWeight.EditorContrib
@@ -115,13 +123,14 @@ MenuRegistry.appendMenuItem(MenuId.EditorContext, { submenu: MenuId.EditorContex
 MenuRegistry.appendMenuItem(MenuId.EditorContext, { submenu: MenuId.EditorContextShare, title: nls.localize2('share', "Share"), group: '11_share', order: -1, when: ContextKeyExpr.and(ContextKeyExpr.notEquals('resourceScheme', 'output'), EditorContextKeys.editorTextFocus) });
 MenuRegistry.appendMenuItem(MenuId.ExplorerContext, { submenu: MenuId.ExplorerContextShare, title: nls.localize2('share', "Share"), group: '11_share', order: -1 });
 
+/** Multi-command for the Paste operation. Registered only when the platform supports `paste`. */
 export const PasteAction = supportsPaste ? registerCommand(new MultiCommand({
 	id: 'editor.action.clipboardPasteAction',
 	precondition: undefined,
 	kbOpts: (
 		// Do not bind paste keybindings in the browser,
 		// since browsers do that for us and it avoids security prompts
-		platform.isNative ? {
+		(platform.isNative || platform.isTauri) ? {
 			primary: KeyMod.CtrlCmd | KeyCode.KeyV,
 			win: { primary: KeyMod.CtrlCmd | KeyCode.KeyV, secondary: [KeyMod.Shift | KeyCode.Insert] },
 			linux: { primary: KeyMod.CtrlCmd | KeyCode.KeyV, secondary: [KeyMod.Shift | KeyCode.Insert] },
@@ -153,6 +162,16 @@ export const PasteAction = supportsPaste ? registerCommand(new MultiCommand({
 	}]
 })) : undefined;
 
+/**
+ * Editor action that copies the current selection to the clipboard with
+ * syntax highlighting preserved (rich text / HTML).
+ *
+ * Sets {@link CopyOptions.forceCopyWithSyntaxHighlighting} to `true` before
+ * invoking the clipboard copy so that the EditContext layer formats the
+ * copied text as HTML instead of plain text. On native platforms a fallback
+ * path writes plain-text data if the `execCommand('copy')` event never fires
+ * (known Electron/Tauri race condition).
+ */
 class ExecCommandCopyWithSyntaxHighlightingAction extends EditorAction {
 
 	constructor() {
@@ -191,6 +210,18 @@ class ExecCommandCopyWithSyntaxHighlightingAction extends EditorAction {
 	}
 }
 
+/**
+ * Execute a clipboard copy with a workaround for a known race condition
+ * where `document.execCommand('copy')` does not fire the `copy` event.
+ *
+ * If the copy event never fires (detected via
+ * {@link CopyOptions.electronBugWorkaroundCopyEventHasFired}), the method
+ * falls back to writing plain-text content directly through the clipboard
+ * service, bypassing the browser's clipboard pipeline.
+ *
+ * @param editor - The active code editor whose selection should be copied.
+ * @param clipboardService - The clipboard service used as a fallback write path.
+ */
 function executeClipboardCopyWithWorkaround(editor: IActiveCodeEditor, clipboardService: IClipboardService) {
 	// !!!!!
 	// This is a workaround for what we think is an Electron bug where
@@ -208,6 +239,21 @@ function executeClipboardCopyWithWorkaround(editor: IActiveCodeEditor, clipboard
 	}
 }
 
+/**
+ * Register two implementations on a cut/copy multi-command:
+ *
+ * 1. **code-editor** (priority 10000) — handles the case where a code editor
+ *    has text focus. Executes `execCommand('cut'|'copy')` on the editor's DOM
+ *    node, with a special case for Edit Context mode where `cut` is performed
+ *    by first copying via `execCommand('copy')` then triggering the editor's
+ *    `Handler.Cut` to remove the selection.
+ * 2. **generic-dom** (priority 0) — fallback that calls `execCommand` on the
+ *    active document for any other focused element.
+ *
+ * @param target - The multi-command to register implementations on, or `undefined`
+ *                 if the platform does not support the command (no-op).
+ * @param browserCommand - The `document.execCommand` identifier: `'cut'` or `'copy'`.
+ */
 function registerExecCommandImpl(target: MultiCommand | undefined, browserCommand: 'cut' | 'copy'): void {
 	if (!target) {
 		return;
@@ -261,6 +307,14 @@ function registerExecCommandImpl(target: MultiCommand | undefined, browserComman
 	});
 }
 
+/**
+ * Notify the native Edit Context layer that a copy operation is about to occur,
+ * so it can prepare the clipboard data (e.g. HTML with syntax highlighting).
+ *
+ * No-op when Edit Context is disabled for the given editor.
+ *
+ * @param editor - The code editor that is about to execute a copy.
+ */
 function logCopyCommand(editor: ICodeEditor) {
 	const editContextEnabled = editor.getOption(EditorOption.effectiveEditContext);
 	if (editContextEnabled) {
@@ -305,8 +359,8 @@ if (PasteAction) {
 			} else {
 				logService.trace('registerExecCommandImpl (triggerPaste undefined)');
 			}
-			if (platform.isWeb) {
-				logService.trace('registerExecCommandImpl (Paste handling on web)');
+			if (platform.isWeb || platform.isTauri) {
+				logService.trace('registerExecCommandImpl (Paste handling on web/tauri)');
 				// Use the clipboard service if document.execCommand('paste') was not successful
 				return (async () => {
 					const clipboardText = await clipboardService.readText();
@@ -339,6 +393,28 @@ if (PasteAction) {
 	PasteAction.addImplementation(0, 'generic-dom', (accessor: ServicesAccessor, args: unknown) => {
 		const logService = accessor.get(ILogService);
 		logService.trace('registerExecCommandImpl (addImplementation generic-dom for : paste)');
+		if (platform.isTauri) {
+			// The PasteAction keybinding intercepts Ctrl+V before it reaches the
+			// browser, so the native paste event never fires on non-editor elements
+			// (e.g. xterm.js terminal). Read the clipboard directly and dispatch a
+			// synthetic paste event so that listeners like xterm.js can process it.
+			const clipboardService = accessor.get(IClipboardService);
+			return (async () => {
+				const text = await clipboardService.readText();
+				if (text) {
+					const target = getActiveDocument().activeElement;
+					if (target) {
+						const dt = new DataTransfer();
+						dt.setData('text/plain', text);
+						target.dispatchEvent(new ClipboardEvent('paste', {
+							clipboardData: dt,
+							bubbles: true,
+							cancelable: true,
+						}));
+					}
+				}
+			})();
+		}
 		const triggerPaste = accessor.get(IClipboardService).triggerPaste(getActiveWindow().vscodeWindowId);
 		return triggerPaste ?? false;
 	});
