@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.1] - 2026-05-10
+
+### Fixed
+
+- Prevent console window from appearing on Windows release builds (#503)
+- Detect Windows shell profiles with absolute paths and support default profile selection
+
 ## [0.22.0] - 2026-05-10
 
 ### Added
