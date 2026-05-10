@@ -7,6 +7,9 @@
 
 use super::error::NativeHostError;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 // ─── Existing commands (moved from native_host.rs) ──────────────────────
 
 /// Read text from the system clipboard.
@@ -179,6 +182,10 @@ pub async fn trigger_paste() -> Result<(), NativeHostError> {
 
 // ─── Platform-specific helpers ──────────────────────────────────────────
 
+/// Read text from the macOS "Find" pasteboard using `pbpaste -pboard find`.
+///
+/// Returns `Some(text)` if the pasteboard contains text, `None` on failure
+/// or if the pasteboard is empty.
 #[cfg(target_os = "macos")]
 fn macos_read_find_pasteboard() -> Option<String> {
     use std::process::Command;
@@ -193,6 +200,10 @@ fn macos_read_find_pasteboard() -> Option<String> {
     }
 }
 
+/// Write text to the macOS "Find" pasteboard using `pbcopy -pboard find`.
+///
+/// Pipes the given `text` to `pbcopy` via stdin so that the "Find" pasteboard
+/// is updated with the new search string.
 #[cfg(target_os = "macos")]
 fn macos_write_find_pasteboard(text: &str) -> Result<(), NativeHostError> {
     use std::io::Write;
@@ -215,6 +226,11 @@ fn macos_write_find_pasteboard(text: &str) -> Result<(), NativeHostError> {
     Ok(())
 }
 
+/// Simulate a paste (Cmd+V) on macOS via AppleScript.
+///
+/// Uses `osascript` to ask System Events to keystroke "v" with the command
+/// modifier held down. This triggers a native paste in whichever application
+/// currently has focus.
 #[cfg(target_os = "macos")]
 fn macos_trigger_paste() -> Result<(), NativeHostError> {
     use std::process::Command;
@@ -233,6 +249,11 @@ fn macos_trigger_paste() -> Result<(), NativeHostError> {
     Ok(())
 }
 
+/// Simulate a paste (Ctrl+V) on Windows via PowerShell's `SendKeys`.
+///
+/// Uses `System.Windows.Forms.SendKeys::SendWait('^v')` to synthesize a
+/// Ctrl+V keystroke in the currently focused window. The PowerShell process
+/// is spawned with `CREATE_NO_WINDOW` to avoid a visible console window.
 #[cfg(target_os = "windows")]
 fn windows_trigger_paste() -> Result<(), NativeHostError> {
     // Use PowerShell to send Ctrl+V
@@ -241,6 +262,7 @@ fn windows_trigger_paste() -> Result<(), NativeHostError> {
             "-Command",
             "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v')",
         ])
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
         .output()
         .map_err(|e| NativeHostError::Other(format!("Failed to trigger paste: {e}")))?;
     if !output.status.success() {
@@ -252,6 +274,10 @@ fn windows_trigger_paste() -> Result<(), NativeHostError> {
     Ok(())
 }
 
+/// Simulate a paste (Ctrl+V) on Linux via `xdotool`.
+///
+/// Invokes `xdotool key ctrl+v` to synthesize a Ctrl+V keystroke in the
+/// currently focused window. Requires `xdotool` to be installed on the system.
 #[cfg(target_os = "linux")]
 fn linux_trigger_paste() -> Result<(), NativeHostError> {
     let output = std::process::Command::new("xdotool")

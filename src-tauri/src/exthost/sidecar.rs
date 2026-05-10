@@ -13,6 +13,9 @@
 use std::path::Path;
 use std::sync::Arc;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 
@@ -61,12 +64,16 @@ fn resolve_runtime_binary() -> String {
     }
 
     // 3. System bun (development)
-    let which_cmd = if cfg!(target_os = "windows") {
-        "where"
-    } else {
-        "which"
-    };
-    if let Ok(output) = std::process::Command::new(which_cmd).arg("bun").output() {
+    #[cfg(windows)]
+    let resolve_result = std::process::Command::new("where")
+        .arg("bun")
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+        .output();
+
+    #[cfg(not(windows))]
+    let resolve_result = std::process::Command::new("which").arg("bun").output();
+
+    if let Ok(output) = resolve_result {
         if output.status.success() {
             let bun_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !bun_path.is_empty() {
@@ -322,11 +329,12 @@ fn augment_product_json(app_root: &Path) -> Option<(std::path::PathBuf, String)>
         .unwrap_or("")
         .is_empty()
     {
-        if let Ok(output) = std::process::Command::new("git")
-            .args(["rev-parse", "HEAD"])
-            .current_dir(app_root)
-            .output()
-        {
+        let mut git_cmd = std::process::Command::new("git");
+        git_cmd.args(["rev-parse", "HEAD"]).current_dir(app_root);
+        #[cfg(windows)]
+        git_cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
+        if let Ok(output) = git_cmd.output() {
             if output.status.success() {
                 let commit = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 if let Some(obj) = product.as_object_mut() {
@@ -511,8 +519,8 @@ fn spawn_child_process(
 
     let ext_nm_paths = build_ext_node_modules_paths(app_root, resource_dir);
 
-    let mut child = Command::new(&runtime_bin)
-        .arg("out/bootstrap-fork.js")
+    let mut cmd = Command::new(&runtime_bin);
+    cmd.arg("out/bootstrap-fork.js")
         .arg("--type=extensionHost")
         .current_dir(app_root)
         .env("PATH", &enriched_path)
@@ -543,11 +551,16 @@ fn spawn_child_process(
         // NOT set (selecting wrong transport):
         // VSCODE_WILL_SEND_MESSAGE_PORT — Electron MessagePort path
         // VSCODE_EXTHOST_WILL_SEND_SOCKET — process.send() socket path
-        // Capture stderr to log ExtHost errors; inherit stdout for console output.
-        .stdout(std::process::Stdio::inherit())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(ExtHostError::Spawn)?;
+        // Discard stdout — the parent is a GUI process with no console in
+        // release builds; inheriting would trigger AllocConsole on Windows.
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped());
+
+    // Prevent Windows from allocating a console window for the child process.
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
+    let mut child = cmd.spawn().map_err(ExtHostError::Spawn)?;
 
     let pid = child.id().unwrap_or(0);
     log::info!(
