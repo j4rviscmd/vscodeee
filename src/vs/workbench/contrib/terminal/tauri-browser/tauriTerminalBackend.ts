@@ -199,7 +199,7 @@ class TauriTerminalBackend extends BaseTerminalBackend implements ITerminalBacke
     const envBlocklist = new Set(['TMUX', 'TMUX_PANE']);
 
     for (const [key, value] of Object.entries(env)) {
-      if (value != null && !envBlocklist.has(key)) {
+      if (value !== null && value !== undefined && !envBlocklist.has(key)) {
         terminalEnv[key] = value;
       }
     }
@@ -338,7 +338,7 @@ class TauriTerminalBackend extends BaseTerminalBackend implements ITerminalBacke
       const configProfiles = _profiles as Record<string, unknown> | undefined;
       if (configProfiles && typeof configProfiles === 'object') {
         return profiles.filter(profile => {
-          if (!(profile.profileName in configProfiles)) {
+          if (!Object.prototype.hasOwnProperty.call(configProfiles, profile.profileName)) {
             return true;
           }
           // User explicitly disabled this profile
