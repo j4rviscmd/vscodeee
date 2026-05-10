@@ -57,6 +57,23 @@ import { IExtensionHostExitInfo, IRemoteAgentService } from '../../remote/common
 const hasOwnProperty = Object.hasOwnProperty;
 const NO_OP_VOID_PROMISE = Promise.resolve<void>(undefined);
 
+/**
+ * Base implementation of {@link IExtensionService} that manages the lifecycle of
+ * extension hosts and the extensions running within them.
+ *
+ * Subclasses must provide platform-specific extension resolution
+ * ({@link _resolveExtensions}), extension host exit handling
+ * ({@link _onExtensionHostExit}), and remote authority resolution
+ * ({@link _resolveAuthority}).
+ *
+ * The service is responsible for:
+ * - Scanning and registering extensions (local and remote)
+ * - Starting, stopping, and restarting extension hosts
+ * - Activating extensions based on activation events
+ * - Tracking extension status (activation times, errors, messages)
+ * - Handling extension enablement/disablement changes at runtime
+ * - Resolving remote authorities via resolver extensions (e.g. Remote-SSH)
+ */
 export abstract class AbstractExtensionService extends Disposable implements IExtensionService {
 
 	public _serviceBrand: undefined;
@@ -86,7 +103,7 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 	private readonly _registry = new LockableExtensionDescriptionRegistry(this._activationEventReader);
 	private readonly _installedExtensionsReady = new Barrier();
 	private readonly _extensionStatus = new ExtensionIdentifierMap<ExtensionStatus>();
-	private readonly _allRequestedActivateEvents = new Set<string>();
+	protected readonly _allRequestedActivateEvents = new Set<string>();
 	private readonly _pendingRemoteActivationEvents = new Set<string>();
 	private readonly _runningLocations: ExtensionRunningLocationTracker;
 	private readonly _remoteCrashTracker = new ExtensionHostCrashTracker();
@@ -94,10 +111,22 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 	private _deltaExtensionsQueue: DeltaExtensionsQueueItem[] = [];
 	private _inHandleDeltaExtensions = false;
 
-	private readonly _extensionHostManagers = this._register(new ExtensionHostCollection());
+	protected readonly _extensionHostManagers = this._register(new ExtensionHostCollection());
 
 	private _resolveAuthorityAttempt: number = 0;
 
+	/**
+	 * Creates a new {@link AbstractExtensionService} instance.
+	 *
+	 * Sets up event listeners for extension enablement changes, profile changes,
+	 * installation/uninstallation events, and lifecycle shutdown. Initializes the
+	 * extension running location tracker and file-system activation bridge.
+	 *
+	 * @param options - Configuration controlling which extension host kinds are available.
+	 * @param options.hasLocalProcess - Whether a local process extension host can be created.
+	 * @param options.allowRemoteExtensionsInLocalWebWorker - Whether remote extensions are
+	 *   allowed to run in the local web worker extension host.
+	 */
 	constructor(
 		options: { hasLocalProcess: boolean; allowRemoteExtensionsInLocalWebWorker: boolean },
 		private readonly _extensionsProposedApi: ExtensionsProposedApi,
@@ -234,12 +263,27 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		}));
 	}
 
+	/**
+	 * Returns all extension host managers of the specified kind.
+	 *
+	 * @param kind - The extension host kind to filter by.
+	 * @returns An array of matching extension host managers.
+	 */
 	protected _getExtensionHostManagers(kind: ExtensionHostKind): IExtensionHostManager[] {
 		return this._extensionHostManagers.getByKind(kind);
 	}
 
 	//#region deltaExtensions
 
+	/**
+	 * Enqueues a delta extensions operation and processes the queue sequentially.
+	 *
+	 * If a delta operation is already in progress, the new item is queued and will
+	 * be processed after the current operation completes. This prevents concurrent
+	 * modifications to the extension registry.
+	 *
+	 * @param item - The delta extensions queue item containing extensions to add and remove.
+	 */
 	private async _handleDeltaExtensions(item: DeltaExtensionsQueueItem): Promise<void> {
 		this._deltaExtensionsQueue.push(item);
 		if (this._inHandleDeltaExtensions) {
@@ -265,6 +309,21 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		}
 	}
 
+	/**
+	 * Processes a single delta extensions operation: removes qualifying extensions,
+	 * adds qualifying extensions, updates the registry, extension points, and
+	 * extension hosts, then activates newly added extensions if needed.
+	 *
+	 * Removal qualifiers: the extension must exist in the registry, match the same
+	 * scheme, and not use non-dynamic extension points or be already activated.
+	 *
+	 * Addition qualifiers: the extension must be scannable, not already present
+	 * (unless concurrently being removed), and have a valid extension host kind.
+	 *
+	 * @param lock - The registry lock acquired for this operation.
+	 * @param _toAdd - Extensions to add (as {@link IExtension} objects).
+	 * @param _toRemove - Extensions to remove (as identifier strings or {@link IExtension} objects).
+	 */
 	private async _deltaExtensions(lock: ExtensionDescriptionRegistryLock, _toAdd: IExtension[], _toRemove: string[] | IExtension[]): Promise<void> {
 		if (isCI) {
 			this._logService.info(`AbstractExtensionService._deltaExtensions: toAdd: [${_toAdd.map(e => e.identifier.id).join(',')}] toRemove: [${_toRemove.map(e => typeof e === 'string' ? e : e.identifier.id).join(',')}]`);
@@ -340,6 +399,14 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		}
 	}
 
+	/**
+	 * Updates the running location tracker and dispatches delta extension changes
+	 * to all extension host managers in parallel.
+	 *
+	 * @param versionId - The new registry version ID after the delta.
+	 * @param toAdd - Extensions that were added.
+	 * @param toRemove - Extension identifiers that were removed.
+	 */
 	private async _updateExtensionsOnExtHosts(versionId: number, toAdd: IExtensionDescription[], toRemove: ExtensionIdentifier[]): Promise<void> {
 		const removedRunningLocation = this._runningLocations.deltaExtensions(toAdd, toRemove);
 		const promises = this._extensionHostManagers.map(
@@ -348,6 +415,17 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		await Promise.all(promises);
 	}
 
+	/**
+	 * Sends a delta extensions request to a single extension host manager,
+	 * filtered to only the extensions relevant to that host.
+	 *
+	 * @param extensionHostManager - The target extension host manager.
+	 * @param versionId - The new registry version ID.
+	 * @param toAdd - All extensions that were added.
+	 * @param toRemove - All extension identifiers that were removed.
+	 * @param removedRunningLocation - Map of removed extension identifiers to their
+	 *   previous running locations (or null if they had none).
+	 */
 	private async _updateExtensionsOnExtHost(extensionHostManager: IExtensionHostManager, versionId: number, toAdd: IExtensionDescription[], toRemove: ExtensionIdentifier[], removedRunningLocation: ExtensionIdentifierMap<ExtensionRunningLocation | null>): Promise<void> {
 		const myToAdd = this._runningLocations.filterByExtensionHostManager(toAdd, extensionHostManager);
 		const myToRemove = filterExtensionIdentifiers(toRemove, removedRunningLocation, extRunningLocation => extensionHostManager.representsRunningLocation(extRunningLocation));
@@ -360,10 +438,29 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		await extensionHostManager.deltaExtensions({ versionId, toRemove, toAdd, addActivationEvents, myToRemove, myToAdd: myToAdd.map(extension => extension.identifier) });
 	}
 
+	/**
+	 * Checks whether the given extension can be added to the registry.
+	 *
+	 * @param extension - The extension description to check.
+	 * @returns `true` if the extension is not already registered (or is being
+	 *   removed concurrently) and a valid extension host kind is available.
+	 */
 	public canAddExtension(extension: IExtensionDescription): boolean {
 		return this._canAddExtension(extension, []);
 	}
 
+	/**
+	 * Internal check for whether an extension can be added.
+	 *
+	 * An extension can be added if it is not already in the registry (unless it is
+	 * currently being removed) and the extension host kind picker returns a valid
+	 * host kind for it.
+	 *
+	 * @param extension - The extension description to check.
+	 * @param extensionsBeingRemoved - Extensions that are being removed in the same
+	 *   delta operation, which allows re-adding the same extension.
+	 * @returns `true` if the extension can be added.
+	 */
 	private _canAddExtension(extension: IExtensionDescription, extensionsBeingRemoved: IExtensionDescription[]): boolean {
 		// (Also check for renamed extensions)
 		const existing = this._registry.getExtensionDescriptionByIdOrUUID(extension.identifier, extension.id);
@@ -386,6 +483,15 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		return true;
 	}
 
+	/**
+	 * Checks whether the given extension can be safely removed.
+	 *
+	 * An extension cannot be removed if it is unknown or if its activation has
+	 * already started (to avoid destabilizing a running extension).
+	 *
+	 * @param extension - The extension description to check.
+	 * @returns `true` if the extension is known and not yet activated.
+	 */
 	public canRemoveExtension(extension: IExtensionDescription): boolean {
 		const extensionDescription = this._registry.getExtensionDescription(extension.identifier);
 		if (!extensionDescription) {
@@ -401,6 +507,13 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		return true;
 	}
 
+	/**
+	 * Activates a newly added extension if its activation events have already been
+	 * requested, if it has a wildcard activation event, if it listens for
+	 * `onStartupFinished`, or if it matches a `workspaceContains` pattern.
+	 *
+	 * @param extensionDescription - The newly added extension to potentially activate.
+	 */
 	private async _activateAddedExtensionIfNeeded(extensionDescription: IExtensionDescription): Promise<void> {
 		let shouldActivateReason: string | null = null;
 		let hasWorkspaceContains = false;
@@ -454,6 +567,12 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 	//#endregion
 
 	private _initializePromise: Promise<void> | null = null;
+	/**
+	 * Ensures initialization runs exactly once by caching the promise.
+	 *
+	 * @returns The initialization promise, or the cached promise if initialization
+	 *   has already been triggered.
+	 */
 	protected _initializeIfNeeded(): Promise<void> | null {
 		if (!this._initializePromise) {
 			this._initializePromise = this._initialize();
@@ -461,6 +580,12 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		return this._initializePromise;
 	}
 
+	/**
+	 * Initializes the extension service by starting extension hosts, resolving
+	 * and processing extensions, starting on-demand hosts, releasing the
+	 * initialization barrier, replaying deferred remote activation events, and
+	 * running extension tests if in development mode.
+	 */
 	protected async _initialize(): Promise<void> {
 		perf.mark('code/willLoadExtensions');
 		this._startExtensionHostsIfNecessary(true, []);
@@ -484,6 +609,13 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		await this._handleExtensionTests();
 	}
 
+	/**
+	 * Replays activation events that were deferred during initialization because
+	 * remote extension hosts were not yet ready.
+	 *
+	 * After remote hosts become ready, each deferred event is replayed on all
+	 * remote extension host managers and then cleared from the pending set.
+	 */
 	private async _activateDeferredRemoteEvents(): Promise<void> {
 		if (this._pendingRemoteActivationEvents.size === 0) {
 			return;
@@ -513,6 +645,17 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		this._pendingRemoteActivationEvents.clear();
 	}
 
+	/**
+	 * Resolves all extensions via the async iterable from {@link _resolveExtensions},
+	 * categorizes them into resolver, local, and remote groups, initializes running
+	 * locations, starts extension hosts, and registers all extensions in the registry.
+	 *
+	 * Resolver extensions are registered and their extension points handled first,
+	 * followed by the remaining extensions. Extensions with dependency loops are
+	 * detected and disabled with an error notification.
+	 *
+	 * @param lock - The registry lock acquired for this operation.
+	 */
 	private async _resolveAndProcessExtensions(lock: ExtensionDescriptionRegistryLock,): Promise<void> {
 		let resolverExtensions: IExtensionDescription[] = [];
 		let localExtensions: IExtensionDescription[] = [];
@@ -578,6 +721,14 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		this._doHandleExtensionPoints(this._registry.getAllExtensionDescriptions(), false);
 	}
 
+	/**
+	 * Runs the extension test runner if the environment is in extension development
+	 * mode and a test location URI is configured.
+	 *
+	 * Finds the appropriate extension host for the test location, executes the test
+	 * runner, and triggers the extension host exit callback with the resulting
+	 * exit code.
+	 */
 	private async _handleExtensionTests(): Promise<void> {
 		if (!this._environmentService.isExtensionDevelopment || !this._environmentService.extensionTestsLocationURI) {
 			return;
@@ -609,6 +760,16 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		this._onExtensionHostExit(exitCode);
 	}
 
+	/**
+	 * Finds the extension host manager that should run the test at the given location.
+	 *
+	 * If the test location is inside a registered extension, the extension's running
+	 * location is used. Otherwise, remote-scheme tests use a remote running location
+	 * and all other tests fall back to a local process running location.
+	 *
+	 * @param testLocation - The URI of the extension test entry point.
+	 * @returns The matching extension host manager, or `null` if not found.
+	 */
 	private findTestExtensionHost(testLocation: URI): IExtensionHostManager | null {
 		let runningLocation: ExtensionRunningLocation | null = null;
 
@@ -636,6 +797,10 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		return null;
 	}
 
+	/**
+	 * Opens the installed-extensions-ready barrier, fires the extensions-registered
+	 * event, and notifies status changes for all registered extensions.
+	 */
 	private _releaseBarrier(): void {
 		this._installedExtensionsReady.open();
 		this._onDidRegisterExtensions.fire(undefined);
@@ -644,6 +809,18 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 
 	//#region remote authority resolving
 
+	/**
+	 * Attempts to resolve a remote authority with automatic retries.
+	 *
+	 * Retries up to {@link MAX_ATTEMPTS} times on transient errors. Aborts
+	 * immediately if the error indicates no resolver was found or the resolver
+	 * explicitly requested no retry.
+	 *
+	 * @param remoteAuthority - The remote authority string to resolve.
+	 * @returns The resolved authority result.
+	 * @throws {Error} If resolution fails after all retry attempts or on
+	 *   non-retryable errors.
+	 */
 	protected async _resolveAuthorityInitial(remoteAuthority: string): Promise<ResolverResult> {
 		const MAX_ATTEMPTS = 5;
 
@@ -669,6 +846,12 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		}
 	}
 
+	/**
+	 * Re-resolves the current remote authority, typically after a connection loss.
+	 *
+	 * Clears the previously resolved authority, attempts resolution, and updates
+	 * the resolver service with the new result or error.
+	 */
 	protected async _resolveAuthorityAgain(): Promise<void> {
 		const remoteAuthority = this._environmentService.remoteAuthority;
 		if (!remoteAuthority) {
@@ -684,6 +867,16 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		}
 	}
 
+	/**
+	 * Resolves a remote authority with performance marks and structured logging.
+	 *
+	 * Logs the authority prefix (not the full authority, to avoid leaking secrets),
+	 * measures elapsed time, and records performance marks for success and failure.
+	 *
+	 * @param remoteAuthority - The remote authority string to resolve.
+	 * @returns The resolved authority result.
+	 * @throws Rethrows any error from the underlying {@link _resolveAuthority}.
+	 */
 	private async _resolveAuthorityWithLogging(remoteAuthority: string): Promise<ResolverResult> {
 		const authorityPrefix = getRemoteAuthorityPrefix(remoteAuthority);
 		const sw = StopWatch.create(false);
@@ -701,6 +894,19 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		}
 	}
 
+	/**
+	 * Delegates remote authority resolution to extension hosts of the specified kind.
+	 *
+	 * Sends the resolution request to all matching extension hosts and returns the
+	 * first successful result. If all hosts fail, throws the most specific error
+	 * (preferring non-`Unknown` error codes over `Unknown`).
+	 *
+	 * @param kind - The extension host kind to use for resolution.
+	 * @param remoteAuthority - The remote authority string to resolve.
+	 * @returns The resolved authority result from the first successful host.
+	 * @throws {Error} If no extension hosts of the specified kind exist.
+	 * @throws {RemoteAuthorityResolverError} If all hosts return errors.
+	 */
 	protected async _resolveAuthorityOnExtensionHosts(kind: ExtensionHostKind, remoteAuthority: string): Promise<ResolverResult> {
 
 		const extensionHosts = this._getExtensionHostManagers(kind);
@@ -736,11 +942,28 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 
 	//#region Stopping / Starting / Restarting
 
+	/**
+	 * Stops all extension hosts, optionally with a confirmation dialog if
+	 * extensions veto the shutdown.
+	 *
+	 * @param reason - A human-readable reason for stopping the extension hosts.
+	 * @param auto - Whether this is an automatic (non-user-initiated) stop.
+	 *   Automatic stops are skipped during extension development.
+	 * @returns `true` if extension hosts were stopped or the caller should proceed
+	 *   anyway after a veto, `false` if stopped by a veto without confirmation.
+	 */
 	public async stopExtensionHosts(reason: string, auto?: boolean): Promise<boolean> {
 		await this._initializeIfNeeded();
 		return this._doStopExtensionHostsWithVeto(reason, auto);
 	}
 
+	/**
+	 * Stops all extension hosts in reverse creation order and clears runtime
+	 * status for all previously activated extensions.
+	 *
+	 * Fires an extension status change event for any extensions that were
+	 * activated before the stop.
+	 */
 	protected async _doStopExtensionHosts(): Promise<void> {
 		const previouslyActivatedExtensionIds: ExtensionIdentifier[] = [];
 		for (const extensionStatus of this._extensionStatus.values()) {
@@ -759,6 +982,19 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		}
 	}
 
+	/**
+	 * Attempts to stop extension hosts with veto support.
+	 *
+	 * Fires the `onWillStop` event to allow extensions to veto the shutdown.
+	 * If a veto is received and this is not an automatic stop, a confirmation
+	 * dialog is shown to the user asking whether to proceed anyway.
+	 *
+	 * @param reason - A human-readable reason for stopping.
+	 * @param auto - Whether this is an automatic stop. Automatic stops during
+	 *   extension development are silently skipped.
+	 * @returns `true` if hosts were not stopped (vetoed) or the user should
+	 *   proceed, `false` if the veto was accepted.
+	 */
 	private async _doStopExtensionHostsWithVeto(reason: string, auto: boolean = false): Promise<boolean> {
 		if (auto && this._environmentService.isExtensionDevelopment) {
 			return false;
@@ -817,7 +1053,18 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		return !veto;
 	}
 
-	private _startExtensionHostsIfNecessary(isInitialStart: boolean, initialActivationEvents: string[]): void {
+	/**
+	 * Creates and starts extension host managers for all running locations that
+	 * do not already have a manager.
+	 *
+	 * Iterates through all local process affinities, local web worker affinities,
+	 * and the remote running location, creating managers for any that are missing.
+	 *
+	 * @param isInitialStart - Whether this is the initial startup.
+	 * @param initialActivationEvents - Activation events to pass to newly created
+	 *   extension host managers.
+	 */
+	protected _startExtensionHostsIfNecessary(isInitialStart: boolean, initialActivationEvents: string[]): void {
 		const locations: ExtensionRunningLocation[] = [];
 		for (let affinity = 0; affinity <= this._runningLocations.maxLocalProcessAffinity; affinity++) {
 			locations.push(new LocalProcessRunningLocation(affinity));
@@ -839,6 +1086,19 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		}
 	}
 
+	/**
+	 * Creates an extension host manager for the given running location.
+	 *
+	 * Uses the extension host factory to create the host, wraps it in an
+	 * {@link ExtensionHostManager} or {@link LazyCreateExtensionHostManager},
+	 * and registers crash/exit and responsive-state listeners.
+	 *
+	 * @param runningLocation - The running location for the new extension host.
+	 * @param isInitialStart - Whether this is the initial startup.
+	 * @param initialActivationEvents - Activation events to pass to the manager.
+	 * @returns A tuple of the manager and its disposable store, or `null` if
+	 *   the factory did not create an extension host for this location.
+	 */
 	private _createExtensionHostManager(runningLocation: ExtensionRunningLocation, isInitialStart: boolean, initialActivationEvents: string[]): null | [IExtensionHostManager, DisposableStore] {
 		const extensionHost = this._extensionHostFactory.createExtensionHost(this._runningLocations, runningLocation, isInitialStart);
 		if (!extensionHost) {
@@ -861,6 +1121,17 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		return [processManager, disposableStore];
 	}
 
+	/**
+	 * Creates the appropriate extension host manager based on the host's startup
+	 * strategy.
+	 *
+	 * Uses {@link LazyCreateExtensionHostManager} for lazy-starting hosts and
+	 * {@link ExtensionHostManager} for eager-starting hosts.
+	 *
+	 * @param extensionHost - The extension host to manage.
+	 * @param initialActivationEvents - Activation events to pass to the manager.
+	 * @returns The created extension host manager.
+	 */
 	protected _doCreateExtensionHostManager(extensionHost: IExtensionHost, initialActivationEvents: string[]): IExtensionHostManager {
 		const internalExtensionService = this._acquireInternalAPI(extensionHost);
 		if (extensionHost.startup === ExtensionHostStartup.LazyAutoStart) {
@@ -869,6 +1140,16 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		return this._instantiationService.createInstance(ExtensionHostManager, extensionHost, initialActivationEvents, internalExtensionService);
 	}
 
+	/**
+	 * Dispatches an extension host termination event to the crash or exit handler.
+	 *
+	 * In extension development mode, termination is treated as a normal exit
+	 * (e.g. the debugger disconnected). Otherwise, it is treated as a crash.
+	 *
+	 * @param extensionHost - The terminated extension host manager.
+	 * @param code - The process exit code.
+	 * @param signal - The termination signal, if any.
+	 */
 	private _onExtensionHostCrashOrExit(extensionHost: IExtensionHostManager, code: number, signal: string | null): void {
 
 		// Unexpected termination
@@ -881,6 +1162,17 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		this._onExtensionHostExit(code);
 	}
 
+	/**
+	 * Handles an unexpected extension host crash.
+	 *
+	 * For local process extension hosts, stops all extension hosts. For remote
+	 * extension hosts with a signal, delegates to the remote crash handler and
+	 * stops only the crashed host.
+	 *
+	 * @param extensionHost - The crashed extension host manager.
+	 * @param code - The process exit code.
+	 * @param signal - The termination signal, if any.
+	 */
 	protected _onExtensionHostCrashed(extensionHost: IExtensionHostManager, code: number, signal: string | null): void {
 		console.error(`Extension host (${extensionHost.friendyName}) terminated unexpectedly. Code: ${code}, Signal: ${signal}`);
 		if (extensionHost.kind === ExtensionHostKind.LocalProcess) {
@@ -893,6 +1185,14 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		}
 	}
 
+	/**
+	 * Retrieves exit information for a crashed remote extension host with a
+	 * 2-second timeout.
+	 *
+	 * @param reconnectionToken - The reconnection token identifying the crashed host.
+	 * @returns The exit info, or `null` if the remote agent does not have the info.
+	 * @throws {Error} If the request times out after 2 seconds.
+	 */
 	private _getExtensionHostExitInfoWithTimeout(reconnectionToken: string): Promise<IExtensionHostExitInfo | null> {
 		return new Promise((resolve, reject) => {
 			const timeoutHandle = setTimeout(() => {
@@ -908,7 +1208,17 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		});
 	}
 
-	private async _onRemoteExtensionHostCrashed(extensionHost: IExtensionHostManager, reconnectionToken: string): Promise<void> {
+	/**
+	 * Handles a remote extension host crash with automatic restart logic.
+	 *
+	 * If the host has crashed fewer than 3 times in the last 5 minutes, it is
+	 * automatically restarted with a transient notification. Otherwise, an error
+	 * notification is shown with a manual restart action.
+	 *
+	 * @param extensionHost - The crashed remote extension host manager.
+	 * @param reconnectionToken - The reconnection token for retrieving exit info.
+	 */
+	protected async _onRemoteExtensionHostCrashed(extensionHost: IExtensionHostManager, reconnectionToken: string): Promise<void> {
 		try {
 			const info = await this._getExtensionHostExitInfoWithTimeout(reconnectionToken);
 			if (info) {
@@ -937,6 +1247,12 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		}
 	}
 
+	/**
+	 * Logs details about a crashed extension host, including the list of
+	 * extensions that were activated at the time of the crash.
+	 *
+	 * @param extensionHost - The crashed extension host manager.
+	 */
 	protected _logExtensionHostCrash(extensionHost: IExtensionHostManager): void {
 
 		const activatedExtensions: ExtensionIdentifier[] = [];
@@ -953,6 +1269,13 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		}
 	}
 
+	/**
+	 * Stops all extension hosts, optionally applies delta updates, then restarts
+	 * all extension hosts and waits for local process hosts to become ready.
+	 *
+	 * @param updates - Optional delta updates to apply before restarting.
+	 *   If provided, extensions are added/removed before hosts are started.
+	 */
 	public async startExtensionHosts(updates?: { toAdd: IExtension[]; toRemove: string[] }): Promise<void> {
 		await this._doStopExtensionHosts();
 
@@ -972,6 +1295,10 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		}
 	}
 
+	/**
+	 * Starts extension hosts that use on-demand (lazy) startup by delivering
+	 * the current registry snapshot and the set of extensions assigned to each host.
+	 */
 	private _startOnDemandExtensionHosts(): void {
 		const snapshot = this._registry.getSnapshot();
 		for (const extHostManager of this._extensionHostManagers) {
@@ -986,6 +1313,19 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 
 	//#region IExtensionService
 
+	/**
+	 * Activates extensions that listen for the given activation event.
+	 *
+	 * If extensions have not been scanned yet, the event is recorded and
+	 * activation is deferred until initialization completes (unless the activation
+	 * kind is {@link ActivationKind.Immediate}, in which case initialization is
+	 * kicked off without awaiting).
+	 *
+	 * @param activationEvent - The activation event to dispatch.
+	 * @param activationKind - The activation kind controlling urgency.
+	 * @returns A promise that resolves when all relevant hosts have processed
+	 *   the activation event.
+	 */
 	public activateByEvent(activationEvent: string, activationKind: ActivationKind = ActivationKind.Normal): Promise<void> {
 		if (this._installedExtensionsReady.isOpen()) {
 			// Extensions have been scanned and interpreted
@@ -1020,6 +1360,19 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		}
 	}
 
+	/**
+	 * Dispatches an activation event to the appropriate extension host managers.
+	 *
+	 * For {@link ActivationKind.Immediate}, only local hosts and already-ready
+	 * remote hosts are targeted; the event is also deferred for remote hosts that
+	 * are not yet ready. For normal activation, all hosts are targeted.
+	 *
+	 * @param activationEvent - The activation event to dispatch.
+	 * @param activationKind - The activation kind controlling which hosts receive
+	 *   the event immediately.
+	 * @returns A promise that resolves when all targeted hosts have processed
+	 *   the activation event.
+	 */
 	private _activateByEvent(activationEvent: string, activationKind: ActivationKind): Promise<void> {
 		let managers: IExtensionHostManager[];
 		if (activationKind === ActivationKind.Immediate) {
@@ -1048,10 +1401,25 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		return result;
 	}
 
+	/**
+	 * Activates an extension by its identifier on all extension host managers.
+	 *
+	 * @param extensionId - The identifier of the extension to activate.
+	 * @param reason - The reason for activation.
+	 * @throws {Error} If no extension host manager recognizes the extension.
+	 */
 	public activateById(extensionId: ExtensionIdentifier, reason: ExtensionActivationReason): Promise<void> {
 		return this._activateById(extensionId, reason);
 	}
 
+	/**
+	 * Checks whether an activation event has been fully processed by all
+	 * extension host managers.
+	 *
+	 * @param activationEvent - The activation event to check.
+	 * @returns `true` if extensions have not been scanned yet, if no extension
+	 *   listens for the event, or if all hosts have finished processing it.
+	 */
 	public activationEventIsDone(activationEvent: string): boolean {
 		if (!this._installedExtensionsReady.isOpen()) {
 			return false;
@@ -1063,24 +1431,57 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		return this._extensionHostManagers.every(manager => manager.activationEventIsDone(activationEvent));
 	}
 
+	/**
+	 * Returns a promise that resolves when all installed extensions have been
+	 * scanned and registered.
+	 *
+	 * @returns A promise that resolves to `true` once the extensions barrier
+	 *   is open.
+	 */
 	public whenInstalledExtensionsRegistered(): Promise<boolean> {
 		return this._installedExtensionsReady.wait();
 	}
 
+	/**
+	 * Returns all registered extension descriptions.
+	 *
+	 * @returns An array of all extension descriptions in the registry.
+	 */
 	get extensions(): IExtensionDescription[] {
 		return this._registry.getAllExtensionDescriptions();
 	}
 
+	/**
+	 * Returns a snapshot of the extension description registry once extensions
+	 * are fully registered.
+	 *
+	 * @returns A promise that resolves to the registry snapshot.
+	 */
 	protected _getExtensionRegistrySnapshotWhenReady(): Promise<ExtensionDescriptionRegistrySnapshot> {
 		return this._installedExtensionsReady.wait().then(() => this._registry.getSnapshot());
 	}
 
+	/**
+	 * Retrieves an extension description by its identifier string.
+	 *
+	 * @param id - The extension identifier string (e.g. `publisher.extensionName`).
+	 * @returns A promise that resolves to the extension description, or `undefined`
+	 *   if no matching extension is found.
+	 */
 	public getExtension(id: string): Promise<IExtensionDescription | undefined> {
 		return this._installedExtensionsReady.wait().then(() => {
 			return this._registry.getExtensionDescription(id);
 		});
 	}
 
+	/**
+	 * Reads all contributions to a given extension point from registered extensions.
+	 *
+	 * @typeParam T - The contribution type of the extension point.
+	 * @param extPoint - The extension point to read contributions for.
+	 * @returns A promise that resolves to an array of contributions from all
+	 *   extensions that declare a contribution to this extension point.
+	 */
 	public readExtensionPointContributions<T extends IExtensionContributions[keyof IExtensionContributions]>(extPoint: IExtensionPoint<T>): Promise<ExtensionPointContribution<T>[]> {
 		return this._installedExtensionsReady.wait().then(() => {
 			const availableExtensions = this._registry.getAllExtensionDescriptions();
@@ -1096,6 +1497,13 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		});
 	}
 
+	/**
+	 * Returns the current status of all registered extensions.
+	 *
+	 * @returns A map from extension identifier values to their status objects,
+	 *   including messages, activation state, activation times, runtime errors,
+	 *   and running location.
+	 */
 	public getExtensionsStatus(): { [id: string]: IExtensionsStatus } {
 		const result: { [id: string]: IExtensionsStatus } = Object.create(null);
 		if (this._registry) {
@@ -1115,6 +1523,14 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		return result;
 	}
 
+	/**
+	 * Returns the debug/inspect ports for all extension hosts of the given kind.
+	 *
+	 * @param extensionHostKind - The extension host kind to query.
+	 * @param tryEnableInspector - Whether to attempt enabling the inspector
+	 *   on hosts that do not already have it active.
+	 * @returns An array of inspect info objects with port and debug label details.
+	 */
 	public async getInspectPorts(extensionHostKind: ExtensionHostKind, tryEnableInspector: boolean): Promise<IExtensionInspectInfo[]> {
 		const result = await Promise.all(
 			this._getExtensionHostManagers(extensionHostKind).map(async extHost => {
@@ -1129,6 +1545,13 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		return result.filter(isDefined);
 	}
 
+	/**
+	 * Sets environment variables on all extension hosts for remote extension
+	 * debugging scenarios.
+	 *
+	 * @param env - A map of environment variable names to their values (or `null`
+	 *   to unset a variable).
+	 */
 	public async setRemoteEnvironment(env: { [key: string]: string | null }): Promise<void> {
 		await this._extensionHostManagers
 			.map(manager => manager.setRemoteEnvironment(env));
@@ -1138,6 +1561,14 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 
 	// --- impl
 
+	/**
+	 * Safely checks whether an extension is enabled, catching any errors from
+	 * the enablement service.
+	 *
+	 * @param extension - The extension to check.
+	 * @returns `true` if the extension is enabled, `false` if disabled or if
+	 *   the enablement check throws an error.
+	 */
 	private _safeInvokeIsEnabled(extension: IExtension): boolean {
 		try {
 			return this._extensionEnablementService.isEnabled(extension);
@@ -1146,6 +1577,19 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		}
 	}
 
+	/**
+	 * Processes extension points affected by a set of extensions.
+	 *
+	 * Collects all extension point names contributed by the affected extensions,
+	 * then calls {@link AbstractExtensionService._handleExtensionPoint} for each
+	 * matching registered extension point. Records performance marks for
+	 * diagnostic purposes.
+	 *
+	 * @param affectedExtensions - The extensions whose extension points should
+	 *   be processed.
+	 * @param onlyResolverExtensionPoints - If `true`, only extension points that
+	 *   can handle resolver extensions are processed.
+	 */
 	private _doHandleExtensionPoints(affectedExtensions: IExtensionDescription[], onlyResolverExtensionPoints: boolean): void {
 		const affectedExtensionPoints: { [extPointName: string]: boolean } = Object.create(null);
 		for (const extensionDescription of affectedExtensions) {
@@ -1172,6 +1616,13 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		perf.mark(onlyResolverExtensionPoints ? 'code/didHandleResolverExtensionPoints' : 'code/didHandleExtensionPoints');
 	}
 
+	/**
+	 * Returns the {@link ExtensionStatus} for the given extension, creating one
+	 * if it does not already exist.
+	 *
+	 * @param extensionId - The extension identifier.
+	 * @returns The existing or newly created extension status.
+	 */
 	private _getOrCreateExtensionStatus(extensionId: ExtensionIdentifier): ExtensionStatus {
 		if (!this._extensionStatus.has(extensionId)) {
 			this._extensionStatus.set(extensionId, new ExtensionStatus(extensionId));
@@ -1179,6 +1630,15 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		return this._extensionStatus.get(extensionId)!;
 	}
 
+	/**
+	 * Handles a validation message from an extension point.
+	 *
+	 * Adds the message to the extension's status, logs it at the appropriate
+	 * severity level, shows a notification for extensions under development,
+	 * and reports the message via telemetry in production builds.
+	 *
+	 * @param msg - The extension point validation message.
+	 */
 	private _handleExtensionPointMessage(msg: IMessage) {
 		const extensionStatus = this._getOrCreateExtensionStatus(msg.extensionId);
 		extensionStatus.addMessage(msg);
@@ -1224,6 +1684,17 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		}
 	}
 
+	/**
+	 * Collects all user contributions to an extension point from the available
+	 * extensions and passes them to the extension point for validation and
+	 * registration.
+	 *
+	 * @typeParam T - The contribution type of the extension point.
+	 * @param extensionPoint - The extension point to process.
+	 * @param availableExtensions - All registered extension descriptions.
+	 * @param messageHandler - Callback for validation messages emitted during
+	 *   contribution processing.
+	 */
 	private static _handleExtensionPoint<T extends IExtensionContributions[keyof IExtensionContributions]>(extensionPoint: ExtensionPoint<T>, availableExtensions: IExtensionDescription[], messageHandler: (msg: IMessage) => void): void {
 		const users: IExtensionPointUser<T>[] = [];
 		for (const desc of availableExtensions) {
@@ -1240,6 +1711,16 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 
 	//#region Called by extension host
 
+	/**
+	 * Creates an internal extension service API object for an extension host.
+	 *
+	 * This API is passed to extension host managers so they can invoke
+	 * activation, report activation results, and report runtime errors back
+	 * to the extension service.
+	 *
+	 * @param extensionHost - The extension host that will use this internal API.
+	 * @returns The internal extension service interface.
+	 */
 	private _acquireInternalAPI(extensionHost: IExtensionHost): IInternalExtensionService {
 		return {
 			_activateById: (extensionId: ExtensionIdentifier, reason: ExtensionActivationReason): Promise<void> => {
@@ -1260,6 +1741,13 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		};
 	}
 
+	/**
+	 * Activates an extension by its identifier on all extension host managers.
+	 *
+	 * @param extensionId - The identifier of the extension to activate.
+	 * @param reason - The reason for activation.
+	 * @throws {Error} If no extension host manager reports successful activation.
+	 */
 	public async _activateById(extensionId: ExtensionIdentifier, reason: ExtensionActivationReason): Promise<void> {
 		const results = await Promise.all(
 			this._extensionHostManagers.map(manager => manager.activate(extensionId, reason))
@@ -1270,18 +1758,45 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		}
 	}
 
+	/**
+	 * Called when an extension host is about to activate an extension.
+	 *
+	 * Updates the running location for the extension and marks its activation
+	 * as started in the status tracker.
+	 *
+	 * @param extensionId - The identifier of the extension being activated.
+	 * @param runningLocation - The running location where the extension is
+	 *   being activated.
+	 */
 	private _onWillActivateExtension(extensionId: ExtensionIdentifier, runningLocation: ExtensionRunningLocation): void {
 		this._runningLocations.set(extensionId, runningLocation);
 		const extensionStatus = this._getOrCreateExtensionStatus(extensionId);
 		extensionStatus.onWillActivate();
 	}
 
+	/**
+	 * Called when an extension has been successfully activated.
+	 *
+	 * Records the activation times and fires a status change event.
+	 *
+	 * @param extensionId - The identifier of the activated extension.
+	 * @param codeLoadingTime - Time in milliseconds spent loading the extension code.
+	 * @param activateCallTime - Time in milliseconds spent in the `activate` function call.
+	 * @param activateResolvedTime - Time in milliseconds for the `activate` promise to resolve.
+	 * @param activationReason - The reason the extension was activated.
+	 */
 	private _onDidActivateExtension(extensionId: ExtensionIdentifier, codeLoadingTime: number, activateCallTime: number, activateResolvedTime: number, activationReason: ExtensionActivationReason): void {
 		const extensionStatus = this._getOrCreateExtensionStatus(extensionId);
 		extensionStatus.setActivationTimes(new ActivationTimes(codeLoadingTime, activateCallTime, activateResolvedTime, activationReason));
 		this._onDidChangeExtensionsStatus.fire([extensionId]);
 	}
 
+	/**
+	 * Reports an extension activation error via telemetry.
+	 *
+	 * @param extensionId - The identifier of the extension that failed to activate.
+	 * @param error - The activation error.
+	 */
 	private _onDidActivateExtensionError(extensionId: ExtensionIdentifier, error: Error): void {
 		type ExtensionActivationErrorClassification = {
 			owner: 'alexdima';
@@ -1299,6 +1814,12 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 		});
 	}
 
+	/**
+	 * Records a runtime error from an extension and fires a status change event.
+	 *
+	 * @param extensionId - The identifier of the extension that threw the error.
+	 * @param err - The runtime error.
+	 */
 	private _onExtensionRuntimeError(extensionId: ExtensionIdentifier, err: Error): void {
 		const extensionStatus = this._getOrCreateExtensionStatus(extensionId);
 		extensionStatus.addRuntimeError(err);
@@ -1307,15 +1828,43 @@ export abstract class AbstractExtensionService extends Disposable implements IEx
 
 	//#endregion
 
+	/**
+	 * Resolves extensions by yielding {@link ResolvedExtensions} events through
+	 * an async iterable. Subclasses must implement this to provide platform-specific
+	 * extension scanning and remote authority resolution.
+	 */
 	protected abstract _resolveExtensions(): AsyncIterable<ResolvedExtensions>;
+
+	/**
+	 * Called when an extension host exits (as opposed to crashing).
+	 * Subclasses must implement this to handle clean shutdown scenarios.
+	 *
+	 * @param code - The process exit code.
+	 */
 	protected abstract _onExtensionHostExit(code: number): Promise<void>;
+
+	/**
+	 * Resolves a remote authority string to connection metadata.
+	 * Subclasses must implement this to delegate resolution to the appropriate
+	 * extension host kind.
+	 *
+	 * @param remoteAuthority - The remote authority string to resolve.
+	 * @returns The resolved authority result.
+	 */
 	protected abstract _resolveAuthority(remoteAuthority: string): Promise<ResolverResult>;
 }
 
+/**
+ * Manages a collection of extension host managers with lifecycle support
+ * for adding, stopping, and querying by kind or running location.
+ */
 class ExtensionHostCollection extends Disposable {
 
 	private _extensionHostManagers: ExtensionHostManagerData[] = [];
 
+	/**
+	 * Disconnects and disposes all extension host managers.
+	 */
 	public override dispose() {
 		for (let i = this._extensionHostManagers.length - 1; i >= 0; i--) {
 			const manager = this._extensionHostManagers[i];
@@ -1326,10 +1875,23 @@ class ExtensionHostCollection extends Disposable {
 		super.dispose();
 	}
 
+	/**
+	 * Adds an extension host manager to the collection.
+	 *
+	 * @param extensionHostManager - The extension host manager to add.
+	 * @param disposableStore - A disposable store containing listeners associated
+	 *   with the manager that should be disposed when the manager is removed.
+	 */
 	public add(extensionHostManager: IExtensionHostManager, disposableStore: DisposableStore): void {
 		this._extensionHostManagers.push(new ExtensionHostManagerData(extensionHostManager, disposableStore));
 	}
 
+	/**
+	 * Stops all extension host managers in reverse creation order.
+	 *
+	 * Disconnection happens in reverse order because the local extension host
+	 * may be sustaining a connection to the remote extension host.
+	 */
 	public async stopAllInReverse(): Promise<void> {
 		// See https://github.com/microsoft/vscode/issues/152204
 		// Dispose extension hosts in reverse creation order because the local extension host
@@ -1342,6 +1904,11 @@ class ExtensionHostCollection extends Disposable {
 		this._extensionHostManagers = [];
 	}
 
+	/**
+	 * Stops and removes a single extension host manager from the collection.
+	 *
+	 * @param extensionHostManager - The extension host manager to stop.
+	 */
 	public async stopOne(extensionHostManager: IExtensionHostManager): Promise<void> {
 		const index = this._extensionHostManagers.findIndex(el => el.extensionHost === extensionHostManager);
 		if (index >= 0) {
@@ -1351,10 +1918,22 @@ class ExtensionHostCollection extends Disposable {
 		}
 	}
 
+	/**
+	 * Returns all extension host managers of the specified kind.
+	 *
+	 * @param kind - The extension host kind to filter by.
+	 * @returns An array of matching extension host managers.
+	 */
 	public getByKind(kind: ExtensionHostKind): IExtensionHostManager[] {
 		return this.filter(el => el.kind === kind);
 	}
 
+	/**
+	 * Returns the extension host manager that represents the given running location.
+	 *
+	 * @param runningLocation - The running location to search for.
+	 * @returns The matching extension host manager, or `null` if not found.
+	 */
 	public getByRunningLocation(runningLocation: ExtensionRunningLocation): IExtensionHostManager | null {
 		for (const el of this._extensionHostManagers) {
 			if (el.extensionHost.representsRunningLocation(runningLocation)) {
@@ -1364,25 +1943,48 @@ class ExtensionHostCollection extends Disposable {
 		return null;
 	}
 
+	/** Iterates over all extension host managers in the collection. */
 	*[Symbol.iterator]() {
 		for (const extensionHostManager of this._extensionHostManagers) {
 			yield extensionHostManager.extensionHost;
 		}
 	}
 
+	/**
+	 * Maps all extension host managers through a callback function.
+	 *
+	 * @param callback - The mapping function.
+	 * @returns An array of mapped results.
+	 */
 	public map<T>(callback: (extHostManager: IExtensionHostManager) => T): T[] {
 		return this._extensionHostManagers.map(el => callback(el.extensionHost));
 	}
 
+	/**
+	 * Tests whether all extension host managers pass the provided predicate.
+	 *
+	 * @param callback - The predicate function.
+	 * @returns `true` if all managers pass the predicate.
+	 */
 	public every(callback: (extHostManager: IExtensionHostManager) => unknown): boolean {
 		return this._extensionHostManagers.every(el => callback(el.extensionHost));
 	}
 
+	/**
+	 * Filters extension host managers by the provided predicate.
+	 *
+	 * @param callback - The predicate function.
+	 * @returns An array of managers that pass the predicate.
+	 */
 	public filter(callback: (extHostManager: IExtensionHostManager) => unknown): IExtensionHostManager[] {
 		return this._extensionHostManagers.filter(el => callback(el.extensionHost)).map(el => el.extensionHost);
 	}
 }
 
+/**
+ * Internal data wrapper pairing an extension host manager with its
+ * associated disposable store (event listeners, etc.).
+ */
 class ExtensionHostManagerData {
 	constructor(
 		public readonly extensionHost: IExtensionHostManager,
@@ -1395,30 +1997,54 @@ class ExtensionHostManagerData {
 	}
 }
 
+/**
+ * Wrapper for resolver extension descriptions yielded during extension resolution.
+ *
+ * Resolver extensions handle `onResolveRemoteAuthority:*` activation events
+ * and are registered before other extensions so their extension points are
+ * available early.
+ */
 export class ResolverExtensions {
 	constructor(
 		public readonly extensions: IExtensionDescription[],
 	) { }
 }
 
+/**
+ * Wrapper for local extension descriptions yielded during extension resolution.
+ */
 export class LocalExtensions {
 	constructor(
 		public readonly extensions: IExtensionDescription[],
 	) { }
 }
 
+/**
+ * Wrapper for remote extension descriptions yielded during extension resolution.
+ */
 export class RemoteExtensions {
 	constructor(
 		public readonly extensions: IExtensionDescription[],
 	) { }
 }
 
+/** Discriminated union of extension groups yielded during extension resolution. */
 export type ResolvedExtensions = ResolverExtensions | LocalExtensions | RemoteExtensions;
 
+/**
+ * Factory interface for creating extension hosts.
+ *
+ * Implementations are platform-specific and determine how extension hosts
+ * are spawned and communicate with the main process.
+ */
 export interface IExtensionHostFactory {
 	createExtensionHost(runningLocations: ExtensionRunningLocationTracker, runningLocation: ExtensionRunningLocation, isInitialStart: boolean): IExtensionHost | null;
 }
 
+/**
+ * Queued item representing a batch of extensions to add and remove.
+ * Used by the delta extensions queue to serialize extension changes.
+ */
 class DeltaExtensionsQueueItem {
 	constructor(
 		public readonly toAdd: IExtension[],
@@ -1426,13 +2052,28 @@ class DeltaExtensionsQueueItem {
 	) { }
 }
 
+/**
+ * Checks whether an extension is a resolver extension.
+ *
+ * Resolver extensions declare activation events matching `onResolveRemoteAuthority:`
+ * and are used to resolve remote connections (e.g. Remote-SSH).
+ *
+ * @param extension - The extension description to check.
+ * @returns `true` if the extension has at least one resolver activation event.
+ */
 export function isResolverExtension(extension: IExtensionDescription): boolean {
 	return !!extension.activationEvents?.some(activationEvent => activationEvent.startsWith('onResolveRemoteAuthority:'));
 }
 
 /**
- * @argument extensions The extensions to be checked.
- * @argument ignoreWorkspaceTrust Do not take workspace trust into account.
+ * Updates proposed API proposals and returns only enabled extensions.
+ *
+ * @param logService - The log service for diagnostic output.
+ * @param extensionEnablementService - The service for checking extension enablement.
+ * @param extensionsProposedApi - The service for managing proposed API proposals.
+ * @param extensions - The extensions to be checked.
+ * @param ignoreWorkspaceTrust - Do not take workspace trust into account.
+ * @returns The subset of extensions that are enabled.
  */
 export function checkEnabledAndProposedAPI(logService: ILogService, extensionEnablementService: IWorkbenchExtensionEnablementService, extensionsProposedApi: ExtensionsProposedApi, extensions: IExtensionDescription[], ignoreWorkspaceTrust: boolean): IExtensionDescription[] {
 	// enable or disable proposed API per extension
@@ -1443,8 +2084,16 @@ export function checkEnabledAndProposedAPI(logService: ILogService, extensionEna
 }
 
 /**
- * Return the subset of extensions that are enabled.
- * @argument ignoreWorkspaceTrust Do not take workspace trust into account.
+ * Returns the subset of extensions that are enabled.
+ *
+ * Extensions under development are always included. Other extensions are
+ * checked against the enablement service.
+ *
+ * @param logService - The log service for diagnostic output.
+ * @param extensionEnablementService - The service for checking extension enablement.
+ * @param extensions - The extensions to filter.
+ * @param ignoreWorkspaceTrust - Do not take workspace trust into account.
+ * @returns The subset of extensions that are enabled.
  */
 export function filterEnabledExtensions(logService: ILogService, extensionEnablementService: IWorkbenchExtensionEnablementService, extensions: IExtensionDescription[], ignoreWorkspaceTrust: boolean): IExtensionDescription[] {
 	const enabledExtensions: IExtensionDescription[] = [], extensionsToCheck: IExtensionDescription[] = [], mappedExtensions: IExtension[] = [];
@@ -1473,13 +2122,25 @@ export function filterEnabledExtensions(logService: ILogService, extensionEnable
 }
 
 /**
- * @argument extension The extension to be checked.
- * @argument ignoreWorkspaceTrust Do not take workspace trust into account.
+ * Checks whether a single extension is enabled.
+ *
+ * @param logService - The log service for diagnostic output.
+ * @param extensionEnablementService - The service for checking extension enablement.
+ * @param extension - The extension to check.
+ * @param ignoreWorkspaceTrust - Do not take workspace trust into account.
+ * @returns `true` if the extension is enabled.
  */
 export function extensionIsEnabled(logService: ILogService, extensionEnablementService: IWorkbenchExtensionEnablementService, extension: IExtensionDescription, ignoreWorkspaceTrust: boolean): boolean {
 	return filterEnabledExtensions(logService, extensionEnablementService, [extension], ignoreWorkspaceTrust).includes(extension);
 }
 
+/**
+ * Checks whether an extension with the given identifier exists in the array.
+ *
+ * @param extensions - The array of extension descriptions to search.
+ * @param identifier - The extension identifier to look for.
+ * @returns `true` if a matching extension is found.
+ */
 function includes(extensions: IExtensionDescription[], identifier: ExtensionIdentifier): boolean {
 	for (const extension of extensions) {
 		if (ExtensionIdentifier.equals(extension.identifier, identifier)) {
@@ -1489,6 +2150,10 @@ function includes(extensions: IExtensionDescription[], identifier: ExtensionIden
 	return false;
 }
 
+/**
+ * Tracks the runtime status of a single extension, including activation state,
+ * activation times, validation messages, and runtime errors.
+ */
 export class ExtensionStatus {
 
 	private readonly _messages: IMessage[] = [];
@@ -1515,33 +2180,64 @@ export class ExtensionStatus {
 		public readonly id: ExtensionIdentifier,
 	) { }
 
+	/**
+	 * Clears all runtime status: resets activation state, times, and errors.
+	 * Called when extension hosts are stopped.
+	 */
 	public clearRuntimeStatus(): void {
 		this._activationStarted = false;
 		this._activationTimes = null;
 		this._runtimeErrors = [];
 	}
 
+	/**
+	 * Adds a validation message (e.g. from extension point processing).
+	 *
+	 * @param msg - The validation message to add.
+	 */
 	public addMessage(msg: IMessage): void {
 		this._messages.push(msg);
 	}
 
+	/**
+	 * Sets the activation times for this extension.
+	 *
+	 * @param activationTimes - The recorded activation times.
+	 */
 	public setActivationTimes(activationTimes: ActivationTimes) {
 		this._activationTimes = activationTimes;
 	}
 
+	/**
+	 * Records a runtime error thrown by the extension.
+	 *
+	 * @param err - The runtime error.
+	 */
 	public addRuntimeError(err: Error): void {
 		this._runtimeErrors.push(err);
 	}
 
+	/**
+	 * Marks the extension as having started activation.
+	 * Called before the extension's `activate` function is invoked.
+	 */
 	public onWillActivate() {
 		this._activationStarted = true;
 	}
 }
 
+/** Records the timestamp of a single extension host crash event. */
 interface IExtensionHostCrashInfo {
 	timestamp: number;
 }
 
+/**
+ * Tracks remote extension host crash history to determine whether automatic
+ * restart should be attempted.
+ *
+ * Maintains a sliding window of crash timestamps and allows automatic restart
+ * only if fewer than 3 crashes have occurred within the last 5 minutes.
+ */
 export class ExtensionHostCrashTracker {
 
 	private static _TIME_LIMIT = 5 * 60 * 1000; // 5 minutes
@@ -1556,11 +2252,20 @@ export class ExtensionHostCrashTracker {
 		}
 	}
 
+	/**
+	 * Records a crash event at the current time after purging expired entries.
+	 */
 	public registerCrash(): void {
 		this._removeOldCrashes();
 		this._recentCrashes.push({ timestamp: Date.now() });
 	}
 
+	/**
+	 * Determines whether the remote extension host should be automatically
+	 * restarted after a crash.
+	 *
+	 * @returns `true` if fewer than 3 crashes have occurred in the last 5 minutes.
+	 */
 	public shouldAutomaticallyRestart(): boolean {
 		this._removeOldCrashes();
 		return (this._recentCrashes.length < ExtensionHostCrashTracker._CRASH_LIMIT);
@@ -1568,23 +2273,49 @@ export class ExtensionHostCrashTracker {
 }
 
 /**
+ * Activation event reader that includes implicit activation events derived from
+ * an extension's declared contributions (e.g. `onCommand`, `onLanguage`,
+ * `onFileSystem`).
+ *
  * This can run correctly only on the renderer process because that is the only place
  * where all extension points and all implicit activation events generators are known.
  */
 export class ImplicitActivationAwareReader implements IActivationEventsReader {
+	/**
+	 * Reads all activation events for an extension, including both explicitly
+	 * declared events and implicitly derived events from contributions.
+	 *
+	 * @param extensionDescription - The extension description to read events for.
+	 * @returns An array of activation event strings.
+	 */
 	public readActivationEvents(extensionDescription: IExtensionDescription): string[] {
 		return ImplicitActivationEvents.readActivationEvents(extensionDescription);
 	}
 }
 
+/**
+ * Renders activation events as a markdown list for the extension features UI.
+ */
 class ActivationFeatureMarkdowneRenderer extends Disposable implements IExtensionFeatureMarkdownRenderer {
 
 	readonly type = 'markdown';
 
+	/**
+	 * Checks whether the extension has activation events to render.
+	 *
+	 * @param manifest - The extension manifest to check.
+	 * @returns `true` if the manifest declares activation events.
+	 */
 	shouldRender(manifest: IExtensionManifest): boolean {
 		return !!manifest.activationEvents;
 	}
 
+	/**
+	 * Renders the extension's activation events as a markdown bullet list.
+	 *
+	 * @param manifest - The extension manifest containing activation events.
+	 * @returns Rendered markdown data containing a list of activation events.
+	 */
 	render(manifest: IExtensionManifest): IRenderedData<IMarkdownString> {
 		const activationEvents = manifest.activationEvents || [];
 		const data = new MarkdownString();
