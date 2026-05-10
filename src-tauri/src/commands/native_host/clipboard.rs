@@ -280,13 +280,25 @@ fn windows_trigger_paste() -> Result<(), NativeHostError> {
     /// Create a key-down input event for the given virtual-key code.
     let key_down = |vk: u16| Input {
         type_: INPUT_KEYBOARD,
-        ki: KeybdInput { w_vk: vk, w_scan: 0, dw_flags: 0, time: 0, dw_extra_info: 0 },
+        ki: KeybdInput {
+            w_vk: vk,
+            w_scan: 0,
+            dw_flags: 0,
+            time: 0,
+            dw_extra_info: 0,
+        },
         _padding: [0; 8],
     };
     /// Create a key-up input event for the given virtual-key code.
     let key_up = |vk: u16| Input {
         type_: INPUT_KEYBOARD,
-        ki: KeybdInput { w_vk: vk, w_scan: 0, dw_flags: KEYEVENTF_KEYUP, time: 0, dw_extra_info: 0 },
+        ki: KeybdInput {
+            w_vk: vk,
+            w_scan: 0,
+            dw_flags: KEYEVENTF_KEYUP,
+            time: 0,
+            dw_extra_info: 0,
+        },
         _padding: [0; 8],
     };
 
