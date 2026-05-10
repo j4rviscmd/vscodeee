@@ -27,17 +27,15 @@ import { connectToExtHostRelay } from './tauriExtHostSocket.js';
 import { invoke } from '../../../../platform/tauri/common/tauriApi.js';
 
 /**
- * Result returned from the Rust `spawn_exthost_with_relay` command.
+ * Result returned from the Rust `spawn_exthost` command.
  */
 interface IExtHostSpawnResult {
   /** Unique identifier for this Extension Host instance, used for cleanup via `kill_exthost`. */
   readonly instanceId: number;
-  /** WebSocket port on which the Rust relay is listening. */
+  /** WebSocket port where the Bun Extension Host is listening. */
   readonly wsPort: number;
   /** PID of the spawned Bun Extension Host child process. */
   readonly extHostPid: number;
-  /** Unix domain socket path used for IPC with the Extension Host. */
-  readonly pipePath: string;
   /** Absolute path to the application root directory (where `out/` lives). */
   readonly appRoot: string;
 }
@@ -55,8 +53,8 @@ export interface ITauriLocalProcessExtensionHostDataProvider {
  * IExtensionHost implementation for the Tauri local process extension host.
  *
  * Communication flow:
- *   TS (WebView) → invoke('spawn_exthost_with_relay') → Rust spawns Bun + WS relay
- *   TS → WebSocket ws://127.0.0.1:{port} → Rust relay → Unix pipe → Bun ExtHost
+ *   TS (WebView) → invoke('spawn_exthost') → Rust spawns Bun
+ *   TS → WebSocket ws://127.0.0.1:{port} → Bun ExtHost (direct)
  *   PersistentProtocol manages the full VS Code extension host protocol over this socket.
  */
 export class TauriLocalProcessExtensionHost extends Disposable implements IExtensionHost {
@@ -108,9 +106,8 @@ export class TauriLocalProcessExtensionHost extends Disposable implements IExten
 	 * Start the extension host process and establish a protocol connection.
 	 *
 	 * Performs the following steps:
-	 * 1. Invokes the Rust `spawn_exthost_with_relay` command to spawn Bun
-	 *    and start the WebSocket relay
-	 * 2. Connects a WebSocket to the relay at `ws://127.0.0.1:{port}`
+	 * 1. Invokes the Rust `spawn_exthost` command to spawn Bun
+	 * 2. Connects a WebSocket directly to Bun at `ws://127.0.0.1:{port}`
 	 * 3. Wraps the socket in a {@link PersistentProtocol}
 	 * 4. Performs the VS Code extension host handshake:
 	 *    - Waits for the `Ready` message from the ExtHost
@@ -121,19 +118,19 @@ export class TauriLocalProcessExtensionHost extends Disposable implements IExten
 	 * @throws If the handshake does not complete within 60 seconds.
 	 */
   public async start(): Promise<IMessagePassingProtocol> {
-    // 1) Ask Rust to spawn Bun ExtHost + WS relay
-    this._logService.info('[TauriExtHost] Spawning extension host with WS relay...');
-    const result = await invoke<IExtHostSpawnResult>('spawn_exthost_with_relay');
+    // 1) Ask Rust to spawn Bun ExtHost
+    this._logService.info('[TauriExtHost] Spawning extension host...');
+    const result = await invoke<IExtHostSpawnResult>('spawn_exthost');
     this.pid = result.extHostPid;
     this._instanceId = result.instanceId;
     this._appRoot = result.appRoot;
-    this._logService.info(`[TauriExtHost] ExtHost instance=${result.instanceId}, PID=${result.extHostPid}, WS port=${result.wsPort}, pipe=${result.pipePath}, appRoot=${result.appRoot}`);
+    this._logService.info(`[TauriExtHost] ExtHost instance=${result.instanceId}, PID=${result.extHostPid}, WS port=${result.wsPort}, appRoot=${result.appRoot}`);
 
-    // 2) Connect WebSocket to the relay
-    this._logService.info('[TauriExtHost] Connecting WS to relay...');
+    // 2) Connect WebSocket directly to Bun's WS server
+    this._logService.info('[TauriExtHost] Connecting WS to ExtHost...');
     const socket = await connectToExtHostRelay(result.wsPort);
     this._register(socket);
-    this._logService.info('[TauriExtHost] WS connected to relay');
+    this._logService.info('[TauriExtHost] WS connected to ExtHost');
 
     // 3) Wrap in PersistentProtocol (byte-transparent relay — no WebSocket frames on the pipe side)
     const protocol = new PersistentProtocol({ socket, initialChunk: null });
