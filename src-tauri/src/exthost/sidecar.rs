@@ -613,34 +613,31 @@ pub async fn read_ws_port(
     let reader = BufReader::new(stdout);
     let mut lines = reader.lines();
 
-    let result = tokio::time::timeout(
-        tokio::time::Duration::from_secs(30),
-        async {
-            while let Ok(Some(line)) = lines.next_line().await {
-                if let Some(port_str) = line.strip_prefix("EXTHOST_WS_PORT:") {
-                    let port: u16 = port_str.trim().parse().map_err(|e| {
-                        ExtHostError::Io(std::io::Error::new(
-                            std::io::ErrorKind::InvalidData,
-                            format!("Invalid WS port number: {port_str}: {e}"),
-                        ))
-                    })?;
-                    log::info!(
-                        target: "vscodeee::exthost::sidecar",
-                        "ExtHost WS port: {port}"
-                    );
-                    return Ok(port);
-                }
-                log::debug!(
+    let result = tokio::time::timeout(tokio::time::Duration::from_secs(30), async {
+        while let Ok(Some(line)) = lines.next_line().await {
+            if let Some(port_str) = line.strip_prefix("EXTHOST_WS_PORT:") {
+                let port: u16 = port_str.trim().parse().map_err(|e| {
+                    ExtHostError::Io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Invalid WS port number: {port_str}: {e}"),
+                    ))
+                })?;
+                log::info!(
                     target: "vscodeee::exthost::sidecar",
-                    "ExtHost stdout (non-port): {line}"
+                    "ExtHost WS port: {port}"
                 );
+                return Ok(port);
             }
-            Err(ExtHostError::Io(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
-                "ExtHost stdout closed without sending WS port",
-            )))
-        },
-    )
+            log::debug!(
+                target: "vscodeee::exthost::sidecar",
+                "ExtHost stdout (non-port): {line}"
+            );
+        }
+        Err(ExtHostError::Io(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "ExtHost stdout closed without sending WS port",
+        )))
+    })
     .await;
 
     match result {

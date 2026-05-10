@@ -145,9 +145,10 @@ pub async fn spawn_exthost(
     let instance_id = exthost_state.next_id.fetch_add(1, Ordering::Relaxed);
 
     // Spawn Bun ExtHost — it starts its own WebSocket server
-    let (mut sidecar, stdout, stderr_buf) = exthost::sidecar::spawn(&app_root, &_resource_dir, &cache_dir)
-        .await
-        .map_err(|e| format!("ExtHost spawn failed: {e}"))?;
+    let (mut sidecar, stdout, stderr_buf) =
+        exthost::sidecar::spawn(&app_root, &_resource_dir, &cache_dir)
+            .await
+            .map_err(|e| format!("ExtHost spawn failed: {e}"))?;
 
     let pid = sidecar.child.id().unwrap_or(0);
 
