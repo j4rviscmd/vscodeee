@@ -22,6 +22,9 @@ pub mod window;
 use serde::Serialize;
 use std::path::Path;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 /// Basic native host information for the workbench bootstrap.
 /// This replaces the subset of `INativeWindowConfiguration` needed at startup.
 #[derive(Serialize)]
@@ -354,11 +357,14 @@ pub fn get_product_json(app_handle: tauri::AppHandle) -> Result<ProductPackageJs
         .unwrap_or("")
         .is_empty()
     {
-        if let Ok(output) = std::process::Command::new("git")
+        let mut git_cmd = std::process::Command::new("git");
+        git_cmd
             .args(["rev-parse", "HEAD"])
-            .current_dir(&project_root)
-            .output()
-        {
+            .current_dir(&project_root);
+        #[cfg(windows)]
+        git_cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
+        if let Ok(output) = git_cmd.output() {
             if output.status.success() {
                 let commit = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 if let Some(obj) = product.as_object_mut() {
@@ -476,10 +482,12 @@ fn detect_runtime_label() -> String {
         _ => return "Unknown".to_string(),
     };
 
-    match std::process::Command::new(&bun_path)
-        .arg("--version")
-        .output()
-    {
+    let mut bun_cmd = std::process::Command::new(&bun_path);
+    bun_cmd.arg("--version");
+    #[cfg(windows)]
+    bun_cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
+    match bun_cmd.output() {
         Ok(output) if output.status.success() => {
             let ver = String::from_utf8_lossy(&output.stdout).trim().to_string();
             format!("Bun {ver}")
@@ -495,7 +503,9 @@ use tauri::Manager;
 /// Cached theme colors persisted between sessions for the splash screen.
 #[derive(serde::Serialize, serde::Deserialize, Default)]
 struct ThemeColorCache {
+    /// CSS background color string (e.g. `"#1E1E1E"`).
     background: String,
+    /// CSS foreground color string (e.g. `"#CCCCCC"`).
     foreground: String,
 }
 

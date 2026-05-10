@@ -8,6 +8,9 @@
 
 use super::error::NativeHostError;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 // ─── Existing commands (moved from native_host.rs) ──────────────────────
 
 /// Open a URL in the system's default browser/application.
@@ -49,6 +52,7 @@ pub fn kill_process(pid: u32, code: String) -> Result<(), NativeHostError> {
         let _ = code;
         let output = std::process::Command::new("taskkill")
             .args(["/PID", &pid.to_string(), "/F"])
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
             .output()
             .map_err(NativeHostError::Io)?;
         if !output.status.success() {
