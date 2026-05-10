@@ -118,14 +118,9 @@ export function isWsServerMode(): boolean {
  */
 export function startWsServer(): Promise<ISocket> {
 	return new Promise<ISocket>((resolve, reject) => {
-		const timeout = setTimeout(() => {
-			server.stop();
-			reject(new Error('Timeout waiting for WebView WebSocket connection (60s)'));
-		}, 60 * 1000);
-
 		// @ts-expect-error — Bun global
 		const server: IBunWebSocketServer = Bun.serve({
-			hostname: '127.0.1',
+			hostname: '127.0.0.1',
 			port: 0,
 			fetch(req: Request, srv: IBunWebSocketServer) {
 				if (req.headers.get('upgrade') !== 'websocket') {
@@ -155,6 +150,11 @@ export function startWsServer(): Promise<ISocket> {
 				},
 			},
 		});
+
+		const timeout = setTimeout(() => {
+			server.stop();
+			reject(new Error('Timeout waiting for WebView WebSocket connection (60s)'));
+		}, 60 * 1000);
 
 		// Report port to stdout so Rust can read it
 		const port = server.port;
