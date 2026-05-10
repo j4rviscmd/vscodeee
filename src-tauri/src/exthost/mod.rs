@@ -3,98 +3,48 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-//! Extension Host sidecar management — spawn Bun runtime, communicate via named pipe.
+//! Extension Host sidecar management — spawn Bun runtime.
 //!
-//! This module provides the infrastructure for spawning and communicating with
-//! the VS Code Extension Host running under the Bun JavaScript runtime. The
-//! Extension Host is a separate child process that executes extension code in
-//! isolation from the main application.
+//! This module provides the infrastructure for spawning the VS Code Extension
+//! Host running under the Bun JavaScript runtime. The Extension Host is a
+//! separate child process that executes extension code in isolation from the
+//! main application.
 //!
 //! # Architecture
 //!
-//! The Extension Host lifecycle consists of three stages:
+//! The Extension Host communicates directly with the WebView via WebSocket:
 //!
-//! 1. **Sidecar spawning** ([`sidecar`]) — Creates an IPC pipe (Unix domain socket
-//!    or Windows named pipe), spawns the Bun runtime with the correct entry point
-//!    and environment variables, and waits for the child process to connect back.
+//! 1. **Sidecar spawning** ([`sidecar`]) — Spawns the Bun runtime with the
+//!    correct entry point and environment variables.
 //!
-//! 2. **Handshake** ([`handshake`], Unix-only in PoC) — Executes the
-//!    Ready -> InitData -> Initialized protocol exchange over the IPC stream
-//!    to verify the Extension Host is operational.
+//! 2. **Direct WebSocket** — The Bun process starts a WebSocket server
+//!    (`Bun.serve({ port: 0 })`) and reports the port via stdout. The WebView
+//!    connects directly — no Rust relay is needed.
 //!
-//! 3. **WebSocket relay** ([`ws_relay`]) — Bridges a browser WebSocket connection
-//!    from the TypeScript renderer to the IPC pipe, enabling bidirectional
-//!    byte-transparent communication. All VS Code wire protocol handling
-//!    happens in TypeScript via `PersistentProtocol`.
-//!
-//! # Platform Support
-//!
-//! - **Unix** (macOS/Linux): Uses Unix domain sockets for IPC.
-//! - **Windows**: Uses Windows named pipes for IPC.
-//!
-//! Both platforms are abstracted behind the [`IpcStream`] type alias.
-//!
-//! # Wire Protocol
-//!
-//! The VS Code IPC wire protocol uses a 13-byte header followed by a
-//! variable-length body. See the [`protocol`] module for details.
+//! All VS Code wire protocol handling happens in TypeScript via
+//! `PersistentProtocol`.
 
-pub mod init_data;
-pub mod protocol;
 pub mod sidecar;
-pub mod ws_relay;
-
-#[cfg(unix)]
-pub mod handshake;
-
-use tokio::io::{AsyncRead, AsyncWrite};
-
-/// Composite trait for platform-agnostic IPC streams.
-///
-/// Both `tokio::net::UnixStream` and `tokio::net::windows::named_pipe::NamedPipeServer`
-/// implement all four traits, so they can be boxed interchangeably.
-pub trait IpcStreamTrait: AsyncRead + AsyncWrite + Unpin + Send {}
-
-impl<T: AsyncRead + AsyncWrite + Unpin + Send> IpcStreamTrait for T {}
-
-/// Platform-agnostic IPC stream type that abstracts over Unix domain sockets
-/// and Windows named pipes.
-pub type IpcStream = Box<dyn IpcStreamTrait + 'static>;
 
 /// Errors that can occur during Extension Host sidecar operations.
 #[derive(Debug)]
 pub enum ExtHostError {
-    /// Failed to create the Unix domain socket / named pipe.
-    PipeCreation(std::io::Error),
     /// Failed to spawn the Bun child process.
     Spawn(std::io::Error),
-    /// Timeout waiting for ExtHost to connect or complete handshake.
-    Timeout,
-    /// The child process exited before connecting to the pipe.
+    /// The child process exited before reporting the WebSocket port.
     /// Contains the exit status and any captured stderr output.
     ChildExited { status: String, stderr: String },
-    /// Protocol error — unexpected message type or format.
-    #[allow(dead_code)]
-    Protocol(String),
     /// IO error during communication.
     Io(std::io::Error),
 }
 
-/// Human-readable error formatting for [`ExtHostError`].
-///
-/// For [`ChildExited`] variants, includes up to 2KB of captured stderr output
-/// (truncated at a valid UTF-8 character boundary) to aid debugging.
 impl std::fmt::Display for ExtHostError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::PipeCreation(e) => write!(f, "Pipe creation failed: {e}"),
             Self::Spawn(e) => write!(f, "Bun spawn failed: {e}"),
-            Self::Timeout => write!(f, "Handshake timeout (30s)"),
             Self::ChildExited { status, stderr } => {
                 write!(f, "ExtHost process exited prematurely: {status}")?;
                 if !stderr.is_empty() {
-                    // Include up to 2KB of stderr for diagnostics,
-                    // truncating at a valid UTF-8 char boundary.
                     let trimmed = if stderr.len() > 2048 {
                         let mut end = 2048;
                         while end > 0 && !stderr.is_char_boundary(end) {
@@ -108,14 +58,11 @@ impl std::fmt::Display for ExtHostError {
                 }
                 Ok(())
             }
-            Self::Protocol(msg) => write!(f, "Protocol error: {msg}"),
             Self::Io(e) => write!(f, "IO error: {e}"),
         }
     }
 }
 
-/// Allows implicit conversion from [`std::io::Error`] to [`ExtHostError::Io`],
-/// enabling `?` usage in functions that return `Result<_, ExtHostError>`.
 impl From<std::io::Error> for ExtHostError {
     fn from(e: std::io::Error) -> Self {
         Self::Io(e)

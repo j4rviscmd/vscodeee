@@ -3,12 +3,12 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-//! Named pipe creation and Bun Extension Host process spawning.
+//! Bun Extension Host process spawning.
 //!
-//! Replicates the pattern from `src/vs/server/node/extensionHostConnection.ts:247-335`:
-//! 1. Create IPC pipe (Unix domain socket or Windows named pipe)
-//! 2. Spawn `bun out/bootstrap-fork.js --type=extensionHost` with correct env vars
-//! 3. Wait for the ExtHost to connect back to our pipe
+//! Spawns `bun out/bootstrap-fork.js --type=extensionHost` with the correct
+//! environment variables. The Bun process starts a WebSocket server via
+//! `Bun.serve({ port: 0 })` and reports the allocated port via stdout.
+//! No IPC pipe or Rust-side relay is needed — the WebView connects directly.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -16,10 +16,10 @@ use std::sync::Arc;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
-use tokio::process::{Child, Command};
+use tokio::process::{Child, ChildStdout, Command};
 use tokio::sync::Mutex;
 
-use super::{ExtHostError, IpcStream};
+use super::ExtHostError;
 
 // ── product.json augmentation mtime cache ────────────────────────────────
 
@@ -219,8 +219,6 @@ fn build_ext_node_modules_paths(app_root: &Path, resource_dir: &Path) -> String 
     }
 
     // User-installed extensions: ~/.vscodeee/extensions/*/node_modules
-    // Extensions like Prettier bundle their own npm dependencies (e.g., prettier)
-    // which must be resolvable via CJS require() in the extension host process.
     if let Some(home_dir) = dirs::home_dir() {
         let user_ext_dir = home_dir.join(".vscodeee").join("extensions");
         if user_ext_dir.is_dir() {
@@ -238,9 +236,6 @@ fn build_ext_node_modules_paths(app_root: &Path, resource_dir: &Path) -> String 
 }
 
 /// Collect `node_modules` paths from immediate subdirectories of `dir`.
-///
-/// Reads the entries of `dir`, looks for `<entry>/node_modules/` directories,
-/// sorts them alphabetically, and returns them as a list of paths.
 fn collect_child_node_modules(dir: &Path) -> Vec<String> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
@@ -265,22 +260,16 @@ fn collect_child_node_modules(dir: &Path) -> Vec<String> {
 /// because launchd does not source shell profiles. Tools like `git` are
 /// commonly installed in `/opt/homebrew/bin` (Apple Silicon), `/usr/local/bin`
 /// (Intel Homebrew / manual install), or via Xcode CLT at `/usr/bin`.
-///
-/// This function takes the current process's PATH and prepends any
-/// well-known directories that are missing, so that child processes
-/// (in particular the `git` extension calling `which git`) can find them.
 fn build_exthost_path() -> String {
     let current = std::env::var("PATH").unwrap_or_default();
     let separator = if cfg!(windows) { ';' } else { ':' };
     let existing: std::collections::HashSet<&str> = current.split(separator).collect();
 
-    // Well-known directories where git and other developer tools live.
-    // Order matters: higher-priority directories come first.
     let extra_dirs: &[&str] = if cfg!(target_os = "macos") {
         &[
-            "/opt/homebrew/bin", // Apple Silicon Homebrew
+            "/opt/homebrew/bin",
             "/opt/homebrew/sbin",
-            "/usr/local/bin", // Intel Homebrew / manual installs
+            "/usr/local/bin",
             "/usr/local/sbin",
         ]
     } else if cfg!(target_os = "windows") {
@@ -289,7 +278,6 @@ fn build_exthost_path() -> String {
         // install to non-standard locations.
         &[]
     } else {
-        // Linux: /usr/local/bin is the most common extra location
         &["/usr/local/bin", "/usr/local/sbin"]
     };
 
@@ -308,32 +296,21 @@ fn build_exthost_path() -> String {
     parts.join(&separator.to_string())
 }
 
-/// A running Extension Host sidecar process with its named pipe path.
+/// A running Extension Host sidecar process.
 ///
-/// Owns the child process handle and the socket path. When dropped,
-/// the Unix socket file and any augmented product.json are cleaned up.
+/// Owns the child process handle. When dropped, any augmented `product.json`
+/// is restored.
 pub struct ExtHostSidecar {
     /// Handle to the spawned Bun child process.
     pub child: Child,
-    /// IPC endpoint address for communication with the Extension Host.
-    /// On Unix this is a Unix domain socket path (e.g., `/tmp/vscode-ipc-*.sock`);
-    /// on Windows this is a TCP address (e.g., `tcp:127.0.0.1:12345`).
-    pub pipe_path: String,
     /// Original content of `product.json` before augmentation, if modified.
-    /// Used by [`Drop`] to restore the file when the sidecar is cleaned up.
     original_product_json: Option<(std::path::PathBuf, String)>,
 }
 
-/// Best-effort cleanup: removes the Unix socket file and restores the
-/// original `product.json` when the sidecar is dropped.
+/// Best-effort cleanup: restores the original `product.json` when the sidecar
+/// is dropped.
 impl Drop for ExtHostSidecar {
     fn drop(&mut self) {
-        // Best-effort cleanup of the socket file (Unix only — TCP sockets
-        // on Windows are cleaned up by the OS when the listener is dropped)
-        #[cfg(unix)]
-        let _ = std::fs::remove_file(&self.pipe_path);
-
-        // Restore original product.json if we augmented it
         if let Some((ref path, ref original)) = self.original_product_json {
             if let Err(e) = std::fs::write(path, original) {
                 log::warn!(
@@ -348,20 +325,6 @@ impl Drop for ExtHostSidecar {
             }
         }
     }
-}
-
-/// Create a Unix domain socket path matching VS Code's convention.
-///
-/// Mirrors `createRandomIPCHandle()` at `ipc.net.ts:889-904`.
-/// macOS has a 104-char limit for socket paths; UUID-based paths in /tmp/
-/// are ~55 chars, well within that limit.
-///
-/// Note: On Windows, TCP sockets are used instead (see `spawn()`), so
-/// this function is only called on Unix platforms.
-#[cfg(unix)]
-fn create_random_ipc_handle() -> String {
-    let id = uuid::Uuid::new_v4();
-    format!("{}/vscode-ipc-{id}.sock", std::env::temp_dir().display())
 }
 
 /// Augment `product.json` with `commit` and `version` fields at runtime.
@@ -407,7 +370,6 @@ fn augment_product_json(app_root: &Path, cache_dir: &Path) -> Option<(std::path:
 
     let mut modified = false;
 
-    // Inject commit hash from git if not already set
     if product
         .get("commit")
         .and_then(|v| v.as_str())
@@ -417,7 +379,7 @@ fn augment_product_json(app_root: &Path, cache_dir: &Path) -> Option<(std::path:
         let mut git_cmd = std::process::Command::new("git");
         git_cmd.args(["rev-parse", "HEAD"]).current_dir(app_root);
         #[cfg(windows)]
-        git_cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        git_cmd.creation_flags(0x08000000);
 
         if let Ok(output) = git_cmd.output() {
             if output.status.success() {
@@ -437,7 +399,6 @@ fn augment_product_json(app_root: &Path, cache_dir: &Path) -> Option<(std::path:
         }
     }
 
-    // Inject version from package.json if not already set
     if product
         .get("version")
         .and_then(|v| v.as_str())
@@ -471,7 +432,6 @@ fn augment_product_json(app_root: &Path, cache_dir: &Path) -> Option<(std::path:
         return None;
     }
 
-    // Write augmented product.json (pretty-printed to preserve readability)
     let augmented = match serde_json::to_string_pretty(&product) {
         Ok(s) => s,
         Err(e) => {
@@ -483,7 +443,6 @@ fn augment_product_json(app_root: &Path, cache_dir: &Path) -> Option<(std::path:
         }
     };
 
-    // Add trailing newline to match typical JSON formatting
     let augmented = augmented + "\n";
     if let Err(e) = std::fs::write(&product_path, &augmented) {
         log::warn!(
@@ -502,22 +461,11 @@ fn augment_product_json(app_root: &Path, cache_dir: &Path) -> Option<(std::path:
     Some((product_path, original))
 }
 
-/// Spawn the Extension Host as a Bun sidecar, returning the connected stream.
+/// Spawn the Extension Host as a Bun sidecar.
 ///
-/// This replicates the pattern from `extensionHostConnection.ts:247-327`:
-/// 1. Augment `product.json` with `commit`/`version` for extensions
-/// 2. Create IPC endpoint (Unix domain socket or TCP socket on Windows)
-/// 3. Spawn `bun out/bootstrap-fork.js --type=extensionHost`
-/// 4. Wait for the ExtHost to connect back (30s timeout)
-///
-/// # Platform-specific IPC
-///
-/// - **macOS/Linux**: Uses Unix domain sockets (traditional approach).
-/// - **Windows**: Uses TCP sockets on localhost instead of named pipes.
-///   Bun's `net.Socket` implementation on Windows named pipes has known
-///   reliability issues where data events may not fire correctly after
-///   the initial handshake, causing extension RPC calls to be silently lost.
-///   TCP sockets are well-tested and reliable on all platforms and runtimes.
+/// The Bun process starts its own WebSocket server (`Bun.serve({ port: 0 })`)
+/// and reports the port via stdout. No IPC pipe or Rust relay is needed —
+/// the WebView connects directly to Bun's WebSocket server.
 ///
 /// # Arguments
 /// * `app_root` — Repository root containing `out/bootstrap-fork.js` and `product.json`
@@ -525,81 +473,36 @@ fn augment_product_json(app_root: &Path, cache_dir: &Path) -> Option<(std::path:
 /// * `cache_dir` — Application data directory for the augmentation mtime cache
 ///
 /// # Returns
-/// A tuple of the sidecar handle and the connected IPC stream.
+/// A tuple of the sidecar handle and the child's stdout (for reading the
+/// WebSocket port line).
 pub async fn spawn(
     app_root: &Path,
     resource_dir: &Path,
     cache_dir: &Path,
-) -> Result<(ExtHostSidecar, IpcStream), ExtHostError> {
+) -> Result<(ExtHostSidecar, ChildStdout, Arc<Mutex<String>>), ExtHostError> {
     // Augment product.json with commit/version before spawning the ExtHost.
     // Extensions (e.g., open-remote-ssh) read this file directly from disk.
     let augmented = augment_product_json(app_root, cache_dir);
 
-    // --- Platform-specific IPC setup ---
-    // On Windows, use TCP sockets for Bun compatibility (named pipes have issues).
-    // On Unix, use traditional Unix domain sockets.
-    #[cfg(windows)]
-    let (pipe_path, stream) = {
-        // Bind TCP listener first to get the OS-assigned port.
-        let tcp_listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .map_err(ExtHostError::PipeCreation)?;
-        let port = tcp_listener
-            .local_addr()
-            .map_err(ExtHostError::PipeCreation)?
-            .port();
-        // Format as "tcp:host:port" — the ExtHost TypeScript layer detects this
-        // prefix and connects via TCP instead of named pipes.
-        let pipe_path = format!("tcp:127.0.0.1:{port}");
+    let (child, stdout, stderr_buf) = spawn_child_process(app_root, resource_dir)?;
 
-        log::info!(
-            target: "vscodeee::exthost::sidecar",
-            "IPC endpoint (TCP): {pipe_path}"
-        );
-
-        let (mut child, stderr_buf) = spawn_child_process(app_root, resource_dir, &pipe_path)?;
-        let stream = accept_ipc_connection_tcp(tcp_listener, &stderr_buf, &mut child).await?;
-
-        (pipe_path, (stream, child))
-    };
-
-    #[cfg(unix)]
-    let (pipe_path, stream) = {
-        let pipe_path = create_random_ipc_handle();
-
-        log::info!(
-            target: "vscodeee::exthost::sidecar",
-            "IPC endpoint (Unix socket): {pipe_path}"
-        );
-
-        let (mut child, stderr_buf) = spawn_child_process(app_root, resource_dir, &pipe_path)?;
-        let result = accept_ipc_connection(&pipe_path, &stderr_buf, &mut child).await;
-        if result.is_err() {
-            let _ = std::fs::remove_file(&pipe_path);
-        }
-        let stream = result?;
-        (pipe_path, (stream, child))
-    };
-
-    let (stream, child) = stream;
-    log::info!(target: "vscodeee::exthost::sidecar", "ExtHost connected via IPC");
+    log::info!(target: "vscodeee::exthost::sidecar", "ExtHost spawned, waiting for WS port...");
 
     let sidecar = ExtHostSidecar {
         child,
-        pipe_path,
         original_product_json: augmented,
     };
-    Ok((sidecar, stream))
+    Ok((sidecar, stdout, stderr_buf))
 }
 
 /// Spawn the Bun Extension Host child process with the correct environment.
 ///
-/// Returns the child process handle and a shared stderr buffer for diagnostics.
+/// Returns the child process handle, piped stdout (for reading the WS port),
+/// and a shared stderr buffer for diagnostics.
 fn spawn_child_process(
     app_root: &Path,
     resource_dir: &Path,
-    pipe_path: &str,
-) -> Result<(Child, Arc<Mutex<String>>), ExtHostError> {
+) -> Result<(Child, ChildStdout, Arc<Mutex<String>>), ExtHostError> {
     let runtime_bin = resolve_runtime_binary();
 
     let enriched_path = build_exthost_path();
@@ -615,39 +518,27 @@ fn spawn_child_process(
         .arg("--type=extensionHost")
         .current_dir(app_root)
         .env("PATH", &enriched_path)
-        // NODE_PATH for extension module resolution.
-        // Bun adds NODE_PATH entries to Module.globalPaths at startup.
-        // Since removeGlobalNodeJsModuleLookupPaths() is skipped when
-        // VSCODEEE_EXT_NODE_MODULES_PATHS is set (see bootstrap-node.ts),
-        // the globalPaths are never stripped and resolution works natively.
         .env("NODE_PATH", &ext_nm_paths)
         .env("VSCODEEE_EXT_NODE_MODULES_PATHS", &ext_nm_paths)
-        .env("VSCODE_EXTHOST_IPC_HOOK", pipe_path)
         .env(
             "VSCODE_ESM_ENTRYPOINT",
             "vs/workbench/api/node/extensionHostProcess",
         )
-        // NOT setting VSCODE_HANDLES_UNCAUGHT_ERRORS — let the runtime use its
-        // default error handler which writes to stderr, so Rust can capture
-        // and relay the actual startup error instead of failing silently.
         .env("VSCODE_PARENT_PID", std::process::id().to_string())
         .env("VSCODE_DEV", "1")
         .env(
             "VSCODE_NLS_CONFIG",
             r#"{"locale":"en","osLocale":"en","availableLanguages":{}}"#,
         )
-        // Signal to the TypeScript layer that Bun is the runtime.
-        // Used by bootstrap-fork.js for runtime-specific behavior.
         .env("VSCODEEE_RUNTIME", "bun")
-        // NOT set (selecting wrong transport):
-        // VSCODE_WILL_SEND_MESSAGE_PORT — Electron MessagePort path
-        // VSCODE_EXTHOST_WILL_SEND_SOCKET — process.send() socket path
-        // Discard stdout — the parent is a GUI process with no console in
-        // release builds; inheriting would trigger AllocConsole on Windows.
-        .stdout(std::process::Stdio::null())
+        // Signal to the TypeScript layer that Bun should start a WS server
+        // and report the port via stdout instead of connecting to an IPC pipe.
+        .env("VSCODEEE_EXTHOST_WS_PORT", "0")
+        // Pipe stdout so Rust can read the WS port line.
+        // CREATE_NO_WINDOW prevents console flashing on Windows.
+        .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
-    // Prevent Windows from allocating a console window for the child process.
     #[cfg(windows)]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
 
@@ -658,19 +549,17 @@ fn spawn_child_process(
         target: "vscodeee::exthost::sidecar",
         "Spawned Bun ExtHost process (PID: {pid})"
     );
-    log::info!(
-        target: "vscodeee::exthost::sidecar",
-        "  cwd: {}, ext_nm_paths: {ext_nm_paths}, IPC_HOOK: {pipe_path}",
-        app_root.display()
-    );
+
+    let stdout = child.stdout.take().ok_or_else(|| {
+        ExtHostError::Spawn(std::io::Error::new(
+            std::io::ErrorKind::BrokenPipe,
+            "child stdout not available",
+        ))
+    })?;
 
     let stderr_buf: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
 
-    // Spawn a background task to read ExtHost stderr.
-    // Lines are logged to the Rust log framework AND written to
-    // a temp directory log file for production diagnostics.
-    // The shared buffer is also populated so early-exit errors can be
-    // included in the ExtHostError::ChildExited message.
+    // Background task: read ExtHost stderr for diagnostics
     {
         use tokio::io::AsyncBufReadExt;
         let stderr = child.stderr.take();
@@ -706,82 +595,71 @@ fn spawn_child_process(
         }
     }
 
-    Ok((child, stderr_buf))
+    Ok((child, stdout, stderr_buf))
 }
 
-/// Accept an IPC connection from the ExtHost child process (Unix).
+/// Read the WebSocket port from the ExtHost child's stdout.
 ///
-/// Creates a Unix domain socket listener, waits for the child to connect,
-/// and returns the connected stream as an [`IpcStream`].
-#[cfg(unix)]
-async fn accept_ipc_connection(
-    pipe_path: &str,
+/// The Bun process writes `EXTHOST_WS_PORT:<port>` to stdout when its
+/// WebSocket server starts. This function reads lines from stdout until
+/// finding that line, with a 30-second timeout.
+pub async fn read_ws_port(
+    stdout: ChildStdout,
     stderr_buf: &Arc<Mutex<String>>,
     child: &mut Child,
-) -> Result<IpcStream, ExtHostError> {
-    use tokio::net::UnixListener;
+) -> Result<u16, ExtHostError> {
+    use tokio::io::{AsyncBufReadExt, BufReader};
 
-    let listener = UnixListener::bind(pipe_path).map_err(ExtHostError::PipeCreation)?;
+    let reader = BufReader::new(stdout);
+    let mut lines = reader.lines();
 
-    tokio::select! {
-        result = listener.accept() => {
-            result
-                .map(|(stream, _)| Box::new(stream) as IpcStream)
-                .map_err(ExtHostError::PipeCreation)
-        }
-        _ = tokio::time::sleep(tokio::time::Duration::from_secs(30)) => {
-            check_child_exit_or_timeout(child, stderr_buf).await
-        }
-    }
-}
+    let result = tokio::time::timeout(
+        tokio::time::Duration::from_secs(30),
+        async {
+            while let Ok(Some(line)) = lines.next_line().await {
+                if let Some(port_str) = line.strip_prefix("EXTHOST_WS_PORT:") {
+                    let port: u16 = port_str.trim().parse().map_err(|e| {
+                        ExtHostError::Io(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("Invalid WS port number: {port_str}: {e}"),
+                        ))
+                    })?;
+                    log::info!(
+                        target: "vscodeee::exthost::sidecar",
+                        "ExtHost WS port: {port}"
+                    );
+                    return Ok(port);
+                }
+                log::debug!(
+                    target: "vscodeee::exthost::sidecar",
+                    "ExtHost stdout (non-port): {line}"
+                );
+            }
+            Err(ExtHostError::Io(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "ExtHost stdout closed without sending WS port",
+            )))
+        },
+    )
+    .await;
 
-/// Accept an IPC connection from the ExtHost child process (Windows).
-///
-/// Uses a TCP socket on localhost instead of Windows named pipes for
-/// reliability with the Bun runtime. Bun's named pipe implementation
-/// on Windows has issues where `data` events may not fire correctly
-/// after the initial protocol handshake, causing extension RPC messages
-/// to be silently dropped.
-///
-/// TCP sockets are well-tested across all platforms and runtimes, and
-/// provide reliable bidirectional byte streaming.
-#[cfg(windows)]
-async fn accept_ipc_connection_tcp(
-    listener: tokio::net::TcpListener,
-    stderr_buf: &Arc<Mutex<String>>,
-    child: &mut Child,
-) -> Result<IpcStream, ExtHostError> {
-    tokio::select! {
-        result = listener.accept() => {
-            let (stream, addr) = result.map_err(ExtHostError::PipeCreation)?;
-            log::info!(
-                target: "vscodeee::exthost::sidecar",
-                "ExtHost connected via TCP from {addr}"
-            );
-            // Disable Nagle's algorithm for low-latency IPC message exchange.
-            // Extension host RPC messages are typically small and latency-sensitive.
-            stream.set_nodelay(true).map_err(ExtHostError::Io)?;
-            Ok(Box::new(stream) as IpcStream)
+    match result {
+        Ok(port_result) => port_result,
+        Err(_) => {
+            // Timeout
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    let stderr_output = stderr_buf.lock().await;
+                    Err(ExtHostError::ChildExited {
+                        status: format!("{status}"),
+                        stderr: stderr_output.clone(),
+                    })
+                }
+                _ => Err(ExtHostError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Timeout waiting for WS port from ExtHost (30s)",
+                ))),
+            }
         }
-        _ = tokio::time::sleep(tokio::time::Duration::from_secs(30)) => {
-            check_child_exit_or_timeout(child, stderr_buf).await
-        }
-    }
-}
-
-/// Check if the child process has exited, returning an appropriate error.
-async fn check_child_exit_or_timeout(
-    child: &mut Child,
-    stderr_buf: &Arc<Mutex<String>>,
-) -> Result<IpcStream, ExtHostError> {
-    match child.try_wait() {
-        Ok(Some(status)) => {
-            let stderr_output = stderr_buf.lock().await;
-            Err(ExtHostError::ChildExited {
-                status: format!("{status}"),
-                stderr: stderr_output.clone(),
-            })
-        }
-        _ => Err(ExtHostError::Timeout),
     }
 }
