@@ -69,7 +69,7 @@ pub fn read_clipboard_buffer(
 #[tauri::command]
 pub fn has_clipboard(app: tauri::AppHandle, _format: String) -> Result<bool, NativeHostError> {
     use tauri_plugin_clipboard_manager::ClipboardExt;
-    Ok(app.clipboard().read_text().map_or(false, |t| !t.is_empty()))
+    Ok(app.clipboard().read_text().is_ok_and(|t| !t.is_empty()))
 }
 
 /// Read the macOS "Find" pasteboard text.
