@@ -13,7 +13,7 @@ import { InstantiationType, registerSingleton } from '../../../../platform/insta
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IAutomatedWindow, getLogs } from '../../../../platform/log/browser/log.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
-import { INotificationService } from '../../../../platform/notification/common/notification.js';
+import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
 import { IProgressService, ProgressLocation } from '../../../../platform/progress/common/progress.js';
 import { PersistentConnectionEventType } from '../../../../platform/remote/common/remoteAgentConnection.js';
@@ -29,6 +29,7 @@ import { IWebExtensionsScannerService, IWorkbenchExtensionEnablementService, IWo
 import { FetchFileSystemProvider } from '../browser/webWorkerFileSystemProvider.js';
 import { AbstractExtensionService, LocalExtensions, RemoteExtensions, ResolvedExtensions, ResolverExtensions, isResolverExtension } from '../common/abstractExtensionService.js';
 import { ExtensionHostKind } from '../common/extensionHostKind.js';
+import { IExtensionHostManager } from '../common/extensionHostManagers.js';
 import { IExtensionManifestPropertiesService } from '../common/extensionManifestPropertiesService.js';
 import { IExtensionService, toExtensionDescription } from '../common/extensions.js';
 import { ExtensionsProposedApi } from '../common/extensionsProposedApi.js';
@@ -47,8 +48,16 @@ import { TauriExtensionHostKindPicker } from './tauriExtensionHostKindPicker.js'
  *
  * Extends AbstractExtensionService with `{ hasLocalProcess: true }` to enable
  * routing extensions to TauriLocalProcessExtensionHost via the Rust WS relay.
+ * Overrides crash handling to restart the extension host instead of killing
+ * all hosts on a single crash.
  */
 export class TauriExtensionService extends AbstractExtensionService implements IExtensionService {
+
+  private static readonly MAX_RESTART_ATTEMPTS = 3;
+  private static readonly RESTART_WINDOW_MS = 60_000;
+
+  /** Timestamps of recent LocalProcess extension host crashes for rate limiting. */
+  private _crashTimestamps: number[] = [];
 
   /**
    * Creates a new {@link TauriExtensionService} instance.
@@ -130,9 +139,9 @@ export class TauriExtensionService extends AbstractExtensionService implements I
   }
 
   /**
-	 * Register HTTP/HTTPS fetch-based file system providers for loading
-	 * remote extension resources.
-	 */
+   * Register HTTP/HTTPS fetch-based file system providers for loading
+   * remote extension resources.
+   */
   private _initFetchFileSystem(): void {
     const provider = new FetchFileSystemProvider();
     this._register(this._fileService.registerProvider(Schemas.http, provider));
@@ -152,15 +161,16 @@ export class TauriExtensionService extends AbstractExtensionService implements I
   }
 
   /**
-	 * Scan all extensions (system, user, and under-development) and return
-	 * a deduplicated list. Results are cached after the first call.
-	 *
-	 * Unlike the browser version, this uses IBuiltinExtensionsScannerService
-	 * directly for system extensions to ensure Node.js-only extensions
-	 * (those with only a `main` field, no `browser` field) like `vscode.git`
-	 * are included. The WebExtensionsScannerService would filter these out
-	 * because they cannot execute on the web.
-	 */
+   * Scan all extensions (system, user, and under-development) and return
+   * a deduplicated list. Results are cached after the first call.
+   *
+   * Unlike the browser version, this uses IBuiltinExtensionsScannerService
+   * directly for system extensions to ensure Node.js-only extensions
+   * (those with only a `main` field, no `browser` field) like `vscode.git`
+   * are included. The WebExtensionsScannerService would filter these out
+   * because they cannot execute on the web.
+   */
+  /** Cached promise for the web extensions scan to avoid redundant scans. */
   private _scanWebExtensionsPromise: Promise<IExtensionDescription[]> | undefined;
   private async _scanWebExtensions(): Promise<IExtensionDescription[]> {
     if (!this._scanWebExtensionsPromise) {
@@ -187,9 +197,9 @@ export class TauriExtensionService extends AbstractExtensionService implements I
   }
 
   /**
-	 * Default extension resolution: scan local web extensions and remote
-	 * extensions in parallel, then emit them to the resolver pipeline.
-	 */
+   * Default extension resolution: scan local web extensions and remote
+   * extensions in parallel, then emit them to the resolver pipeline.
+   */
   private async _resolveExtensionsDefault(emitter: AsyncIterableEmitter<ResolvedExtensions>) {
     const [localExtensions, remoteExtensions] = await Promise.all([
       this._scanWebExtensions(),
@@ -282,9 +292,50 @@ export class TauriExtensionService extends AbstractExtensionService implements I
   }
 
   /**
-	 * Handle extension host exit by stopping all extension hosts.
-	 * Also triggers code automation exit if running in an automated test window.
-	 */
+   * Override crash handler to restart the LocalProcess extension host
+   * instead of stopping all hosts. Falls back to full stop after
+   * MAX_RESTART_ATTEMPTS crashes within RESTART_WINDOW_MS.
+   * Non-LocalProcess crashes are delegated to the base class.
+   */
+  protected override _onExtensionHostCrashed(extensionHost: IExtensionHostManager, code: number, signal: string | null): void {
+    if (extensionHost.kind !== ExtensionHostKind.LocalProcess) {
+      super._onExtensionHostCrashed(extensionHost, code, signal);
+      return;
+    }
+
+    console.error(`Extension host (${extensionHost.friendyName}) terminated unexpectedly. Code: ${code}, Signal: ${signal}`);
+    this._logExtensionHostCrash(extensionHost);
+
+    const now = Date.now();
+    this._crashTimestamps = this._crashTimestamps.filter(t => now - t < TauriExtensionService.RESTART_WINDOW_MS);
+    this._crashTimestamps.push(now);
+
+    if (this._crashTimestamps.length > TauriExtensionService.MAX_RESTART_ATTEMPTS) {
+      this._logService.error(`Extension host crashed ${this._crashTimestamps.length} times in ${TauriExtensionService.RESTART_WINDOW_MS / 1000}s — stopping all hosts.`);
+      this._notificationService.notify({
+        severity: Severity.Error,
+        message: localize('exthostCrashTooMany', 'Extension host has crashed too many times and will not be restarted.'),
+      });
+      this._crashTimestamps = [];
+      this._doStopExtensionHosts();
+      return;
+    }
+
+    this._logService.info(`Extension host crashed (attempt ${this._crashTimestamps.length}/${TauriExtensionService.MAX_RESTART_ATTEMPTS}) — restarting...`);
+    this._notificationService.notify({
+      severity: Severity.Warning,
+      message: localize('exthostCrashRestarting', 'Extension host terminated unexpectedly. Restarting...'),
+    });
+
+    this._extensionHostManagers.stopOne(extensionHost).then(() => {
+      this._startExtensionHostsIfNecessary(false, Array.from(this._allRequestedActivateEvents.keys()));
+    });
+  }
+
+  /**
+   * Handle extension host exit by stopping all extension hosts.
+   * Also triggers code automation exit if running in an automated test window.
+   */
   protected async _onExtensionHostExit(code: number): Promise<void> {
     await this._doStopExtensionHosts();
 
@@ -295,13 +346,13 @@ export class TauriExtensionService extends AbstractExtensionService implements I
   }
 
   /**
-	 * Resolve a remote authority by delegating to the LocalProcess extension host.
-	 *
-	 * Uses LocalProcess (Node.js sidecar) instead of LocalWebWorker because
-	 * resolver extensions (e.g., Remote-SSH) require Node.js APIs such as
-	 * `child_process` and `net` that are unavailable in Web Workers.
-	 * This matches the behavior of VS Code Desktop (Electron).
-	 */
+   * Resolve a remote authority by delegating to the LocalProcess extension host.
+   *
+   * Uses LocalProcess (Node.js sidecar) instead of LocalWebWorker because
+   * resolver extensions (e.g., Remote-SSH) require Node.js APIs such as
+   * `child_process` and `net` that are unavailable in Web Workers.
+   * This matches the behavior of VS Code Desktop (Electron).
+   */
   protected async _resolveAuthority(remoteAuthority: string): Promise<ResolverResult> {
     return this._resolveAuthorityOnExtensionHosts(ExtensionHostKind.LocalProcess, remoteAuthority);
   }
