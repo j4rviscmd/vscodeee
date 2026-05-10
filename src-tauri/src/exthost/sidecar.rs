@@ -21,6 +21,86 @@ use tokio::sync::Mutex;
 
 use super::{ExtHostError, IpcStream};
 
+// ── product.json augmentation mtime cache ────────────────────────────────
+
+/// Cache record indicating that `product.json` already contains both `commit`
+/// and `version` fields and does not need augmentation.
+///
+/// Stored in `{cache_dir}/product-augment-cache.json` alongside the app data.
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+struct ProductAugmentCache {
+    /// Modification time of `product.json` (seconds since UNIX epoch).
+    product_json_mtime: f64,
+    /// `false` = no augmentation was needed. `true` = augmentation was performed.
+    needed: bool,
+}
+
+/// Check whether `augment_product_json()` can be skipped via the mtime cache.
+///
+/// Returns `true` when the cached mtime matches the file's current mtime and
+/// `needed` is `false`, meaning the file already had both fields last time.
+fn is_augmentation_cached(product_path: &Path, cache_dir: &Path) -> bool {
+    let cache_path = cache_dir.join("product-augment-cache.json");
+
+    let cache: ProductAugmentCache = match std::fs::read_to_string(&cache_path) {
+        Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
+        Err(_) => return false,
+    };
+
+    // If augmentation was needed last time, always re-check
+    if cache.needed {
+        return false;
+    }
+
+    let current_mtime = match std::fs::metadata(product_path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+    {
+        Some(d) => d.as_secs_f64(),
+        None => return false,
+    };
+
+    let cache_hit = (cache.product_json_mtime - current_mtime).abs() < f64::EPSILON;
+    if cache_hit {
+        log::debug!(
+            target: "vscodeee::exthost::sidecar",
+            "product.json cache hit (mtime={current_mtime}), skipping augmentation"
+        );
+    }
+    cache_hit
+}
+
+/// Persist the augmentation cache after a check completes.
+fn write_augmentation_cache(product_path: &Path, cache_dir: &Path, needed: bool) {
+    let cache_path = cache_dir.join("product-augment-cache.json");
+
+    let current_mtime = match std::fs::metadata(product_path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+    {
+        Some(d) => d.as_secs_f64(),
+        None => return,
+    };
+
+    let cache = ProductAugmentCache {
+        product_json_mtime: current_mtime,
+        needed,
+    };
+    if let Ok(json) = serde_json::to_string(&cache) {
+        if let Some(parent) = cache_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Err(e) = std::fs::write(&cache_path, json) {
+            log::warn!(
+                target: "vscodeee::exthost::sidecar",
+                "Failed to write product augment cache: {e}"
+            );
+        }
+    }
+}
+
 /// Resolve the Bun runtime binary path.
 ///
 /// Resolution order:
@@ -41,18 +121,17 @@ fn resolve_runtime_binary() -> String {
     }
 
     // 2. Bundled Bun sidecar (production Tauri build)
-    if let Some(sidecar_path) = std::env::current_exe()
+    let bun_name = if cfg!(target_os = "windows") {
+        "bun.exe"
+    } else {
+        "bun"
+    };
+    if let Some(exe_dir) = std::env::current_exe()
         .ok()
         .as_ref()
         .and_then(|exe| exe.parent())
-        .map(|dir| {
-            dir.join(if cfg!(target_os = "windows") {
-                "bun.exe"
-            } else {
-                "bun"
-            })
-        })
     {
+        let sidecar_path = exe_dir.join(bun_name);
         if sidecar_path.exists() {
             log::info!(
                 target: "vscodeee::exthost::sidecar",
@@ -205,7 +284,7 @@ fn build_exthost_path() -> String {
             "/usr/local/sbin",
         ]
     } else if cfg!(target_os = "windows") {
-        // Windows: Common tool locations that may not be in PATH
+        // Windows: Common tool locations that may not be in PATH.
         // Most tools are found via the system PATH, but some (e.g., Git for Windows)
         // install to non-standard locations.
         &[]
@@ -222,12 +301,11 @@ fn build_exthost_path() -> String {
     }
 
     if parts.is_empty() {
-        current
-    } else {
-        // Prepend extra dirs so they take priority
-        parts.push(&current);
-        parts.join(&separator.to_string())
+        return current;
     }
+    // Prepend extra dirs so they take priority
+    parts.push(&current);
+    parts.join(&separator.to_string())
 }
 
 /// A running Extension Host sidecar process with its named pipe path.
@@ -296,8 +374,15 @@ fn create_random_ipc_handle() -> String {
 ///
 /// Returns `Some((path, original_content))` if the file was modified, or
 /// `None` if no modification was needed.
-fn augment_product_json(app_root: &Path) -> Option<(std::path::PathBuf, String)> {
+fn augment_product_json(app_root: &Path, cache_dir: &Path) -> Option<(std::path::PathBuf, String)> {
     let product_path = app_root.join("product.json");
+
+    // Fast path: skip augmentation if cached mtime matches and no augmentation
+    // was needed last time.
+    if is_augmentation_cached(&product_path, cache_dir) {
+        return None;
+    }
+
     let original = match std::fs::read_to_string(&product_path) {
         Ok(s) => s,
         Err(e) => {
@@ -380,6 +465,9 @@ fn augment_product_json(app_root: &Path) -> Option<(std::path::PathBuf, String)>
     }
 
     if !modified {
+        // product.json already has commit+version — cache the mtime so the
+        // next spawn can skip reading and parsing this file entirely.
+        write_augmentation_cache(&product_path, cache_dir, false);
         return None;
     }
 
@@ -408,6 +496,9 @@ fn augment_product_json(app_root: &Path) -> Option<(std::path::PathBuf, String)>
         target: "vscodeee::exthost::sidecar",
         "Wrote augmented product.json with commit and version"
     );
+    // Cache that augmentation was needed so the next spawn re-checks after
+    // the Drop impl restores the original content (which changes the mtime).
+    write_augmentation_cache(&product_path, cache_dir, true);
     Some((product_path, original))
 }
 
@@ -431,16 +522,18 @@ fn augment_product_json(app_root: &Path) -> Option<(std::path::PathBuf, String)>
 /// # Arguments
 /// * `app_root` — Repository root containing `out/bootstrap-fork.js` and `product.json`
 /// * `resource_dir` — Tauri resource directory containing bundled `node_modules/`
+/// * `cache_dir` — Application data directory for the augmentation mtime cache
 ///
 /// # Returns
 /// A tuple of the sidecar handle and the connected IPC stream.
 pub async fn spawn(
     app_root: &Path,
     resource_dir: &Path,
+    cache_dir: &Path,
 ) -> Result<(ExtHostSidecar, IpcStream), ExtHostError> {
     // Augment product.json with commit/version before spawning the ExtHost.
     // Extensions (e.g., open-remote-ssh) read this file directly from disk.
-    let augmented = augment_product_json(app_root);
+    let augmented = augment_product_json(app_root, cache_dir);
 
     // --- Platform-specific IPC setup ---
     // On Windows, use TCP sockets for Bun compatibility (named pipes have issues).
@@ -467,9 +560,7 @@ pub async fn spawn(
         let (mut child, stderr_buf) = spawn_child_process(app_root, resource_dir, &pipe_path)?;
         let stream = accept_ipc_connection_tcp(tcp_listener, &stderr_buf, &mut child).await?;
 
-        // Store child in sidecar
-        let sidecar_child = child;
-        (pipe_path, (stream, sidecar_child))
+        (pipe_path, (stream, child))
     };
 
     #[cfg(unix)]

@@ -128,7 +128,7 @@ impl ExtHostState {
     /// Drains all instances from the map and aborts their watchdog/relay tasks,
     /// then kills the child process directly.
     pub fn sync_kill_all(&self) {
-        let drained: Vec<(u32, ExtHostInstance)> = match self.instances.try_lock() {
+        let drained: Vec<_> = match self.instances.try_lock() {
             Ok(mut instances) => instances.drain().collect(),
             Err(_) => {
                 log::warn!(
@@ -163,7 +163,7 @@ impl ExtHostState {
                     // /F = force kill, /T = kill child processes too.
                     // CREATE_NO_WINDOW (0x08000000) prevents a console window from flashing.
                     let _ = std::process::Command::new("taskkill")
-                        .args(["/F", "/T", "/PID", &pid.to_string()])
+                        .args(["/F", "/T", "/PID", pid.to_string().as_str()])
                         .creation_flags(0x08000000) // CREATE_NO_WINDOW
                         .stdout(std::process::Stdio::null())
                         .stderr(std::process::Stdio::null())
@@ -192,7 +192,7 @@ pub async fn spawn_exthost_with_relay(
 ) -> Result<ExtHostSpawnResult, String> {
     use crate::exthost;
 
-    let (app_root, resource_dir) = resolve_app_root_and_resource_dir(&app_handle)?;
+    let (app_root, resource_dir, cache_dir) = resolve_app_root_and_resource_dir(&app_handle)?;
     log::info!(target: "vscodeee::commands::spawn_exthost", "Spawning ExtHost with WS relay, app root: {}", app_root.display());
 
     // Verify prerequisites
@@ -208,7 +208,7 @@ pub async fn spawn_exthost_with_relay(
     let instance_id = exthost_state.next_id.fetch_add(1, Ordering::Relaxed);
 
     // Step 1+2: Create pipe + spawn Bun
-    let (sidecar, ipc_stream) = exthost::sidecar::spawn(&app_root, &resource_dir)
+    let (sidecar, ipc_stream) = exthost::sidecar::spawn(&app_root, &resource_dir, &cache_dir)
         .await
         .map_err(|e| format!("ExtHost spawn failed: {e}"))?;
 
@@ -372,9 +372,7 @@ pub async fn spawn_extension_host(
     #[cfg(not(unix))]
     {
         let _ = app_handle;
-        return Err(
-            "Extension Host sidecar is only supported on Unix (macOS/Linux) in the PoC.".into(),
-        );
+        Err("Extension Host sidecar is only supported on Unix (macOS/Linux) in the PoC.".into())
     }
 
     #[cfg(unix)]
@@ -392,7 +390,7 @@ pub async fn spawn_extension_host(
 async fn spawn_extension_host_unix(
     app_handle: tauri::AppHandle,
 ) -> Result<ExtHostHandshakeResult, String> {
-    let (app_root, resource_dir) = resolve_app_root_and_resource_dir(&app_handle)?;
+    let (app_root, resource_dir, cache_dir) = resolve_app_root_and_resource_dir(&app_handle)?;
     log::info!(target: "vscodeee::commands::spawn_exthost", "App root: {}", app_root.display());
 
     // Verify prerequisites
@@ -404,7 +402,7 @@ async fn spawn_extension_host_unix(
         ));
     }
 
-    match spawn_and_handshake(&app_root, &resource_dir).await {
+    match spawn_and_handshake(&app_root, &resource_dir, &cache_dir).await {
         Ok(result) => Ok(result),
         Err(e) => Ok(ExtHostHandshakeResult {
             success: false,
@@ -425,10 +423,12 @@ async fn spawn_extension_host_unix(
 async fn spawn_and_handshake(
     app_root: &std::path::Path,
     resource_dir: &std::path::Path,
+    cache_dir: &std::path::Path,
 ) -> Result<ExtHostHandshakeResult, crate::exthost::ExtHostError> {
     use crate::exthost;
     // Step 1+2: Create pipe + spawn Bun
-    let (mut sidecar, mut stream) = exthost::sidecar::spawn(app_root, resource_dir).await?;
+    let (mut sidecar, mut stream) =
+        exthost::sidecar::spawn(app_root, resource_dir, cache_dir).await?;
 
     let pid = sidecar.child.id().unwrap_or(0);
     let pipe_path = sidecar.pipe_path.clone();
@@ -461,7 +461,7 @@ async fn spawn_and_handshake(
 /// Returns the first directory that contains `out/bootstrap-fork.js`.
 fn resolve_app_root_and_resource_dir(
     app_handle: &tauri::AppHandle,
-) -> Result<(PathBuf, PathBuf), String> {
+) -> Result<(PathBuf, PathBuf, PathBuf), String> {
     use tauri::Manager;
 
     let resource_dir = strip_unc_prefix(
@@ -471,11 +471,16 @@ fn resolve_app_root_and_resource_dir(
             .map_err(|e| format!("Failed to resolve resource dir: {e}"))?,
     );
 
+    let cache_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to resolve app data dir: {e}"))?;
+
     // Walk up from resource dir to find the repo root
     let mut candidate = resource_dir.as_path();
     for _ in 0..5 {
         if candidate.join("out/bootstrap-fork.js").exists() {
-            return Ok((candidate.to_path_buf(), resource_dir.clone()));
+            return Ok((candidate.to_path_buf(), resource_dir.clone(), cache_dir));
         }
         if let Some(parent) = candidate.parent() {
             candidate = parent;
@@ -488,7 +493,7 @@ fn resolve_app_root_and_resource_dir(
     if let Ok(cwd) = std::env::current_dir() {
         let cwd = strip_unc_prefix(&cwd);
         if cwd.join("out/bootstrap-fork.js").exists() {
-            return Ok((cwd, resource_dir));
+            return Ok((cwd, resource_dir, cache_dir));
         }
     }
 
@@ -497,7 +502,7 @@ fn resolve_app_root_and_resource_dir(
     // `{resource_dir}/_up_/` since `out/bootstrap-fork.js` lives under it.
     let up_dir = resource_dir.join("_up_");
     if up_dir.join("out/bootstrap-fork.js").exists() {
-        return Ok((up_dir, resource_dir));
+        return Ok((up_dir, resource_dir, cache_dir));
     }
 
     Err(format!(

@@ -19,6 +19,8 @@
 //! the renderer (TypeScript PersistentProtocol) and the Extension Host.
 //! This module will then be used only for optional debug logging.
 
+#![allow(dead_code)]
+
 use std::io;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 

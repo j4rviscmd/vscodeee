@@ -25,6 +25,7 @@
 ///
 /// This JSON is sent as the InitData message during the
 /// Ready→InitData→Initialized handshake sequence.
+#[allow(dead_code)]
 pub fn build_minimal_init_data() -> String {
     serde_json::json!({
         "version": "1.115.0",
