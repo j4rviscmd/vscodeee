@@ -56,7 +56,7 @@ export class TauriExtensionService extends AbstractExtensionService implements I
    * Configures the extension host factory to route extensions through the Tauri
    * LocalProcess extension host (Rust WS relay). Registers fetch-based file
    * system providers for HTTP/HTTPS schemes and schedules initialization on
-   * {@link LifecyclePhase.Ready}.
+   * {@link LifecyclePhase.Starting}.
    */
   constructor(
     @IInstantiationService instantiationService: IInstantiationService,
@@ -122,7 +122,7 @@ export class TauriExtensionService extends AbstractExtensionService implements I
       dialogService,
     );
 
-    lifecycleService.when(LifecyclePhase.Ready).then(async () => {
+    lifecycleService.when(LifecyclePhase.Starting).then(async () => {
       await this._initializeIfNeeded();
     });
 
