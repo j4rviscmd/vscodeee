@@ -74,6 +74,7 @@ pub enum ExtHostError {
     /// Contains the exit status and any captured stderr output.
     ChildExited { status: String, stderr: String },
     /// Protocol error — unexpected message type or format.
+    #[allow(dead_code)]
     Protocol(String),
     /// IO error during communication.
     Io(std::io::Error),

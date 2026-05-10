@@ -251,12 +251,10 @@ fn enumerate_fonts_windows() -> Vec<String> {
 /// to produce a clean family name. Empty entries are silently discarded.
 #[cfg(target_os = "windows")]
 fn collect_font_families_from_registry(reg_key: &winreg::RegKey, families: &mut Vec<String>) {
-    for result in reg_key.enum_values() {
-        if let Ok((name, _)) = result {
-            let family = name.split(" (").next().unwrap_or(&name).trim().to_string();
-            if !family.is_empty() {
-                families.push(family);
-            }
+    for (name, _) in reg_key.enum_values().flatten() {
+        let family = name.split(" (").next().unwrap_or(&name).trim().to_string();
+        if !family.is_empty() {
+            families.push(family);
         }
     }
 }

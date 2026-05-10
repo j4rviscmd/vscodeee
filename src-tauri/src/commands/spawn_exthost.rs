@@ -128,7 +128,7 @@ impl ExtHostState {
     /// Drains all instances from the map and aborts their watchdog/relay tasks,
     /// then kills the child process directly.
     pub fn sync_kill_all(&self) {
-        let drained = match self.instances.try_lock() {
+        let drained: Vec<_> = match self.instances.try_lock() {
             Ok(mut instances) => instances.drain().collect(),
             Err(_) => {
                 log::warn!(
@@ -163,7 +163,7 @@ impl ExtHostState {
                     // /F = force kill, /T = kill child processes too.
                     // CREATE_NO_WINDOW (0x08000000) prevents a console window from flashing.
                     let _ = std::process::Command::new("taskkill")
-                        .args(["/F", "/T", "/PID", &pid.to_string()])
+                        .args(["/F", "/T", "/PID", pid.to_string().as_str()])
                         .creation_flags(0x08000000) // CREATE_NO_WINDOW
                         .stdout(std::process::Stdio::null())
                         .stderr(std::process::Stdio::null())
@@ -372,9 +372,9 @@ pub async fn spawn_extension_host(
     #[cfg(not(unix))]
     {
         let _ = app_handle;
-        return Err(
+        Err(
             "Extension Host sidecar is only supported on Unix (macOS/Linux) in the PoC.".into(),
-        );
+        )
     }
 
     #[cfg(unix)]

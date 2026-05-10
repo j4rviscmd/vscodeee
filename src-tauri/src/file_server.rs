@@ -72,6 +72,7 @@ impl FileServer {
     }
 
     /// Returns the port number the server is listening on.
+    #[allow(dead_code)]
     pub fn port(&self) -> u16 {
         self.port
     }
@@ -104,7 +105,7 @@ async fn handle_connection(
     let request = String::from_utf8_lossy(&buf[..n]);
     let path = extract_request_path(&request);
 
-    let (status, content_type, body) = match serve_file_from_roots(roots, &path) {
+    let (status, content_type, body) = match serve_file_from_roots(roots, path) {
         Ok((mime, content)) => (200, mime, content),
         Err(FileServerError::NotFound) => (
             404,
