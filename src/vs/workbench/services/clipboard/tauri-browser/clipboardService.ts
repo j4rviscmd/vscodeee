@@ -68,9 +68,12 @@ export class TauriClipboardService extends Disposable implements IClipboardServi
 
   /** @inheritDoc IClipboardService.triggerPaste */
   triggerPaste(_targetWindowId: number): Promise<void> | undefined {
-    // TODO(Phase 3): pass targetWindowId to nativeHostService once multi-window paste is supported
-    this.logService.trace('TauriClipboardService#triggerPaste');
-    return this.nativeHostService.triggerPaste();
+    // Returning undefined causes the PasteAction handler to fall through to
+    // the direct clipboard-read + editor.trigger() path (same as the web
+    // fallback), which avoids the re-entrancy issue where SendInput-synthesized
+    // Ctrl+V is re-caught by the same PasteAction keybinding.
+    this.logService.trace('TauriClipboardService#triggerPaste (disabled — using direct clipboard read)');
+    return undefined;
   }
 
   /**
